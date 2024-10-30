@@ -36,7 +36,12 @@ make tools
 ```
 this script will build the necessary tools and install them to `/opt/cross/bin`
 
-after installing these tools, you can use `make` to build all the binaries:
+after installing these tools, you should generate a create a configuration file, you can just copy the default:
+```bash
+make config
+```
+
+then you can use `make` to build all the binaries:
 ```bash
 make
 ```
