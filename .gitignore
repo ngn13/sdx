@@ -1,0 +1,12 @@
+# clang shit
+compile_commands.json
+.cache
+
+# config files
+config/config.json
+config/config.h
+
+# dist/build dirs
+user/*/dist
+kernel/dist
+dist
