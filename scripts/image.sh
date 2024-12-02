@@ -8,11 +8,29 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-log "Allocating the image file"
-rm -f "${IMAGE}"
+if [ ! -d "${DISTDIR}" ]; then
+  error "Failed to access to the dist directory"
+  desc  "Did you run make?"
+  exit 1
+fi
+
+if [ -f "${IMAGE}" ]; then
+  warn "Image is already available, not rebuilding it"
+
+  info "Running the copy script"
+  desc "Need root access to work with loop devices"
+
+  $SUDO ./scripts/image/copy.sh
+  check_ret "Copy script failed"
+
+  info "Disk image is ready"
+  exit 0
+fi
+
+info "Truncating the image file"
 truncate --size 1G "${IMAGE}"
 
-log "Partioning the disk"
+info "Partioning the disk"
 (
 echo o # create (P)MBR disklabel
 echo y # confirm
@@ -37,9 +55,14 @@ echo '8300' # change type to linux file system
 
 echo w # write the changes
 echo y # confirm
-) | gdisk "${IMAGE}"
+) | gdisk "${IMAGE}" &> /dev/null
 check_ret "Failed to partion the disk"
 
 # setup the disk image
-log "Setting up the disk image, need root access to work with loop devices"
-$SUDO ./scripts/setup.sh
+info "Running the disk image setup script"
+desc "Need root access to work with loop devices"
+
+$SUDO ./scripts/image/setup.sh
+check_ret "Setup script failed"
+
+info "Disk image is ready"

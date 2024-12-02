@@ -9,7 +9,8 @@ if [ $? -ne 0 ]; then
 fi
 
 if [ -z "kernel/dist/kernel" ]; then
-  log "Failed to access kernel binary, did you build the kernel?"
+  error "Failed to access kernel binary"
+  desc  "Did you build the kernel?"
   exit 1
 fi
 

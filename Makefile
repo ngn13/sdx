@@ -34,7 +34,7 @@ user_bins:
 	for src in $(USER_SRCS); do \
 		make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C $$src all; \
 		make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C $$src install; \
-  done
+	done
 
 ##########################################################
 ## additional commands for configuration and formatting ##
@@ -47,9 +47,12 @@ clean:
 	make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C kernel clean
 	for src in $(USER_SRCS); do \
 		make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C $$src clean; \
-  done
+	done
 
 image:
+	# first build the actual kernel/user binaries
+	make
+	# then run the image creation script
 	./scripts/image.sh
 
 qemu:
