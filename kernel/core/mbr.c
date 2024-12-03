@@ -1,5 +1,5 @@
-#include "fs/mbr.h"
-#include "fs/disk.h"
+#include "core/mbr.h"
+#include "core/disk.h"
 
 #include "util/bit.h"
 #include "util/printk.h"

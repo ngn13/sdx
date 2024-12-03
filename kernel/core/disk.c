@@ -1,9 +1,11 @@
-#include "fs/disk.h"
-#include "fs/mbr.h"
+#include "core/disk.h"
+#include "core/mbr.h"
 #include "fs/vfs.h"
 
+#include "util/list.h"
 #include "util/math.h"
 #include "util/mem.h"
+#include "util/panic.h"
 #include "util/printk.h"
 
 #include "core/ahci.h"
@@ -25,23 +27,20 @@ disk_part_t *disk_part_next(disk_t *disk, disk_part_t *part) {
 }
 
 disk_part_t *disk_part_add(disk_t *disk, uint64_t start, uint64_t size) {
-#define disk_part_match() (trav->start == start && trav->size == size)
+#define disk_part_match(p1, _) (p1->start == start && p1->size == size)
 
   if (NULL == disk)
     return NULL;
 
-  // check if the partition exists
-  disk_part_t *trav = disk->parts, *new = NULL;
+  disk_part_t *new = NULL;
 
-  while (trav != NULL) {
-    if (disk_part_match())
-      return trav;
-    trav = trav->next;
-  }
+  // check if the partition exists
+  slist_find(&disk->parts, &new, disk_part_match, NULL, disk_part_t);
+
+  if (NULL != new)
+    return new;
 
   // if not, then create a new one
-  trav = disk->parts;
-
   if (NULL == (new = vmm_alloc(sizeof(disk_part_t))))
     return NULL;
 
@@ -50,17 +49,9 @@ disk_part_t *disk_part_add(disk_t *disk, uint64_t start, uint64_t size) {
   new->size  = size;
   new->disk  = disk;
 
+  slist_add(&disk->parts, new, disk_part_t);
+
   disk->part_count++;
-
-  if (NULL == trav) {
-    disk->parts = new;
-    return new;
-  }
-
-  while (trav->next != NULL)
-    trav = trav->next;
-
-  trav->next = new;
   return new;
 }
 
@@ -132,8 +123,8 @@ bool disk_scan(disk_t *disk) {
     return false;
   }
 
-#ifdef CONFIG_FS_GPT
-#include "fs/gpt.h"
+#ifdef CONFIG_CORE_GPT
+#include "core/gpt.h"
   if (gpt_load(disk)) {
     disk_info("loaded %d GPT partitions", disk->part_count);
     goto done;
@@ -158,47 +149,27 @@ disk_t *disk_add(disk_controller_t controller, void *data) {
   if (NULL == data)
     return false;
 
-  disk_t *new = vmm_alloc(sizeof(disk_t)), *trav = disk_first;
+  disk_t *new = vmm_alloc(sizeof(disk_t));
   bzero(new, sizeof(disk_t));
 
   new->controller  = controller;
   new->data        = data;
   new->sector_size = DISK_DEFAULT_SECTOR_SIZE;
 
-  if (NULL == trav) {
-    disk_first = new;
-    goto done;
-  }
+  slist_add(&disk_first, new, disk_t);
+  pdebg("Disk: Added a new disk device (Address: 0x%x Controller: %d)", new, new->controller);
 
-  while (NULL != trav->next)
-    trav = trav->next;
-  trav->next = new;
-
-done:
   return new;
 }
 
-bool disk_remove(disk_t *disk) {
+void disk_remove(disk_t *disk) {
   if (NULL == disk || NULL == disk_first)
-    return false;
+    return;
 
-  disk_t *trav = disk_first;
+  slist_del(&disk_first, disk, disk_t);
+  vmm_free(disk);
 
-  if (disk == trav) {
-    disk_first = disk_first->next;
-    return true;
-  }
-
-  while (NULL != trav->next) {
-    if (trav->next != disk)
-      continue;
-
-    trav->next = trav->next->next;
-    vmm_free(disk);
-    return true;
-  }
-
-  return false;
+  return;
 }
 
 disk_t *disk_next(disk_t *disk) {
@@ -207,26 +178,50 @@ disk_t *disk_next(disk_t *disk) {
   return disk->next;
 }
 
-bool disk_do(disk_t *disk, disk_op_t op, uint64_t offset, uint64_t size, uint8_t *buf) {
+/*
+
+ * the disk controllers only allow us to read/write starting from a certain LBA
+ * and only allow us to read/write sectors
+
+ * disk_do makes this easier by allowing us to read/write to any offset
+ * and allow us to read/write any amounts of data
+
+ * to do so disk_do uses few different functions for abstraction:
+ * __disk_do_raw: directly calls controller's functions
+ * __disk_do_size: allows us to read/write any amount of data instead of sectors
+ * disk_do: allows us to read/write any amount of data from/to any offset
+
+*/
+bool __disk_do_raw(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
   typedef bool port_do_t(void *data, disk_op_t op, uint64_t offset, uint64_t sector_count, uint8_t *buf);
-#define sector_count(s) div_floor(s, disk->sector_size)
 
   port_do_t *port_do = NULL;
-  uint64_t   rem = 0, buf_offset = 0;
 
   switch (disk->controller) {
   case DISK_CONTROLLER_AHCI:
     port_do = (void *)ahci_port_do;
+    break;
+
+  default:
+    disk_fail("unknown controller (%d)", disk->controller);
+    panic(__func__, "Encountered a disk with an unknown controller");
+    return false;
   }
 
+  return port_do(disk->data, op, lba, sector_count, buf);
+}
+
+bool __disk_do_size(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t size, uint8_t *buf) {
+  uint64_t rem = 0, buf_offset = 0, sector_count = div_floor(size, disk->sector_size);
+
   if ((rem = size % disk->sector_size) == 0)
-    return port_do(disk->data, op, offset, sector_count(size), buf);
+    return __disk_do_raw(disk, op, lba, sector_count, buf);
 
   if (size < disk->sector_size)
     goto do_copy;
 
   while (size != rem) {
-    if (!port_do(disk->data, op, offset, 1, buf + buf_offset))
+    if (!__disk_do_raw(disk, op, lba, 1, buf + buf_offset))
       return false;
     size -= disk->sector_size;
     buf_offset += disk->sector_size;
@@ -239,8 +234,13 @@ do_copy:
   uint8_t cb[disk->sector_size];
   bool    ret = false;
 
-  ret = port_do(disk->data, op, offset, 1, cb);
+  ret = __disk_do_raw(disk, op, lba, 1, cb);
 
   memcpy(buf + buf_offset, cb, rem);
   return ret;
+}
+
+bool disk_do(disk_t *disk, disk_op_t op, uint64_t offset, uint64_t size, uint8_t *buf) {
+  // TODO: use any offset instead of LBA
+  return __disk_do_size(disk, op, offset, size, buf);
 }

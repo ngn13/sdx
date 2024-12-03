@@ -1,6 +1,6 @@
 #pragma once
+#include "core/disk.h"
 #include "core/pci.h"
-#include "fs/disk.h"
 #include "types.h"
 
 extern pci_driver_t ahci_driver;
@@ -171,9 +171,9 @@ typedef struct ahci_port_data {
 } ahci_port_data_t;
 
 // stuff for ATAPI (see core/ahci/atapi.c)
-bool ahci_atapi_port_read(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf);
-bool ahci_atapi_port_write(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf);
-bool ahci_atapi_port_info(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf);
+bool ahci_atapi_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+bool ahci_atapi_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+bool ahci_atapi_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
 
 // stuff for SATA (see core/ahci/sata.c)
 // Register host to device (H2D) FIS
@@ -295,9 +295,9 @@ typedef struct sata_fis_data {
   uint32_t data[1];
 } sata_fis_data_t;
 
-bool ahci_sata_port_read(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf);
-bool ahci_sata_port_write(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf);
-bool ahci_sata_port_info(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf);
+bool ahci_sata_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+bool ahci_sata_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+bool ahci_sata_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
 
 // helper port commands (see core/ahci/port.c)
 bool                   ahci_port_stop(ahci_port_t *port);
@@ -312,5 +312,5 @@ struct ahci_cmd_table *ahci_port_setup_header(
 #define ahci_port_get_slot(port, slot) (slot == -1 ? NULL : &((struct ahci_cmd_header *)port->clb)[slot])
 
 // ahci driver entry
-bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t offset, uint64_t sector_count, uint8_t *buf);
+bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf);
 bool ahci_init(pci_device_t *dev);

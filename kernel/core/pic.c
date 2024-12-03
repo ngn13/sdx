@@ -101,7 +101,7 @@ bool __pic_out8_all(bool comm, uint8_t val) {
 void __pic_handler_default(uint8_t vector) {
   if (!pic_eoi(vector - PIC_VECTOR_OFFSET)) {
     printk(KERN_FAIL, "PIC: Failed to send EOI for %d (IRQ %d)", vector, vector - PIC_VECTOR_OFFSET);
-    panic(__func__, "PIC: Failed to send EOI");
+    panic(__func__, "Failed to send EOI");
   }
 }
 

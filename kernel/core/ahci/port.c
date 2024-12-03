@@ -1,5 +1,4 @@
 #include "core/ahci.h"
-#include "fs/disk.h"
 #include "mm/pm.h"
 
 #include "util/bit.h"

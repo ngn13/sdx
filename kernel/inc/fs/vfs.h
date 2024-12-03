@@ -1,5 +1,5 @@
 #pragma once
-#include "disk.h"
+#include "core/disk.h"
 #include "types.h"
 
 // defines a entry in the VFS filesystem (file, directory etc.)

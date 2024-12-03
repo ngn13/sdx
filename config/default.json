@@ -6,17 +6,20 @@
     "value": true
   },
 
+  "core": [
+    {
+      "gpt": {
+        "desc": "GPT partioning support",
+        "type": "boolean",
+        "value": true
+      }
+    }
+  ],
+
   "fs": [
     {
       "fat32": {
         "desc": "FAT32 filesystem support",
-        "type": "boolean",
-        "value": true
-      }
-    },
-    {
-      "gpt": {
-        "desc": "GPT partioning support",
         "type": "boolean",
         "value": true
       }

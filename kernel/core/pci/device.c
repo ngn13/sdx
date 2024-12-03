@@ -81,7 +81,7 @@ bool pci_device_init(pci_device_t *d) {
     return false;
 
   printk(KERN_INFO,
-      "PCI: loading %s for 0x%x:0x%x (bus %d slot %d function %d)\n",
+      "PCI: loading %s for 0x%x:0x%x (Bus: %d Slot: %d Function: %d)\n",
       cur->name,
       d->vendor_id,
       d->device_id,

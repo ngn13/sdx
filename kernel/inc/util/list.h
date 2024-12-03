@@ -2,30 +2,32 @@
 
 // singly-linked list macros
 
-#define slist_foreach(h, t) for (t *p = *h; NULL != p; p = p->next)
+#define slist_foreach(head, type) for (type *cur = *head; NULL != cur; cur = cur->next)
 
-#define slist_add(h, e, t)                                                                                             \
-  t *p = NULL;                                                                                                         \
-  if (NULL == (p = *h))                                                                                                \
-    *h = e;                                                                                                            \
+#define slist_add(head, entry, type)                                                                                   \
+  type *cur = NULL;                                                                                                    \
+  if (NULL == (cur = *head))                                                                                           \
+    *head = entry;                                                                                                     \
   else {                                                                                                               \
-    for (; NULL != p->next; p = p->next)                                                                               \
+    for (; NULL != cur->next; cur = cur->next)                                                                         \
       ;                                                                                                                \
-    p->next = e;                                                                                                       \
+    cur->next = entry;                                                                                                 \
   }
 
-#define slist_del(h, e, t)                                                                                             \
-  if (NULL != *h) {                                                                                                    \
-    for (t *p = *h; NULL != p->next; p = p->next) {                                                                    \
-      if (e != p->next)                                                                                                \
+#define slist_del(head, entry, type)                                                                                   \
+  if (NULL != *head) {                                                                                                 \
+    for (type *cur = *head; NULL != cur->next; cur = cur->next) {                                                      \
+      if (entry != cur->next)                                                                                          \
         continue;                                                                                                      \
-      p->next = p->next->next;                                                                                         \
+      cur->next = cur->next->next;                                                                                     \
+      break;                                                                                                           \
     }                                                                                                                  \
   }
 
-#define slist_find(h, e, c, v, t)                                                                                      \
-  slist_foreach(h, t) {                                                                                                \
-    if (c(p, v) != 0)                                                                                                  \
+#define slist_find(head, entry, comparer, value, type)                                                                 \
+  slist_foreach(head, type) {                                                                                          \
+    if (!comparer(cur, value))                                                                                         \
       continue;                                                                                                        \
-    *e = p;                                                                                                            \
+    *entry = cur;                                                                                                      \
+    break;                                                                                                             \
   }

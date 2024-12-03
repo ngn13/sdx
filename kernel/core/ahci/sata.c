@@ -1,5 +1,4 @@
 #include "core/ahci.h"
-#include "fs/disk.h"
 
 #include "util/math.h"
 #include "util/mem.h"
@@ -88,8 +87,13 @@ bool __ahci_sata_new(
   return true;
 }
 
-// reads raw storage data from the device and writes it into "buf"
-bool ahci_sata_port_read(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf) {
+/*
+
+ * ahci_sata_port_read reads specified amount of sectors starting from the specified LBA
+ * it uses READ_DMA so we read right into the specified buffer
+
+*/
+bool ahci_sata_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
   // reset interrupt status
   data->port->is = UINT32_MAX;
 
@@ -111,7 +115,7 @@ bool ahci_sata_port_read(ahci_port_data_t *data, uint64_t offset, uint64_t secto
   }
 
   // now lets setup the command
-  if (!__ahci_sata_new(data, (void *)table->cfis, AHCI_ATA_READ_DMA_EXT, offset, sector_count)) {
+  if (!__ahci_sata_new(data, (void *)table->cfis, AHCI_ATA_READ_DMA_EXT, lba, sector_count)) {
     printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to create the read command FIS\n", data->port, slot);
     return false;
   }
@@ -134,14 +138,16 @@ bool ahci_sata_port_read(ahci_port_data_t *data, uint64_t offset, uint64_t secto
   return true;
 }
 
-// writes raw storage into the device read from the "buf"
-bool ahci_sata_port_write(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf) {
-  /*
+/*
 
-   * mainly we'll do the same things with the port_read
-   * however this time, we'll setup a different command this time
+ * ahci_sata_port_write writes specified amount of sectors starting from the specified LBA
+ * it uses WRITE_DMA so we write right from the buffer
 
-  */
+ * for the implementation, mainly it's similar to ahci_sata_port_read
+ * however this time, we'll setup a different command
+
+*/
+bool ahci_sata_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
   data->port->is = UINT32_MAX;
 
   int8_t                  slot   = ahci_port_find_slot(data->port);
@@ -159,7 +165,7 @@ bool ahci_sata_port_write(ahci_port_data_t *data, uint64_t offset, uint64_t sect
     return false;
   }
 
-  if (!__ahci_sata_new(data, (void *)table->cfis, AHCI_ATA_WRITE_DMA_EXT, offset, sector_count)) {
+  if (!__ahci_sata_new(data, (void *)table->cfis, AHCI_ATA_WRITE_DMA_EXT, lba, sector_count)) {
     printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to create the write command FIS\n", data->port, slot);
     return false;
   }
@@ -174,8 +180,13 @@ bool ahci_sata_port_write(ahci_port_data_t *data, uint64_t offset, uint64_t sect
   return true;
 }
 
-// get identify data from the given "port", and save it to the buffer
-bool ahci_sata_port_info(ahci_port_data_t *data, uint64_t offset, uint64_t size, uint8_t *buf) {
+/*
+
+ * ahci_sata_port_info uses the IDENTIFY_DEVICE command to get information
+ * about the device, and saves it to related structures
+
+*/
+bool ahci_sata_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
   data->port->is = UINT32_MAX;
 
   int64_t                 slot   = ahci_port_find_slot(data->port);

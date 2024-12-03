@@ -1,5 +1,5 @@
-#include "fs/gpt.h"
-#include "fs/disk.h"
+#include "core/gpt.h"
+#include "core/disk.h"
 
 #include "util/bit.h"
 #include "util/math.h"

@@ -1,5 +1,4 @@
 #include "core/ahci.h"
-#include "fs/disk.h"
 
 #include "util/math.h"
 #include "util/mem.h"
@@ -39,7 +38,16 @@ bool __ahci_atapi_cfis_setup(sata_fis_h2d_t *cfis) {
   return true;
 }
 
-bool ahci_atapi_port_read(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf) {
+/*
+
+ * similar tot the ahci_sata_port_read, ahci_atapi_port_read reads specified amount of sectors
+ * starting from the specified LBA
+
+ * there no DMA commands for ATAPI, so it's normally not possible to read right to the buffer
+ * however AHCI makes this possible
+
+*/
+bool ahci_atapi_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
   // reset interrupt status
   data->port->is = UINT32_MAX;
 
@@ -68,10 +76,10 @@ bool ahci_atapi_port_read(ahci_port_data_t *data, uint64_t offset, uint64_t sect
   // now lets setup the command (https://wiki.osdev.org/ATAPI)
   table->acmd[0] = AHCI_ATAPI_READ;
 
-  table->acmd[2] = (offset >> 24) & 0xff;
-  table->acmd[3] = (offset >> 16) & 0xff;
-  table->acmd[4] = (offset >> 8) & 0xff;
-  table->acmd[5] = offset & 0xff;
+  table->acmd[2] = (lba >> 24) & 0xff;
+  table->acmd[3] = (lba >> 16) & 0xff;
+  table->acmd[4] = (lba >> 8) & 0xff;
+  table->acmd[5] = lba & 0xff;
 
   table->acmd[6] = (sector_count >> 24) & 0xff;
   table->acmd[7] = (sector_count >> 16) & 0xff;
@@ -95,7 +103,18 @@ bool ahci_atapi_port_read(ahci_port_data_t *data, uint64_t offset, uint64_t sect
   return true;
 }
 
-bool ahci_atapi_port_write(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf) {
+/*
+
+ * similar to the ahci_sata_port_write, ahci_atapi_port_write writes specified amount of sectors
+ * starting from the specified LBA
+
+ * as mentioned earlier, there are no DMA commands for ATAPI, so normally we wouldn't be able write
+ * right from the buffer, however AHCI makes this possible
+
+ * also the implementation is basically same with ahci_atapi_port_read, just uses a different command
+
+*/
+bool ahci_atapi_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
   data->port->is = UINT32_MAX;
 
   int8_t                  slot   = ahci_port_find_slot(data->port);
@@ -119,10 +138,10 @@ bool ahci_atapi_port_write(ahci_port_data_t *data, uint64_t offset, uint64_t sec
 
   table->acmd[0] = AHCI_ATAPI_WRITE;
 
-  table->acmd[2] = (offset >> 24) & 0xff;
-  table->acmd[3] = (offset >> 16) & 0xff;
-  table->acmd[4] = (offset >> 8) & 0xff;
-  table->acmd[5] = offset & 0xff;
+  table->acmd[2] = (lba >> 24) & 0xff;
+  table->acmd[3] = (lba >> 16) & 0xff;
+  table->acmd[4] = (lba >> 8) & 0xff;
+  table->acmd[5] = lba & 0xff;
 
   table->acmd[6] = (sector_count >> 24) & 0xff;
   table->acmd[7] = (sector_count >> 16) & 0xff;
@@ -275,7 +294,13 @@ bool __ahci_atapi_port_mode_sense(ahci_port_data_t *data, struct ahci_cmd_header
   return true;
 }
 
-bool ahci_atapi_port_info(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf) {
+/*
+
+ * ahci_atapi_port_info uses different ATAPI commands to get information about the ATAPı devices
+ * and saves it related structures
+
+*/
+bool ahci_atapi_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
   data->port->is = UINT32_MAX;
 
   int8_t                  slot   = ahci_port_find_slot(data->port);

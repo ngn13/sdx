@@ -1,5 +1,4 @@
 #include "fs/fat32/fat32.h"
-#include "fs/disk.h"
 #include "fs/vfs.h"
 
 #include "util/bit.h"

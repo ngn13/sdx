@@ -53,7 +53,7 @@ disk_part_t *disk_part_add(disk_t *disk, uint64_t start, uint64_t size);
 void         disk_part_clear(disk_t *disk);
 
 disk_t *disk_add(disk_controller_t controller, void *data);
-bool    disk_remove(disk_t *disk);
+void    disk_remove(disk_t *disk);
 disk_t *disk_next(disk_t *disk);
 bool    disk_do(disk_t *disk, disk_op_t op, uint64_t offset, uint64_t size, uint8_t *buf);
 bool    disk_scan(disk_t *disk);

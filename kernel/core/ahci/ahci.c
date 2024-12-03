@@ -1,8 +1,8 @@
 #include "core/ahci.h"
+#include "core/disk.h"
 #include "core/im.h"
 #include "core/pci.h"
 
-#include "fs/disk.h"
 #include "mm/pm.h"
 #include "mm/vmm.h"
 
@@ -54,28 +54,64 @@ enum ahci_bohc_bits {
   // ...
 };
 
-typedef bool ahci_op_func_t(ahci_port_data_t *data, uint64_t offset, uint64_t sector_count, uint8_t *buf);
+typedef bool ahci_op_func_t(ahci_port_data_t *, uint64_t, uint64_t, uint8_t *);
 
 struct ahci_protocol_func {
   disk_op_t       op;
   ahci_op_func_t *func;
   ahci_protocol_t protocol;
+  const char     *name;
   bool            needs_buffer;
 };
 
 struct ahci_protocol_func ahci_protocol_funcs[] = {
     // SATA protocol functions
-    {.protocol = AHCI_PROTOCOL_SATA,  .op = DISK_OP_READ,  .func = ahci_sata_port_read,   .needs_buffer = true },
-    {.protocol = AHCI_PROTOCOL_SATA,  .op = DISK_OP_WRITE, .func = ahci_sata_port_write,  .needs_buffer = true },
-    {.protocol = AHCI_PROTOCOL_SATA,  .op = DISK_OP_INFO,  .func = ahci_sata_port_info,   .needs_buffer = false},
+    {.protocol        = AHCI_PROTOCOL_SATA,
+     .op           = DISK_OP_READ,
+     .func         = ahci_sata_port_read,
+     .name         = "SATA read",
+     .needs_buffer = true },
+    {.protocol        = AHCI_PROTOCOL_SATA,
+     .op           = DISK_OP_WRITE,
+     .func         = ahci_sata_port_write,
+     .name         = "SATA write",
+     .needs_buffer = true },
+    {.protocol        = AHCI_PROTOCOL_SATA,
+     .op           = DISK_OP_INFO,
+     .func         = ahci_sata_port_info,
+     .name         = "SATA info",
+     .needs_buffer = false},
 
     // ATAPI protocol functions
-    {.protocol = AHCI_PROTOCOL_ATAPI, .op = DISK_OP_READ,  .func = ahci_atapi_port_read,  .needs_buffer = true },
-    {.protocol = AHCI_PROTOCOL_ATAPI, .op = DISK_OP_WRITE, .func = ahci_atapi_port_write, .needs_buffer = true },
-    {.protocol = AHCI_PROTOCOL_ATAPI, .op = DISK_OP_INFO,  .func = ahci_atapi_port_info,  .needs_buffer = false},
+    {.protocol        = AHCI_PROTOCOL_ATAPI,
+     .op           = DISK_OP_READ,
+     .func         = ahci_atapi_port_read,
+     .name         = "ATAPI read",
+     .needs_buffer = true },
+    {.protocol        = AHCI_PROTOCOL_ATAPI,
+     .op           = DISK_OP_WRITE,
+     .func         = ahci_atapi_port_write,
+     .name         = "ATAPI write",
+     .needs_buffer = true },
+    {.protocol        = AHCI_PROTOCOL_ATAPI,
+     .op           = DISK_OP_INFO,
+     .func         = ahci_atapi_port_info,
+     .name         = "ATAPI info",
+     .needs_buffer = false},
 };
 
-bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t offset, uint64_t size, uint8_t *buffer) {
+char *__ahci_port_protocol(ahci_port_data_t *data) {
+  switch (data->protocol) {
+  case AHCI_PROTOCOL_SATA:
+    return "SATA";
+  case AHCI_PROTOCOL_ATAPI:
+    return "ATAPI";
+  }
+
+  return "unknown";
+}
+
+bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t size, uint8_t *buffer) {
   if (NULL == data)
     return false;
 
@@ -92,13 +128,19 @@ bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t offset, uint64_
       continue;
 
     if (pf->needs_buffer && (NULL == buffer || size <= 0)) {
-      printk(KERN_DEBG, "AHCI: (0x%x) operation %d failed, required buffer arguments not provided\n", data->port, op);
+      pfail("AHCI: (0x%x) %s operation failed, required buffer arguments not provided", data->port, pf->name);
       return false;
     }
 
-    return pf->func(data, offset, size, buffer);
+    pdebg("AHCI: (0x%x) performing %s operation", data->port, pf->name);
+    return pf->func(data, lba, size, buffer);
   }
 
+  pfail("AHCI: (0x%x) unknown operation %d (Protocol: %s, %d)",
+      data->port,
+      op,
+      __ahci_port_protocol(data),
+      data->protocol);
   return false;
 }
 
@@ -132,11 +174,8 @@ bool ahci_init(pci_device_t *dev) {
   bit_set(base->ghc, 1, 0);
   base->is = UINT32_MAX;
 
-  printk(KERN_INFO,
-      "AHCI: (0x%x) HBA supports version %d.%d, enumerating ports\n",
-      base,
-      (base->vs >> 16) & 0xFFFF,
-      base->vs & 0xFFFF);
+  pinfo(
+      "AHCI: (0x%x) HBA supports version %d.%d, enumerating ports", base, (base->vs >> 16) & 0xFFFF, base->vs & 0xFFFF);
 
   ahci_port_data_t *port_data = NULL;
 
@@ -170,12 +209,12 @@ bool ahci_init(pci_device_t *dev) {
       break;
     }
 
-    printk(KERN_INFO,
-        "AHCI: (0x%x:%d) Address: 0x%x Signature: 0x%x\n",
+    pinfo("AHCI: (0x%x:%d) Address: 0x%x Signature: 0x%x (%s)",
         base,
         port_data->index,
         port_data->port,
-        port_data->port->sig);
+        port_data->port->sig,
+        __ahci_port_protocol(port_data));
 
     // add the disk
     port_data->disk = disk_add(DISK_CONTROLLER_AHCI, port_data);
