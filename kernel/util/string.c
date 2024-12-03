@@ -74,6 +74,23 @@ bool strrev(char *str) {
   return true;
 }
 
+uint64_t itou(uint64_t val, char *dst) {
+  if (NULL == dst)
+    return NULL;
+
+  uint64_t num = abs(val), i = 0;
+
+  do {
+    dst[i++] = (num % 10) + '0';
+    num /= 10;
+  } while (num != 0);
+
+  dst[i++] = 0;
+
+  strrev(dst);
+  return i - 1;
+}
+
 uint64_t itod(int64_t val, char *dst) {
   if (NULL == dst)
     return NULL;

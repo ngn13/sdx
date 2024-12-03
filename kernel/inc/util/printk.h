@@ -14,30 +14,16 @@ uint64_t printk(enum printk_level level, char *msg, ...);
 
 #ifdef PPREFIX
 
-#define pinfof(m, a...) printk(KERN_INFO, PPREFIX " " m "\n", a)
-#define pinfo(m)        printk(KERN_INFO, PPREFIX " " m "\n")
-
-#define pwarnf(m, a...) printk(KERN_WARN, PPREFIX " " m "\n", a)
-#define pwarn(m)        printk(KERN_WARN, PPREFIX " " m "\n")
-
-#define pfailf(m, a...) printk(KERN_FAIL, PPREFIX " " m "\n", a)
-#define pfail(m)        printk(KERN_FAIL, PPREFIX " " m "\n")
-
-#define pdebgf(m, a...) printk(KERN_DEBG, PPREFIX " " m "\n", a)
-#define pdebg(m)        printk(KERN_DEBG, PPREFIX " " m "\n")
+#define pinfo(m, ...) printk(KERN_INFO, PPREFIX " " m "\n", ##__VA_ARGS__)
+#define pwarn(m, ...) printk(KERN_WARN, PPREFIX " " m "\n", ##__VA_ARGS__)
+#define pfail(m, ...) printk(KERN_FAIL, PPREFIX " " m "\n", ##__VA_ARGS__)
+#define pdebg(m, ...) printk(KERN_DEBG, PPREFIX " " m "\n", ##__VA_ARGS__)
 
 #else
 
-#define pinfof(m, a...) printk(KERN_INFO, m "\n", a)
-#define pinfo(m)        printk(KERN_INFO, m "\n")
-
-#define pwarnf(m, a...) printk(KERN_WARN, m "\n", a)
-#define pwarn(m)        printk(KERN_WARN, m "\n")
-
-#define pfailf(m, a...) printk(KERN_FAIL, m "\n", a)
-#define pfail(m)        printk(KERN_FAIL, m "\n")
-
-#define pdebgf(m, a...) printk(KERN_DEBG, m "\n", a)
-#define pdebg(m)        printk(KERN_DEBG, m "\n")
+#define pinfo(m, ...) printk(KERN_INFO, m "\n", ##__VA_ARGS__)
+#define pwarn(m, ...) printk(KERN_WARN, m "\n", ##__VA_ARGS__)
+#define pfail(m, ...) printk(KERN_FAIL, m "\n", ##__VA_ARGS__)
+#define pdebg(m, ...) printk(KERN_DEBG, m "\n", ##__VA_ARGS__)
 
 #endif

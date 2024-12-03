@@ -79,6 +79,15 @@ uint64_t vprintf(char *fmt, va_list args) {
       size += __print(str);
     }
 
+    // unsigned long
+    else if (cmp('u')) {
+      uint64_t l = va_arg(args, uint64_t);
+      char     str[gd(l) + 1];
+
+      itou(l, str);
+      size += __print(str);
+    }
+
     // hex
     else if (cmp('x')) {
       uint64_t x = va_arg(args, uint64_t);

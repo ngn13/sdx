@@ -11,13 +11,14 @@ typedef struct fat32_data {
   uint64_t root_cluster_sector;  // the starting sector of the root cluster
 } fat32_data_t;
 
-#define fat32_read_disk(n, o, s, d)                                                                                    \
-  (disk_do(node->vfs->part->disk, DISK_OP_READ, node->vfs->part->start + o, s, (void *)d))
+#define fat32_read_disk(o, s, d)      (disk_do(vfs_part(vfs)->disk, DISK_OP_READ, vfs_part(vfs)->start + o, s, (void *)d))
 #define fat32_cluster_to_sector(d, c) (d->first_data_sector + (d->cluster_sector_count * (c - 2)))
-#define fat32_node_data()             ((fat32_data_t *)node->data)
+#define fat32_debg(f, ...)            pdebg("FAT32: (0x%x) " f, vfs, ##__VA_ARGS__)
+#define fat32_data()                  ((fat32_data_t *)vfs->fs_data)
 
-#define fat32_debg(f)        pdebgf("FAT32: (0x%x) " f, node)
-#define fat32_debgf(f, a...) pdebgf("FAT32: (0x%x) " f, node, a)
+bool         fat32_load(vfs_t *vfs);
+bool         fat32_unload(vfs_t *vfs);
+vfs_entry_t *fat32_list(vfs_t *vfs, vfs_entry_t *target, vfs_entry_t *cur);
+char        *fat32_get(vfs_t *vfs, vfs_entry_t *target);
 
-bool fat32_mount(vfs_node_t *node);
-bool fat32_umount(vfs_node_t *node);
+extern vfs_fs_t fat32_fs;

@@ -6,8 +6,7 @@
 #include "util/mem.h"
 #include "util/printk.h"
 
-#define gpt_debg(f)        pdebgf("GPT: (0x%x) " f, disk)
-#define gpt_debgf(f, a...) pdebgf("GPT: (0x%x) " f, disk, a)
+#define gpt_debg(f, ...) pdebg("GPT: (0x%x) " f, disk, ##__VA_ARGS__)
 
 #define GPT_SIGNATURE  0x5452415020494645 // signature for the partition table header
 #define GPT_PROTECTIVE 0xee               // PMBR OS type
@@ -51,12 +50,12 @@ void __gpt_load_entry(disk_t *disk, struct gpt_part_entry *part, uint64_t indx) 
   if (bit_get(part->attr, 1))
     return;
 
-  gpt_debgf("loading partition %d", indx);
-  gpt_debgf("|- Type: %g", type);
-  gpt_debgf("|- GUID: %g", guid);
-  gpt_debgf("|- Start LBA: %l", part->start_lba);
-  gpt_debgf("|- End LBA: %l", part->end_lba);
-  gpt_debgf("`- Attributes: 0x%p", part->attr);
+  gpt_debg("loading partition %d", indx);
+  gpt_debg("|- Type: %g", type);
+  gpt_debg("|- GUID: %g", guid);
+  gpt_debg("|- Start LBA: %l", part->start_lba);
+  gpt_debg("|- End LBA: %l", part->end_lba);
+  gpt_debg("`- Attributes: 0x%p", part->attr);
 
   disk_part_t *dp = NULL;
 
@@ -83,17 +82,17 @@ bool gpt_load(disk_t *disk) {
   }
 
   if (header.signature != GPT_SIGNATURE) {
-    gpt_debgf("bad signature (0x%x) for the partition table header", header.signature);
+    gpt_debg("bad signature (0x%x) for the partition table header", header.signature);
     return false;
   }
 
-  gpt_debgf("GUID: 0x%p%p", ((uint64_t *)header.guid)[0], ((uint64_t *)header.guid)[1]);
-  gpt_debgf("array LBA: %l", header.lba_array);
-  gpt_debgf("array entry count: %d", header.entry_count);
-  gpt_debgf("array entry size: %d", header.entry_size);
+  gpt_debg("GUID: 0x%p%p", ((uint64_t *)header.guid)[0], ((uint64_t *)header.guid)[1]);
+  gpt_debg("array LBA: %l", header.lba_array);
+  gpt_debg("array entry count: %d", header.entry_count);
+  gpt_debg("array entry size: %d", header.entry_size);
 
   if (disk->sector_size % header.entry_size) {
-    gpt_debgf("sector size (%l) is not aligned by entry size (%l)", disk->sector_size, header.entry_size);
+    gpt_debg("sector size (%l) is not aligned by entry size (%l)", disk->sector_size, header.entry_size);
     return false;
   }
 
@@ -104,7 +103,7 @@ bool gpt_load(disk_t *disk) {
 
   while (i < header.entry_count) {
     if (!disk_do(disk, DISK_OP_READ, header.lba_array + (i / entry_per_sector), disk->sector_size, (void *)entries)) {
-      gpt_debgf("failed to read the partition entries %l-%l", i, i + entry_per_sector);
+      gpt_debg("failed to read the partition entries %l-%l", i, i + entry_per_sector);
       goto next_entries;
     }
 

@@ -22,7 +22,7 @@
  * - AHCI: https://www.intel.com/content/dam/www/public/us/en/documents/technical-specifications/serial-ata-ahci-spec-rev1-3-1.pdf
  * - SATA: https://sata-io.org/system/files/specifications/SerialATA_Revision_3_1_Gold.pdf
  * - ACS: https://files.ngn.tf/ATA_ATAPI_Command_Set_3.pdf
- * - SCSI (primary commands): https://files.ngn.tf/SCSI_Primary_Commands_3_rev21b.pdf 
+ * - SCSI (primary commands): https://files.ngn.tf/SCSI_Primary_Commands_3_rev21b.pdf
  * - SCSI (block commands): https://files.ngn.tf/SCSI_Block_Commands_rev8c.pdf
 
 */
@@ -60,68 +60,43 @@ struct ahci_protocol_func {
   disk_op_t       op;
   ahci_op_func_t *func;
   ahci_protocol_t protocol;
-  bool            use_buf;
-  bool            use_sector_count;
+  bool            needs_buffer;
 };
 
-struct ahci_protocol_func ahci_protocol_map[] = {
+struct ahci_protocol_func ahci_protocol_funcs[] = {
     // SATA protocol functions
-    {.protocol            = AHCI_PROTOCOL_SATA,
-     .op               = DISK_OP_READ,
-     .func             = ahci_sata_port_read,
-     .use_buf          = true,
-     .use_sector_count = true },
-    {.protocol            = AHCI_PROTOCOL_SATA,
-     .op               = DISK_OP_WRITE,
-     .func             = ahci_sata_port_write,
-     .use_buf          = true,
-     .use_sector_count = true },
-    {.protocol            = AHCI_PROTOCOL_SATA,
-     .op               = DISK_OP_INFO,
-     .func             = ahci_sata_port_info,
-     .use_buf          = false,
-     .use_sector_count = false},
+    {.protocol = AHCI_PROTOCOL_SATA,  .op = DISK_OP_READ,  .func = ahci_sata_port_read,   .needs_buffer = true },
+    {.protocol = AHCI_PROTOCOL_SATA,  .op = DISK_OP_WRITE, .func = ahci_sata_port_write,  .needs_buffer = true },
+    {.protocol = AHCI_PROTOCOL_SATA,  .op = DISK_OP_INFO,  .func = ahci_sata_port_info,   .needs_buffer = false},
 
     // ATAPI protocol functions
-    {.protocol            = AHCI_PROTOCOL_ATAPI,
-     .op               = DISK_OP_READ,
-     .func             = ahci_atapi_port_read,
-     .use_buf          = true,
-     .use_sector_count = true },
-    {.protocol            = AHCI_PROTOCOL_ATAPI,
-     .op               = DISK_OP_WRITE,
-     .func             = ahci_atapi_port_write,
-     .use_buf          = true,
-     .use_sector_count = true },
-    {.protocol            = AHCI_PROTOCOL_ATAPI,
-     .op               = DISK_OP_INFO,
-     .func             = ahci_atapi_port_info,
-     .use_buf          = false,
-     .use_sector_count = false},
+    {.protocol = AHCI_PROTOCOL_ATAPI, .op = DISK_OP_READ,  .func = ahci_atapi_port_read,  .needs_buffer = true },
+    {.protocol = AHCI_PROTOCOL_ATAPI, .op = DISK_OP_WRITE, .func = ahci_atapi_port_write, .needs_buffer = true },
+    {.protocol = AHCI_PROTOCOL_ATAPI, .op = DISK_OP_INFO,  .func = ahci_atapi_port_info,  .needs_buffer = false},
 };
 
-bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t offset, uint64_t sector_count, uint8_t *buf) {
+bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t offset, uint64_t size, uint8_t *buffer) {
   if (NULL == data)
     return false;
 
-  for (uint8_t i = 0; i < sizeof(ahci_protocol_map) / sizeof(struct ahci_protocol_func); i++) {
-    if (ahci_protocol_map[i].op != op)
+  struct ahci_protocol_func *pf = NULL;
+
+  for (uint8_t i = 0; i < sizeof(ahci_protocol_funcs) / sizeof(struct ahci_protocol_func); i++) {
+    if (NULL == (pf = &ahci_protocol_funcs[i]))
       continue;
 
-    if (ahci_protocol_map[i].protocol != data->protocol)
+    if (pf->op != op)
       continue;
 
-    if (ahci_protocol_map[i].use_buf && NULL == buf) {
-      printk(KERN_DEBG, "AHCI: (0x%x) operation failed, required buffer not provided\n", data->port);
+    if (pf->protocol != data->protocol)
+      continue;
+
+    if (pf->needs_buffer && (NULL == buffer || size <= 0)) {
+      printk(KERN_DEBG, "AHCI: (0x%x) operation %d failed, required buffer arguments not provided\n", data->port, op);
       return false;
     }
 
-    if (ahci_protocol_map[i].use_sector_count && sector_count == 0) {
-      printk(KERN_DEBG, "AHCI: (0x%x) operation failed, bad sector count\n", data->port);
-      return false;
-    }
-
-    return ahci_protocol_map[i].func(data, offset, sector_count, buf);
+    return pf->func(data, offset, size, buffer);
   }
 
   return false;

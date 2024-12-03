@@ -11,14 +11,9 @@
 
 #include "config.h"
 
-#define disk_debg(f)        pdebgf("Disk: (0x%x) " f, disk)
-#define disk_debgf(f, a...) pdebgf("Disk: (0x%x) " f, disk, a)
-
-#define disk_info(f)        pinfof("Disk: (0x%x) " f, disk)
-#define disk_infof(f, a...) pinfof("Disk: (0x%x) " f, disk, a)
-
-#define disk_fail(f)        pfailf("Disk: (0x%x) " f, disk)
-#define disk_failf(f, a...) pfailf("Disk: (0x%x) " f, disk, a)
+#define disk_debg(f, ...) pdebg("Disk: (0x%x) " f, disk, ##__VA_ARGS__)
+#define disk_info(f, ...) pinfo("Disk: (0x%x) " f, disk, ##__VA_ARGS__)
+#define disk_fail(f, ...) pfail("Disk: (0x%x) " f, disk, ##__VA_ARGS__)
 
 #define DISK_DEFAULT_SECTOR_SIZE 512
 disk_t *disk_first = NULL;
@@ -85,7 +80,7 @@ vfs_t *__disk_part_find_vfs(disk_part_t *part) {
   vfs_t *cur = NULL;
 
   while (NULL != (cur = vfs_next(cur)))
-    if (cur->type == VFS_TYPE_DISK && cur->part == part)
+    if (cur->type == VFS_TYPE_DISK && cur->type_data == part)
       return cur;
 
   return NULL;
@@ -140,13 +135,13 @@ bool disk_scan(disk_t *disk) {
 #ifdef CONFIG_FS_GPT
 #include "fs/gpt.h"
   if (gpt_load(disk)) {
-    disk_infof("loaded %d GPT partitions", disk->part_count);
+    disk_info("loaded %d GPT partitions", disk->part_count);
     goto done;
   }
 #endif
 
   if (mbr_load(disk)) {
-    disk_infof("loaded %d MBR partitions", disk->part_count);
+    disk_info("loaded %d MBR partitions", disk->part_count);
     goto done;
   }
 

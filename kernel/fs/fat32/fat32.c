@@ -11,12 +11,19 @@
 
 /*
 
- * FAT32 filesystem operations
+ * FAT32 filesystem
  * see vfs/vfs.h
 
 */
-vfs_ops_t fat32_ops = {
-    .umount = fat32_umount,
+
+vfs_fs_t fat32_fs = {
+    .name  = "FAT32",
+    .types = VFS_TYPE_DISK,
+
+    .load   = (void *)fat32_load,
+    .unload = (void *)fat32_unload,
+    //.get  = (void *)fat32_get,
+    //.list = (void *)fat32_list,
 };
 
 /*
@@ -95,16 +102,16 @@ struct fat32_boot_record {
  * returns zero on success
 
 */
-bool fat32_mount(vfs_node_t *node) {
+bool fat32_load(vfs_t *vfs) {
   struct fat32_boot_record fat_boot;
 
-  if (!fat32_read_disk(node, 0, sizeof(fat_boot), &fat_boot)) {
+  if (!fat32_read_disk(0, sizeof(fat_boot), &fat_boot)) {
     fat32_debg("failed to read the boot record");
     return false;
   }
 
-  fat32_debgf("boot record signature: 0x%x", fat_boot.extended.signature);
-  fat32_debgf("boot record fsinfo sector: %d", fat_boot.extended.fsinfo_sector);
+  fat32_debg("boot record signature: 0x%x", fat_boot.extended.signature);
+  fat32_debg("boot record fsinfo sector: %d", fat_boot.extended.fsinfo_sector);
 
   if (!fat32_verify_extended(fat_boot.extended)) {
     fat32_debg("invalid boot record signature");
@@ -113,44 +120,42 @@ bool fat32_mount(vfs_node_t *node) {
 
   struct fat32_fsinfo fsinfo;
 
-  if (!fat32_read_disk(node, fat_boot.extended.fsinfo_sector, sizeof(fsinfo), &fsinfo)) {
+  if (!fat32_read_disk(fat_boot.extended.fsinfo_sector, sizeof(fsinfo), &fsinfo)) {
     fat32_debg("failed to read the fsinfo structure");
     return false;
   }
 
-  fat32_debgf(
+  fat32_debg(
       "fsinfo signatures: 0x%x, 0x%x, 0x%x", fsinfo.head_signature, fsinfo.body_signature, fsinfo.tail_signature);
-  fat32_debgf("fsinfo free cluster count: %d", fsinfo.free_cluster_count);
+  fat32_debg("fsinfo free cluster count: %d", fsinfo.free_cluster_count);
 
   if (!fat32_verify_fsinfo(fsinfo)) {
     fat32_debg("failed to verify fsinfo signature");
     return false;
   }
 
-  struct fat32_data *data = NULL;
-
-  if (NULL == (data = node->data = vmm_alloc(sizeof(struct fat32_data)))) {
+  if (NULL == (vfs->fs_data = vmm_alloc(sizeof(struct fat32_data)))) {
     fat32_debg("failed to allocate node data");
     return false;
   }
 
-  bzero(node->data, sizeof(struct fat32_data));
+  bzero(fat32_data(), sizeof(struct fat32_data));
 
-  data->cluster_sector_count = fat_boot.cluster_sector_count;
-  data->fat_sector           = fat_boot.reserved_sector_count;
-  data->first_data_sector = fat_boot.reserved_sector_count + (fat_boot.fat_count * fat_boot.extended.fat_sector_count);
-  data->root_cluster_number = fat_boot.extended.root_cluster;
-  data->root_cluster_sector = fat32_cluster_to_sector(data, data->root_cluster_number);
+  fat32_data()->cluster_sector_count = fat_boot.cluster_sector_count;
+  fat32_data()->fat_sector           = fat_boot.reserved_sector_count;
+  fat32_data()->first_data_sector =
+      fat_boot.reserved_sector_count + (fat_boot.fat_count * fat_boot.extended.fat_sector_count);
+  fat32_data()->root_cluster_number = fat_boot.extended.root_cluster;
+  fat32_data()->root_cluster_sector = fat32_cluster_to_sector(fat32_data(), fat32_data()->root_cluster_number);
 
-  fat32_debgf("table start sector: %l", data->fat_sector);
-  fat32_debgf("root directory start sector: %l", data->root_cluster_sector);
+  fat32_debg("table start sector: %l", fat32_data()->fat_sector);
+  fat32_debg("root directory start sector: %l", fat32_data()->root_cluster_sector);
 
-  node->ops = &fat32_ops;
-
+  vfs->fs = &fat32_fs;
   return true;
 fail:
-  vmm_free(node->data);
-  node->data = NULL;
+  vmm_free(fat32_data());
+  vfs->fs_data = NULL;
   return false;
 }
 
@@ -160,7 +165,8 @@ fail:
  * returns zero on success
 
 */
-bool fat32_umount(vfs_node_t *node) {
-  vmm_free(node->data);
+bool fat32_unload(vfs_t *vfs) {
+  vmm_free(vfs->fs_data);
+  vfs->fs_data = NULL;
   return true;
 }

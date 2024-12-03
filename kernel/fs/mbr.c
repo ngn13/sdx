@@ -4,8 +4,8 @@
 #include "util/bit.h"
 #include "util/printk.h"
 
-#define mbr_debg(f)        pdebgf("MBR: (0x%x) " f, disk)
-#define mbr_debgf(f, a...) pdebgf("MBR: (0x%x) " f, disk, a)
+#define mbr_debg(f, ...) pdebg("MBR: (0x%x) " f, disk, ##__VA_ARGS__)
+#define mbr_fail(f, ...) pfail("MBR: (0x%x) " f, disk, ##__VA_ARGS__)
 
 #define MBR_SIGNATURE 0xAA55
 #define MBR_SIZE      512
@@ -43,7 +43,7 @@ bool mbr_load(disk_t *disk) {
     return false;
   }
 
-  mbr_debgf("unique disk ID: %d", mbr.id);
+  mbr_debg("unique disk ID: %d", mbr.id);
 
   for (uint8_t i = 0; i < sizeof(mbr.parts) / sizeof(mbr.parts[0]); i++) {
     part = &mbr.parts[i];
@@ -53,17 +53,17 @@ bool mbr_load(disk_t *disk) {
       continue;
 
     // print the partion info
-    mbr_debgf("loading partition %d", i);
-    mbr_debgf("|- attributes: %d", part->attr);
-    mbr_debgf("|- type: %d", part->type);
-    mbr_debgf("|- start CHS: %d", part->start_chs);
-    mbr_debgf("|- end CHS: %d", part->end_chs);
-    mbr_debgf("|- start LBA: %d", part->start_lba);
-    mbr_debgf("`- sector count: %d", part->sector_count);
+    mbr_debg("loading partition %d", i);
+    mbr_debg("|- attributes: %d", part->attr);
+    mbr_debg("|- type: %d", part->type);
+    mbr_debg("|- start CHS: %d", part->start_chs);
+    mbr_debg("|- end CHS: %d", part->end_chs);
+    mbr_debg("|- start LBA: %d", part->start_lba);
+    mbr_debg("`- sector count: %d", part->sector_count);
 
     // add the new disk partition
     if (NULL == (dp = disk_part_add(disk, part->start_lba, part->sector_count))) {
-      pfailf("failed to add a partition", disk);
+      pfail("failed to add a partition", disk);
       continue;
     }
 

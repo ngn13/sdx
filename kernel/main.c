@@ -114,10 +114,6 @@ void entry() {
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
 
-  // mount any potential root VFS
-  if (NULL == vfs_detect())
-    panic(__func__, "No available root partition");
-
   /*
 
    * this is where we are gonna start the init program and wait for userland calls

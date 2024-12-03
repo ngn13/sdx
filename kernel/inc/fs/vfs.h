@@ -1,45 +1,51 @@
 #pragma once
-#include "fs/disk.h"
-#include "limits.h"
+#include "disk.h"
 #include "types.h"
 
-typedef enum vfs_type {
-  VFS_TYPE_UNKNOWN = 0,
-  VFS_TYPE_DISK    = 1,
-  //  VFS_TYPE_DEVFS = 2,
-  //  VFS_TYPE_PROCFS = 3,
-} vfs_type_t;
+// defines a entry in the VFS filesystem (file, directory etc.)
+typedef struct vfs_entry {
+  // TODO: add other data to find the entry (lba, offset, size and stuff)
+  struct vfs_entry *next;
+} vfs_entry_t;
+
+// defines the type of the VFS
+typedef uint8_t vfs_type_t;
+#define VFS_TYPE_UNKNOWN (0b1)
+#define VFS_TYPE_DISK    (0b10)
+// #define VFS_TYPE_DEVFS (0b100)
+// #define VFS_TYPE_PROCFS (0b1000)
+
+// defines a filesystem for the VFS
+typedef struct {
+  const char *name;  // FS name
+  vfs_type_t  types; // compatible VFS types
+
+  // FS functions
+  bool (*load)(void *vfs);                                                // attempt to load FS from VFS
+  void (*unload)(void *vfs);                                              // unload FS from VFS
+  char *(*get)(void *vfs, vfs_entry_t *target);                           // get an entry's name
+  vfs_entry_t *(*list)(void *vfs, vfs_entry_t *target, vfs_entry_t *cur); // get entries in a target
+} vfs_fs_t;
 
 typedef struct vfs {
-  vfs_type_t   type;
-  disk_part_t *part; // for VFS_TYPE_DISK
   struct vfs  *next;
+  vfs_entry_t *head;
+
+  // VFS type specific data
+  vfs_type_t type;
+  void      *type_data;
+#define vfs_part(v) ((disk_part_t *)v->type_data)
+
+  // VFS filesystem specific data
+  vfs_fs_t *fs;
+  void     *fs_data;
 } vfs_t;
 
-int32_t vfs_mount(vfs_t *vfs, char *path); // mounts a VFS to a given path
-int32_t vfs_umount(char *path);            // umount a VFS mounted at the given path
+#define vfs_available(v)  (NULL != v->fs)
+#define vfs_unload(v, t)  vfs->fs->unload(v, t, c)
+#define vfs_get(v, t)     vfs->fs->get(v, t, c)
+#define vfs_list(v, t, c) vfs->fs->list(v, t, c)
 
-vfs_t  *vfs_register(vfs_type_t type, void *data); // creates a new VFS
-int32_t vfs_unregister(vfs_t *vfs);                // removes a VFS
-
-vfs_t *vfs_next(vfs_t *cur); // loops through the VFS list
-vfs_t *vfs_detect();         // looks for a possible root VFS system
-
-typedef struct vfs_node {
-  vfs_t           *vfs;
-  char             path[PATH_MAX + 1];
-  struct vfs_node *next;
-
-  // data stored by the file system
-  void *data;
-
-  // file system operations
-  struct vfs_ops {
-    bool (*umount)(struct vfs_node *node);
-  } *ops;
-} vfs_node_t;
-
-typedef struct vfs_ops vfs_ops_t;
-
-vfs_node_t *vfs_node_new(char *path);
-void        vfs_node_free(vfs_node_t *node);
+vfs_t  *vfs_register(vfs_type_t type, void *type_data); // creates a new VFS
+int32_t vfs_unregister(vfs_t *vfs);                     // removes a VFS
+vfs_t  *vfs_next(vfs_t *cur);                           // loops through the VFS list
