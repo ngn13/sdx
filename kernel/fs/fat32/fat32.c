@@ -10,23 +10,6 @@
 
 /*
 
- * FAT32 filesystem
- * see vfs/vfs.h
-
-*/
-
-vfs_fs_t fat32_fs = {
-    .name  = "FAT32",
-    .types = VFS_TYPE_DISK,
-
-    .load   = (void *)fat32_load,
-    .unload = (void *)fat32_unload,
-    //.get  = (void *)fat32_get,
-    //.list = (void *)fat32_list,
-};
-
-/*
-
  * FAT32 data structures
  * all of these are defined really well in https://wiki.osdev.org/FAT
  * and https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system
@@ -95,16 +78,16 @@ struct fat32_boot_record {
   (i.head_signature == FAT32_FSINFO_HEAD_SIG && i.body_signature == FAT32_FSINFO_BODY_SIG &&                           \
       i.tail_signature == FAT32_FSINFO_TAIL_SIG)
 
-/*
+// (try to) load a FAT filesystem from the provided disk partition
+bool fat32_new(fs_t *fs) {
+  if (NULL == fs->part) {
+    pdebg("FAT32: cannot load the filesystem, need valid disk partition");
+    return false;
+  }
 
- * (try to) mount the FAT32 file system to the given VFS node
- * returns zero on success
-
-*/
-bool fat32_load(vfs_t *vfs) {
   struct fat32_boot_record fat_boot;
 
-  if (!fat32_read_disk(0, sizeof(fat_boot), &fat_boot)) {
+  if (!fat32_read_lba(0, sizeof(fat_boot), &fat_boot)) {
     fat32_debg("failed to read the boot record");
     return false;
   }
@@ -119,7 +102,7 @@ bool fat32_load(vfs_t *vfs) {
 
   struct fat32_fsinfo fsinfo;
 
-  if (!fat32_read_disk(fat_boot.extended.fsinfo_sector, sizeof(fsinfo), &fsinfo)) {
+  if (!fat32_read_lba(fat_boot.extended.fsinfo_sector, sizeof(fsinfo), &fsinfo)) {
     fat32_debg("failed to read the fsinfo structure");
     return false;
   }
@@ -133,39 +116,37 @@ bool fat32_load(vfs_t *vfs) {
     return false;
   }
 
-  if (NULL == (vfs->fs_data = vmm_alloc(sizeof(struct fat32_data)))) {
+  struct fat32_data *fs_data = NULL;
+
+  if (NULL == (fs_data = vmm_alloc(sizeof(struct fat32_data)))) {
     fat32_debg("failed to allocate node data");
     return false;
   }
 
-  bzero(fat32_data(), sizeof(struct fat32_data));
+  bzero(fs_data, sizeof(struct fat32_data));
 
-  fat32_data()->cluster_sector_count = fat_boot.cluster_sector_count;
-  fat32_data()->fat_sector           = fat_boot.reserved_sector_count;
-  fat32_data()->first_data_sector =
+  fs_data->cluster_sector_count = fat_boot.cluster_sector_count;
+  fs_data->fat_sector           = fat_boot.reserved_sector_count;
+  fs_data->first_data_sector =
       fat_boot.reserved_sector_count + (fat_boot.fat_count * fat_boot.extended.fat_sector_count);
-  fat32_data()->root_cluster_number = fat_boot.extended.root_cluster;
-  fat32_data()->root_cluster_sector = fat32_cluster_to_sector(fat32_data(), fat32_data()->root_cluster_number);
+  fs_data->root_cluster_number = fat_boot.extended.root_cluster;
+  fs_data->root_cluster_sector = fat32_cluster_to_sector(fs_data, fs_data->root_cluster_number);
 
-  fat32_debg("table start sector: %l", fat32_data()->fat_sector);
-  fat32_debg("root directory start sector: %l", fat32_data()->root_cluster_sector);
+  fat32_debg("table start sector: %u", fs_data->fat_sector);
+  fat32_debg("root directory start sector: %u", fs_data->root_cluster_sector);
 
-  vfs->fs = &fat32_fs;
+  fs->data = fs_data;
+  fs->list = fat32_list;
+  fs->free = fat32_free;
+
   return true;
-fail:
-  vmm_free(fat32_data());
-  vfs->fs_data = NULL;
-  return false;
 }
 
-/*
+fs_entry_t *fat32_list(fs_t *fs, fs_entry_t *cur) {
+  // TODO: implement
+  return NULL;
+}
 
- * unmount a FAT32 filesystem from a given VFS node
- * returns zero on success
-
-*/
-bool fat32_unload(vfs_t *vfs) {
-  vmm_free(vfs->fs_data);
-  vfs->fs_data = NULL;
-  return true;
+void fat32_free(fs_t *fs) {
+  vmm_free(fs->data);
 }

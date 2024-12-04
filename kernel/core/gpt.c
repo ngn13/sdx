@@ -76,7 +76,7 @@ bool gpt_load(disk_t *disk) {
 
   bzero(&header, sizeof(header));
 
-  if (!disk_do(disk, DISK_OP_READ, GPT_LBA, sizeof(header), (void *)&header)) {
+  if (!disk_read_lba(disk, GPT_LBA, sizeof(header), (void *)&header)) {
     gpt_debg("failed to load the partition table header");
     return false;
   }
@@ -102,7 +102,7 @@ bool gpt_load(disk_t *disk) {
   gpt_part_entry_t entries[entry_per_sector];
 
   while (i < header.entry_count) {
-    if (!disk_do(disk, DISK_OP_READ, header.lba_array + (i / entry_per_sector), disk->sector_size, (void *)entries)) {
+    if (!disk_do(disk, DISK_OP_READ, header.lba_array + (i / entry_per_sector), 1, (void *)entries)) {
       gpt_debg("failed to read the partition entries %l-%l", i, i + entry_per_sector);
       goto next_entries;
     }

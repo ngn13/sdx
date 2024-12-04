@@ -111,7 +111,7 @@ char *__ahci_port_protocol(ahci_port_data_t *data) {
   return "unknown";
 }
 
-bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t size, uint8_t *buffer) {
+bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buffer) {
   if (NULL == data)
     return false;
 
@@ -127,13 +127,13 @@ bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t s
     if (pf->protocol != data->protocol)
       continue;
 
-    if (pf->needs_buffer && (NULL == buffer || size <= 0)) {
+    if (pf->needs_buffer && (NULL == buffer || sector_count <= 0)) {
       pfail("AHCI: (0x%x) %s operation failed, required buffer arguments not provided", data->port, pf->name);
       return false;
     }
 
     pdebg("AHCI: (0x%x) performing %s operation", data->port, pf->name);
-    return pf->func(data, lba, size, buffer);
+    return pf->func(data, lba, sector_count, buffer);
   }
 
   pfail("AHCI: (0x%x) unknown operation %d (Protocol: %s, %d)",

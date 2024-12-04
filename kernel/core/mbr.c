@@ -33,7 +33,7 @@ bool mbr_load(disk_t *disk) {
   struct mbr_part *part = NULL;
   struct mbr_data  mbr;
 
-  if (!disk_do(disk, DISK_OP_READ, MBR_LBA, sizeof(mbr), (void *)&mbr)) {
+  if (!disk_read_lba(disk, MBR_LBA, sizeof(mbr), (void *)&mbr)) {
     mbr_debg("failed to read the MBR data");
     return false;
   }

@@ -178,22 +178,8 @@ disk_t *disk_next(disk_t *disk) {
   return disk->next;
 }
 
-/*
-
- * the disk controllers only allow us to read/write starting from a certain LBA
- * and only allow us to read/write sectors
-
- * disk_do makes this easier by allowing us to read/write to any offset
- * and allow us to read/write any amounts of data
-
- * to do so disk_do uses few different functions for abstraction:
- * __disk_do_raw: directly calls controller's functions
- * __disk_do_size: allows us to read/write any amount of data instead of sectors
- * disk_do: allows us to read/write any amount of data from/to any offset
-
-*/
-bool __disk_do_raw(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
-  typedef bool port_do_t(void *data, disk_op_t op, uint64_t offset, uint64_t sector_count, uint8_t *buf);
+bool disk_do(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
+  typedef bool port_do_t(void *, disk_op_t, uint64_t, uint64_t, uint8_t *);
 
   port_do_t *port_do = NULL;
 
@@ -211,36 +197,66 @@ bool __disk_do_raw(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t sector_cou
   return port_do(disk->data, op, lba, sector_count, buf);
 }
 
-bool __disk_do_size(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t size, uint8_t *buf) {
-  uint64_t rem = 0, buf_offset = 0, sector_count = div_floor(size, disk->sector_size);
+bool disk_read_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf) {
+  uint64_t rem_size = 0;
 
-  if ((rem = size % disk->sector_size) == 0)
-    return __disk_do_raw(disk, op, lba, sector_count, buf);
+  if ((rem_size = size % disk->sector_size) == 0)
+    return disk_do(disk, DISK_OP_READ, lba, div_floor(size, disk->sector_size), buf);
+
+  uint64_t buf_offset = 0;
 
   if (size < disk->sector_size)
     goto do_copy;
 
-  while (size != rem) {
-    if (!__disk_do_raw(disk, op, lba, 1, buf + buf_offset))
+  while (size != rem_size) {
+    if (!disk_do(disk, DISK_OP_READ, lba, 1, buf + buf_offset))
       return false;
     size -= disk->sector_size;
     buf_offset += disk->sector_size;
   }
 
 do_copy:
-  if (rem == 0)
+  if (rem_size == 0)
     return true;
 
-  uint8_t cb[disk->sector_size];
+  uint8_t rem_buf[disk->sector_size];
   bool    ret = false;
 
-  ret = __disk_do_raw(disk, op, lba, 1, cb);
+  ret = disk_do(disk, DISK_OP_READ, lba, 1, rem_buf);
 
-  memcpy(buf + buf_offset, cb, rem);
+  memcpy(buf + buf_offset, rem_buf, rem_size);
   return ret;
 }
 
-bool disk_do(disk_t *disk, disk_op_t op, uint64_t offset, uint64_t size, uint8_t *buf) {
-  // TODO: use any offset instead of LBA
-  return __disk_do_size(disk, op, offset, size, buf);
+bool disk_read(disk_t *disk, uint64_t offset, uint64_t size, uint8_t *buf) {
+  uint64_t rem_offset = 0, lba = div_floor(offset, disk->sector_size);
+
+  if ((rem_offset = offset % disk->sector_size) == 0)
+    return disk_read_lba(disk, lba, size, buf);
+
+  uint8_t full_buf[rem_offset + size];
+  bool    ret = false;
+
+  ret = disk_read_lba(disk, lba, rem_offset + size, full_buf);
+
+  memcpy(buf, full_buf + rem_offset, size);
+  return ret;
+}
+
+bool disk_write_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf) {
+  if (disk->sector_size % size != 0) {
+    disk_fail("invalid size for the write operation: %u", size);
+    return false;
+  }
+
+  return disk_do(disk, DISK_OP_WRITE, lba, div_floor(size, disk->sector_size), buf);
+}
+
+bool disk_write(disk_t *disk, uint64_t offset, uint64_t size, uint8_t *buf) {
+  if (disk->sector_size % offset != 0) {
+    disk_fail("invalid offset for the write operation: %u", offset);
+    return false;
+  }
+
+  return disk_write_lba(disk, div_floor(offset, disk->sector_size), size, buf);
 }
