@@ -1,5 +1,10 @@
 #pragma once
 #include "types.h"
+#include "util/printk.h"
+
+#define disk_debg(f, ...) pdebg("Disk: (0x%x) " f, disk, ##__VA_ARGS__)
+#define disk_info(f, ...) pinfo("Disk: (0x%x) " f, disk, ##__VA_ARGS__)
+#define disk_fail(f, ...) pfail("Disk: (0x%x) " f, disk, ##__VA_ARGS__)
 
 typedef enum disk_type {
   DISK_TYPE_UNKNOWN = 0, // unknown type
@@ -48,18 +53,18 @@ typedef struct disk {
   struct disk *next; // next disk in the list
 } disk_t;
 
-disk_part_t *disk_part_next(disk_t *disk, disk_part_t *part);
-disk_part_t *disk_part_add(disk_t *disk, uint64_t start, uint64_t size);
-void         disk_part_clear(disk_t *disk);
+disk_part_t *disk_part_add(disk_t *disk, uint64_t start, uint64_t size); // add a new partition
+void         disk_part_clear(disk_t *disk);                              // remove no longer available partitions
+bool         disk_part_scan(disk_t *disk);                               // scan the disk for available partitions
 
-disk_t *disk_add(disk_controller_t controller, void *data);
-void    disk_remove(disk_t *disk);
-disk_t *disk_next(disk_t *disk);
-bool    disk_do(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf);
-bool    disk_scan(disk_t *disk);
+disk_t *disk_add(disk_controller_t controller, void *data); // create a disk and it to the list
+void    disk_remove(disk_t *disk);                          // remove a disk from the list
+bool    disk_do(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf); // do a disk operation
+disk_part_t *disk_next(disk_part_t *part); // get the next partition after the provided "pre" partition, if "pre" is
+                                           // NULL then returns the first partition
 
-bool disk_read_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf);
-bool disk_read(disk_t *disk, uint64_t offset, uint64_t size, uint8_t *buf);
+bool disk_read_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf); // read from disk (starting from a LBA)
+bool disk_read(disk_t *disk, uint64_t offset, uint64_t size, uint8_t *buf);  // read from disk (starting from an offset)
 
-bool disk_write_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf);
-bool disk_write(disk_t *disk, uint64_t offset, uint64_t size, uint8_t *buf);
+bool disk_write_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf); // write to a disk (starting from a LBA)
+bool disk_write(disk_t *disk, uint64_t offset, uint64_t size, uint8_t *buf);  // write to disk (starting from an offset)

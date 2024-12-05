@@ -216,9 +216,9 @@ bool ahci_init(pci_device_t *dev) {
         port_data->port->sig,
         __ahci_port_protocol(port_data));
 
-    // add the disk
+    // add the disk and load the partitions
     port_data->disk = disk_add(DISK_CONTROLLER_AHCI, port_data);
-    disk_scan(port_data->disk);
+    disk_part_scan(port_data->disk);
   }
 
   // add interrupt handler

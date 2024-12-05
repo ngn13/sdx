@@ -5,7 +5,7 @@
 .section .text
 .code64
 
-.global panic
+.global _panic
 
 /*
 
@@ -16,7 +16,7 @@
 
 */
 
-panic:
+_panic:
   push rbp // lets make sure to not break the stack trace
 
   push rdi // save first arg (function name)

@@ -18,6 +18,7 @@ struct fat32_data {
 #define fat32_fail(f, ...) pfail("FAT32: (0x%x) " f, fs->part, ##__VA_ARGS__)
 #define fat32_debg(f, ...) pdebg("FAT32: (0x%x) " f, fs->part, ##__VA_ARGS__)
 
-bool        fat32_new(fs_t *fs);
-fs_entry_t *fat32_list(fs_t *fs, fs_entry_t *cur);
-void        fat32_free(fs_t *fs);
+bool    fat32_new(fs_t *fs);
+int32_t fat32_list(struct fs *fs, fs_entry_t *dir, fs_entry_t *last, fs_entry_t *cur);
+int32_t fat32_get(fs_t *fs, fs_entry_t *ent, char *name, uint64_t size);
+void    fat32_free(fs_t *fs);

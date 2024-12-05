@@ -107,23 +107,23 @@ void im_handle(uint8_t vector, struct im_saved_state *state) {
   */
   switch (vector) {
   case IM_INT_DIV_ERR:
-    panic(__func__, "Received an interrupt for division by zero");
+    panic("Received an interrupt for division by zero");
     break;
 
   case IM_INT_INV_OPCODE:
-    panic(__func__, "Received an interrupt for bad opcode");
+    panic("Received an interrupt for bad opcode");
     break;
 
   case IM_INT_DOUBLE_FAULT:
-    panic(__func__, "Received an interrupt for double fault");
+    panic("Received an interrupt for double fault");
     break;
 
   case IM_INT_GENERAL_PROTECTION_FAULT:
-    panic(__func__, "Received an interrupt for GPF");
+    panic("Received an interrupt for GPF");
     break;
 
   case IM_INT_PAGE_FAULT:
-    panic(__func__, "Received an interrupt for PF");
+    panic("Received an interrupt for PF");
     break;
   }
 

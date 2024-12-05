@@ -31,8 +31,9 @@ extern void __im_handle_1();
 
 typedef void im_handler_func(uint8_t v);
 
-void im_init();                    // initialize IDT with the default handler
-#define im_enable() __asm__("sti") // enable the interrupt (sti)
+void im_init();                     // initialize IDT with the default handler
+#define im_enable()  __asm__("sti") // enable the interrupts (set interrupt)
+#define im_disable() __asm__("cli") // disable the interrupts (clear interrupt)
 
 void im_set_entry(uint8_t vector, uint8_t dpl); // modfiy a IDT entry
 

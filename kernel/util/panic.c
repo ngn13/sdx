@@ -1,6 +1,7 @@
 #include "util/panic.h"
 #include "util/printk.h"
 
+#include "core/im.h"
 #include "video.h"
 
 struct panic_state {
@@ -25,6 +26,10 @@ struct panic_state {
 } __attribute__((packed));
 
 void __panic_halt() {
+  // disable CPU interrupts
+  im_disable();
+
+  // halt forever
   while (true)
     __asm__("hlt");
 }

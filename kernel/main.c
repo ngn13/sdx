@@ -38,6 +38,7 @@
 
 #include "util/panic.h"
 #include "util/printk.h"
+#include "util/string.h"
 
 void entry() {
   /*
@@ -50,7 +51,7 @@ void entry() {
 
   */
   if (!video_init(VIDEO_MODE_FRAMEBUFFER))
-    panic(__func__, "Failed to initialize the framebuffer video mode");
+    panic("Failed to initialize the framebuffer video mode");
 
   // initialize serial communication ports (UART)
   serial_init();
@@ -78,7 +79,7 @@ void entry() {
 
   */
   if (!pm_init(avail_start, avail_end))
-    panic(__func__, "Failed to initialize the paging manager");
+    panic("Failed to initialize the paging manager");
 
   /*
 
@@ -100,19 +101,46 @@ void entry() {
 
   */
   if (!pic_init())
-    panic(__func__, "Failed to initialize the PIC");
+    panic("Failed to initialize the PIC");
 
   if (!pic_enable())
-    panic(__func__, "Failed to enable the PIC");
+    panic("Failed to enable the PIC");
 
   if (!pic_mask(PIC_IRQ_TIMER))
-    panic(__func__, "Failed to mask timer IRQ");
+    panic("Failed to mask timer IRQ");
 
   // enable the interrupts
   im_enable();
 
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
+
+  // look for an available rootfs and mount it
+  pinfo("Looking for an available root filesystem partition");
+
+  disk_part_t *part   = NULL;
+  fs_t        *rootfs = NULL;
+
+  while ((part = disk_next(part)) != NULL) {
+    // attempt to create a filesystem from the partition
+    if ((rootfs = fs_new(FS_TYPE_DETECT, part)) == NULL)
+      continue;
+
+    if (fs_is_rootfs(rootfs) == 0)
+      break;
+
+    fs_free(rootfs);
+    rootfs = NULL;
+  }
+
+  if (NULL == rootfs)
+    panic("No available root filesystem");
+
+  pdebg("Loaded a %s root filesystem from 0x%x", fs_name(rootfs), part);
+  pdebg("Mounting the root filesystem");
+
+  if (vfs_mount(NULL, rootfs) != 0)
+    panic("Failed to mount the root filesystem");
 
   /*
 

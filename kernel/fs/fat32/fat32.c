@@ -137,14 +137,20 @@ bool fat32_new(fs_t *fs) {
 
   fs->data = fs_data;
   fs->list = fat32_list;
+  fs->get  = fat32_get;
   fs->free = fat32_free;
 
   return true;
 }
 
-fs_entry_t *fat32_list(fs_t *fs, fs_entry_t *cur) {
+int32_t fat32_list(fs_t *fs, fs_entry_t *dir, fs_entry_t *pre, fs_entry_t *cur) {
   // TODO: implement
-  return NULL;
+  return -ENOSYS;
+}
+
+int32_t fat32_get(fs_t *fs, fs_entry_t *ent, char *name, uint64_t size) {
+  // TODO: implement
+  return -ENOSYS;
 }
 
 void fat32_free(fs_t *fs) {

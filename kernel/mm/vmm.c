@@ -133,7 +133,7 @@ void __vm_free_rewind() {
   struct vmm_header *h = vmm_header(vmm_st.cur);
 
   if (!vmm_header_verify(h))
-    return panic(__func__, "Allocated VMM region headers are corrupted");
+    return panic("Allocated VMM region headers are corrupted");
 
   if (!h->is_free)
     return;
