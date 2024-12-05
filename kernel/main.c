@@ -145,7 +145,7 @@ void entry() {
   /*
 
    * this is where we are gonna start the init program and wait for userland calls
-   * for now tho, we'll just print a hello world message and return to halt the system (see boot/loader.S)
+   * for now tho, lets just hang the kernel
 
   */
   while (true)
