@@ -144,13 +144,20 @@ bool fat32_new(fs_t *fs) {
 }
 
 int32_t fat32_list(fs_t *fs, fs_entry_t *dir, fs_entry_t *pre, fs_entry_t *cur) {
-  // TODO: implement
-  return -ENOSYS;
+  uint64_t cluster_sector = 0;
+
+  if (NULL == dir)
+    cluster_sector = fat32_data()->root_cluster_sector;
+  else
+    cluster_sector = dir->addr;
+
+  return fat32_entry_get(fs, cluster_sector, pre == NULL ? 0 : ++pre->index, cur);
 }
 
 int32_t fat32_get(fs_t *fs, fs_entry_t *ent, char *name, uint64_t size) {
-  // TODO: implement
-  return -ENOSYS;
+  if (NULL == ent || NULL == name || size == 0)
+    return -EINVAL;
+  return fat32_entry_name(fs, ent, name, size);
 }
 
 void fat32_free(fs_t *fs) {

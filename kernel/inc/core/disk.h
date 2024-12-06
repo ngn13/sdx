@@ -62,9 +62,10 @@ void    disk_remove(disk_t *disk);                          // remove a disk fro
 bool    disk_do(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf); // do a disk operation
 disk_part_t *disk_next(disk_part_t *part); // get the next partition after the provided "pre" partition, if "pre" is
                                            // NULL then returns the first partition
-
+#define disk_read_raw(disk, lba, sector_count, buf) disk_do(disk, DISK_OP_READ, lba, sector_count, buf)
 bool disk_read_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf); // read from disk (starting from a LBA)
 bool disk_read(disk_t *disk, uint64_t offset, uint64_t size, uint8_t *buf);  // read from disk (starting from an offset)
 
+#define disk_write_raw(disk, lba, sector_count, buf) disk_do(disk, DISK_OP_WRITE, lba, sector_count, buf)
 bool disk_write_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf); // write to a disk (starting from a LBA)
 bool disk_write(disk_t *disk, uint64_t offset, uint64_t size, uint8_t *buf);  // write to disk (starting from an offset)

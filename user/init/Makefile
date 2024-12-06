@@ -23,6 +23,6 @@ clean:
 	rm -r $(DISTDIR)
 
 install:
-	install -Dm755 $(DISTDIR)/init $(PREFIX)/bin/init
+	install -Dm755 $(DISTDIR)/init $(PREFIX)/init
 
 .PHONY: clean install

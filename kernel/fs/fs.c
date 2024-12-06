@@ -7,6 +7,8 @@
 #include "config.h"
 #include "errno.h"
 
+#define fs_debg(f, ...) pdebg("FS: (0x%x) " f, fs, ##__VA_ARGS__)
+
 const char *fs_type_name(fs_type_t type) {
   switch (type) {
   case FS_TYPE_FAT32:
@@ -51,7 +53,7 @@ try_type:
   }
 
   if (!should_detect) {
-    pfail("failed to create a %s filesystem", fs_type_name(type));
+    pfail("FS: failed to create a %s filesystem", fs_type_name(type));
     vmm_free(new_fs);
     return NULL;
   }
@@ -66,20 +68,27 @@ int32_t fs_is_rootfs(fs_t *fs) {
 
   char       fname[strlen(FS_ROOT_INIT) + 1];
   int32_t    fname_size = 0, err = 0;
-  fs_entry_t ent;
+  fs_entry_t entry;
 
-  if ((err = fs_list(fs, NULL, NULL, &ent)) != 0)
+  if ((err = fs_list(fs, NULL, NULL, &entry)) != 0)
     return err;
 
   do {
-    if ((fname_size = fs_get(fs, &ent, fname, sizeof(fname) - 1)) < 0)
+    if (entry.type != FS_ETYPE_FILE)
       continue;
+
+    if ((fname_size = fs_get(fs, &entry, fname, sizeof(fname) - 1)) < 0) {
+      fs_debg("failed to get the name for entry %d: %s", entry.index, strerror(fname_size));
+      continue;
+    }
 
     fname[fname_size] = 0;
 
-    if (strcmp(fname, "init") == 0)
+    if (strcmp(fname, FS_ROOT_INIT) == 0) {
+      fs_debg("filesystem seems to be a valid root filesystem");
       return 0;
-  } while (fs_list(fs, NULL, &ent, &ent) == 0);
+    }
+  } while (fs_list(fs, NULL, &entry, &entry) == 0);
 
   return -ENOENT;
 }
