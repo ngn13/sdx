@@ -16,6 +16,9 @@ SFLAGS  = -g -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-
 LFLAGS  = --nmagic
 INCLUDE = -I inc -I ../config
 
+# remvoed warnings
+CFLAGS += -Wno-packed-bitfield-compat # disable useless ABI change warning
+
 all: $(DISTDIR) $(OUTDIRS) $(DISTDIR)/kernel
 
 $(DISTDIR):
@@ -27,7 +30,7 @@ $(OUTDIRS):
 $(DISTDIR)/kernel: $(OBJS)
 	$(LD) $(LFLAGS) -o $@ -T ../config/link.ld $^
 
-$(DISTDIR)/%.c.o: %.c $(HSRCS) 
+$(DISTDIR)/%.c.o: %.c $(HSRCS)
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
 $(DISTDIR)/%.S.o: %.S $(HSRCS)

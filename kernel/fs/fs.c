@@ -32,7 +32,7 @@ try_type:
   // FAT32 filesystem
   case FS_TYPE_FAT32:
 #ifdef CONFIG_FS_FAT32
-#include "fs/fat32/fat32.h"
+#include "fs/fat32.h"
     ret = fat32_new(new_fs);
 #else
     ret = false;
@@ -66,31 +66,31 @@ int32_t fs_is_rootfs(fs_t *fs) {
   if (NULL == fs)
     return -EINVAL;
 
-  char       fname[strlen(FS_ROOT_INIT) + 1];
-  int32_t    fname_size = 0, err = 0;
-  fs_entry_t entry;
+  /*
 
-  if ((err = fs_list(fs, NULL, NULL, &entry)) != 0)
+   * you might be wondering: what does it take to be a (possible) rootfs?
+
+   * well, just having the "init" file in the root directory
+   * "init" file's name and stuff defined in fs/fs.h
+   * and this code just checks for that file
+
+  */
+  int32_t    err = 0;
+  fs_inode_t inode;
+
+  // attempt to get the inode of "init"
+  if ((err = fs_namei(fs, NULL, FS_INIT_NAME, &inode)) != 0)
     return err;
 
-  do {
-    if (entry.type != FS_ETYPE_FILE)
-      continue;
+  // is "init" a file?
+  if (inode.type != FS_ENTRY_TYPE_FILE)
+    return -EINVAL;
 
-    if ((fname_size = fs_get(fs, &entry, fname, sizeof(fname) - 1)) < 0) {
-      fs_debg("failed to get the name for entry %d: %s", entry.index, strerror(fname_size));
-      continue;
-    }
+  // is "init" empty?
+  if (inode.size == 0)
+    return -EINVAL;
 
-    fname[fname_size] = 0;
-
-    if (strcmp(fname, FS_ROOT_INIT) == 0) {
-      fs_debg("filesystem seems to be a valid root filesystem");
-      return 0;
-    }
-  } while (fs_list(fs, NULL, &entry, &entry) == 0);
-
-  return -ENOENT;
+  return 0; // no? then we are good
 }
 
 void fs_free(fs_t *fs) {

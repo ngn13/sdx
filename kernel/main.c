@@ -34,11 +34,16 @@
 #include "mm/vmm.h"
 
 #include "fs/vfs.h"
+#include "fs/fmt.h"
+
 #include "video.h"
 
 #include "util/panic.h"
 #include "util/printk.h"
 #include "util/string.h"
+
+#include "errno.h"
+#include "types.h"
 
 void entry() {
   /*
@@ -139,8 +144,21 @@ void entry() {
   pdebg("Loaded a %s root filesystem from 0x%x", fs_name(rootfs), part);
   pdebg("Mounting the root filesystem");
 
-  if (vfs_mount(NULL, rootfs) != 0)
+  if (vfs_mount("/", rootfs) != 0)
     panic("Failed to mount the root filesystem");
+
+  // temporary
+  vfs_node_t *init_node = vfs_get("/init");
+  void       *init_addr = NULL;
+  int32_t     err       = 0;
+
+  if (NULL == init_node)
+    panic("Failed to get the init node");
+
+  if ((err = fmt_load(init_node, &init_addr)) != 0) {
+    pfail("Failed to load the init: %s", strerror(err));
+    panic("Failed to load init to the memory");
+  }
 
   /*
 

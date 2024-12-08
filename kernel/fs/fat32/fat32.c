@@ -1,4 +1,4 @@
-#include "fs/fat32/fat32.h"
+#include "fs/fat32.h"
 #include "fs/vfs.h"
 
 #include "util/bit.h"
@@ -11,6 +11,7 @@
 /*
 
  * FAT32 data structures
+
  * all of these are defined really well in https://wiki.osdev.org/FAT
  * and https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system
  * so check those out if you want to follow through
@@ -87,7 +88,7 @@ bool fat32_new(fs_t *fs) {
 
   struct fat32_boot_record fat_boot;
 
-  if (!fat32_read_lba(0, sizeof(fat_boot), &fat_boot)) {
+  if (!__fat32_read_lba(0, sizeof(fat_boot), &fat_boot)) {
     fat32_debg("failed to read the boot record");
     return false;
   }
@@ -102,7 +103,7 @@ bool fat32_new(fs_t *fs) {
 
   struct fat32_fsinfo fsinfo;
 
-  if (!fat32_read_lba(fat_boot.extended.fsinfo_sector, sizeof(fsinfo), &fsinfo)) {
+  if (!__fat32_read_lba(fat_boot.extended.fsinfo_sector, sizeof(fsinfo), &fsinfo)) {
     fat32_debg("failed to read the fsinfo structure");
     return false;
   }
@@ -116,48 +117,79 @@ bool fat32_new(fs_t *fs) {
     return false;
   }
 
-  struct fat32_data *fs_data = NULL;
-
-  if (NULL == (fs_data = vmm_alloc(sizeof(struct fat32_data)))) {
+  if (NULL == (fs->data = vmm_alloc(sizeof(struct fat32_data)))) {
     fat32_debg("failed to allocate node data");
     return false;
   }
 
-  bzero(fs_data, sizeof(struct fat32_data));
+  bzero(fat32_data(), sizeof(struct fat32_data));
 
-  fs_data->cluster_sector_count = fat_boot.cluster_sector_count;
-  fs_data->fat_sector           = fat_boot.reserved_sector_count;
-  fs_data->first_data_sector =
+  fat32_data()->cluster_sector_count = fat_boot.cluster_sector_count;
+  fat32_data()->fat_sector           = fat_boot.reserved_sector_count;
+  fat32_data()->first_data_sector =
       fat_boot.reserved_sector_count + (fat_boot.fat_count * fat_boot.extended.fat_sector_count);
-  fs_data->root_cluster_number = fat_boot.extended.root_cluster;
-  fs_data->root_cluster_sector = fat32_cluster_to_sector(fs_data, fs_data->root_cluster_number);
+  fat32_data()->root_cluster = fat_boot.extended.root_cluster;
 
-  fat32_debg("table start sector: %u", fs_data->fat_sector);
-  fat32_debg("root directory start sector: %u", fs_data->root_cluster_sector);
+  fat32_debg("table start sector: %u", fat32_data()->fat_sector);
+  fat32_debg("root directory start cluster: %u", fat32_data()->root_cluster);
 
-  fs->data = fs_data;
-  fs->list = fat32_list;
-  fs->get  = fat32_get;
-  fs->free = fat32_free;
+  fs->namei = fat32_namei;
+  fs->read  = fat32_read;
+  fs->free  = fat32_free;
 
   return true;
 }
 
-int32_t fat32_list(fs_t *fs, fs_entry_t *dir, fs_entry_t *pre, fs_entry_t *cur) {
-  uint64_t cluster_sector = 0;
+int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer) {
+  if (NULL == fs || NULL == buffer || size <= 0)
+    return -EINVAL;
 
-  if (NULL == dir)
-    cluster_sector = fat32_data()->root_cluster_sector;
-  else
-    cluster_sector = dir->addr;
+  switch (NULL == inode ? FS_ENTRY_TYPE_DIR : inode->type) {
+  case FS_ENTRY_TYPE_DIR:
+    return fat32_entry_get(fs, NULL == inode ? fat32_data()->root_cluster : inode->addr, offset, size, buffer);
 
-  return fat32_entry_get(fs, cluster_sector, pre == NULL ? 0 : ++pre->index, cur);
+  case FS_ENTRY_TYPE_FILE:
+    if (offset >= inode->size)
+      return 0;
+
+    uint64_t left_size = inode->size - offset;
+
+    if (size > left_size)
+      size = left_size;
+
+    if (!__fat32_read(fat32_data_cluster_to_bytes(inode->addr) + offset, size, buffer))
+      return -EIO; // I/O error
+
+    return size;
+  }
+
+  return -EINVAL;
 }
 
-int32_t fat32_get(fs_t *fs, fs_entry_t *ent, char *name, uint64_t size) {
-  if (NULL == ent || NULL == name || size == 0)
+int32_t fat32_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode) {
+  if (NULL == fs || NULL == name || NULL == inode)
     return -EINVAL;
-  return fat32_entry_name(fs, ent, name, size);
+
+  struct fat32_dir_entry entry;
+  uint64_t               dir_cluster = NULL == dir ? fat32_data()->root_cluster : dir->addr;
+  int32_t                err         = 0;
+
+  if ((err = fat32_entry_from(fs, dir_cluster, name, &entry)) != 0) {
+    fat32_debg("failed to obtain entry from name (%s): %s", name, strerror(err));
+    return err;
+  }
+
+  inode->type = entry.attr & FAT32_ATTR_DIRECTORY ? FS_ENTRY_TYPE_DIR : FS_ENTRY_TYPE_FILE;
+  inode->addr = fat32_entry_cluster(&entry);
+  inode->size = entry.size;
+
+  inode->ctime = fat32_entry_time_to_timestamp(&entry.creation_date, &entry.creation_time);
+  inode->mtime = fat32_entry_time_to_timestamp(&entry.mod_date, &entry.mod_time);
+  inode->atime = fat32_entry_time_to_timestamp(&entry.access_date, NULL);
+
+  inode->serial = fs_inode_serial(fs, inode);
+
+  return 0;
 }
 
 void fat32_free(fs_t *fs) {

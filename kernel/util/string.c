@@ -36,7 +36,7 @@ char *strlwr(char *str) {
   return str;
 }
 
-uint64_t strlen(char *str) {
+uint64_t strlen(const char *str) {
   if (NULL == str)
     return 0;
 

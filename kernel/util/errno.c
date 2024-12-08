@@ -45,7 +45,7 @@ struct error_info error_table[] = {ENTRY(EPERM, "EPERM", "Not owner"),
     ENTRY(EMLINK, "EMLINK", "Too many links"),
     ENTRY(EPIPE, "EPIPE", "Broken pipe"),
     ENTRY(EDOM, "EDOM", "Math argument out of domain of func"),
-    ENTRY(ERANGE, "ERANGE", "Result too large"), // modified, old message: "Math result not representable"
+    ENTRY(ERANGE, "ERANGE", "Result too large"), // modified, original message: "Math result not representable"
     ENTRY(ENOMSG, "ENOMSG", "No message of desired type"),
     ENTRY(EIDRM, "EIDRM", "Identifier removed"),
     ENTRY(ECHRNG, "ECHRNG", "Channel number out of range"),
@@ -92,7 +92,7 @@ struct error_info error_table[] = {ENTRY(EPERM, "EPERM", "Not owner"),
     ENTRY(ELIBMAX, "ELIBMAX", "Attempting to link in too many shared libraries"),
     ENTRY(ELIBEXEC, "ELIBEXEC", "Cannot exec a shared library directly"),
     ENTRY(EILSEQ, "EILSEQ", "Illegal byte sequence"),
-    ENTRY(ENOSYS, "ENOSYS", "Operation not applicable"),
+    ENTRY(ENOSYS, "ENOSYS", "Function not implemented"), // modified, original message: "Operation not applicable"
     ENTRY(ELOOP, "ELOOP", "Too many symbolic links encountered"),
     ENTRY(ERESTART, "ERESTART", "Interrupted system call should be restarted"),
     ENTRY(ESTRPIPE, "ESTRPIPE", "Streams pipe error"),

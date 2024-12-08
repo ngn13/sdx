@@ -1,5 +1,6 @@
-#include "fs/fat32/fat32.h"
+#include "fs/fat32.h"
 
+#include "util/string.h"
 #include "util/bit.h"
 #include "util/mem.h"
 
@@ -21,87 +22,21 @@ struct fat32_lfn {
 #define fat32_lfn_order(l)   (l->order & 0b11111)
 #define fat32_lfn_is_last(l) (bit_get(l->order, 6))
 
-struct fat32_dir_entry {
-  uint8_t name[11];
-  uint8_t attr;
-#define FAT32_ATTR_READONLY  0x01
-#define FAT32_ATTR_HIDDEN    0x02
-#define FAT32_ATTR_SYSTEM    0x04
-#define FAT32_ATTR_VOLUME_ID 0x08
-#define FAT32_ATTR_DIRECTORY 0x10
-#define FAT32_ATTR_ARCHIVE   0x20
-#define FAT32_ATTR_LFN       0x0f
-  uint8_t reserved;
-  uint8_t creation_decisecond;
-  struct creation_time {
-    uint8_t second_half : 5;
-    uint8_t minute      : 6;
-    uint8_t hour        : 5;
-  } __attribute__((packed)) creation_time;
-  struct creation_date {
-    uint8_t day   : 5;
-    uint8_t month : 4;
-    uint8_t year  : 7;
-  } __attribute__((packed)) creation_date;
-  struct creation_date      access_date;
-  uint16_t                  high_cluster_number;
-  struct creation_time      mod_time;
-  struct creation_date      mod_date;
-  uint16_t                  low_cluster_number;
-#define fat32_dir_cluster(d) ((uint64_t)(d->high_cluster_number << 16 | d->low_cluster_number & UINT64_MAX))
-  uint32_t size;
-} __attribute__((packed));
+#define __fat32_read_cluster(cluster, buffer)                                                                          \
+  __fat32_read_raw(fat32_data_cluster_to_sector(cluster), fat32_data_sector_per_cluster(), buffer)
 
-#define fat32_time_to_timestamp(date, time)                                                                            \
-  timestamp_calc((date.year + 1980), date.month, date.day, time.hour, time.minute, (time.second_half * 2))
-#define fat32_date_to_timestamp(date) timestamp_calc((date.year + 1980), date.month, date.day, 0, 0, 0)
+uint64_t __fat32_cluster_next(fs_t *fs, uint64_t cluster) {
+  // https://wiki.osdev.org/FAT#FAT_32_and_exFAT
+  uint8_t  fat_table[fs_sector_size(fs)];
+  uint32_t offset = (cluster * 4) % fs_sector_size(fs);
 
-int32_t fat32_entry_get(fs_t *fs, uint64_t cluster_sector, uint64_t _index, fs_entry_t *entry) {
-  // https://wiki.osdev.org/FAT#Reading_Directories
-  char                    cluster_buffer[fat32_data()->cluster_sector_count * fs->part->disk->sector_size];
-  struct fat32_dir_entry *dirent = (void *)cluster_buffer;
-  uint64_t                index  = _index;
+  cluster = *(uint32_t *)&fat_table[offset];
+  cluster &= 0x0FFFFFFF; // remove high 4 bits
 
-  if (!fat32_read_raw(cluster_sector, fat32_data()->cluster_sector_count, cluster_buffer)) {
-    fat32_debg("failed to read the directory entries at sector: %u", cluster_sector);
-    return -EFAULT;
-  }
+  if (cluster >= 0x0FFFFFF8 || cluster == 0x0FFFFFF7)
+    return 0; // we reached the end or a "bad" cluster
 
-  for (;; dirent++) {
-    if (((uint8_t *)dirent)[0] == 0)
-      return -EFAULT; // we reached the end
-
-    if (((uint8_t *)dirent)[0] == 0xE5)
-      continue; // skip unused entries
-
-    // skip LFN entries
-    if (dirent->attr == FAT32_ATTR_LFN)
-      continue;
-
-    if (index == 0)
-      break;
-
-    // skip till we reach the entry at the specified index
-    index--;
-  }
-
-  bzero(entry, sizeof(fs_entry_t));
-
-  entry->parent = cluster_sector;
-  entry->index  = _index;
-
-  entry->type = dirent->attr & FAT32_ATTR_DIRECTORY ? FS_ETYPE_DIR : FS_ETYPE_FILE;
-  entry->size = dirent->size;
-
-  entry->addr = 0;
-  entry->addr |= dirent->low_cluster_number;
-  entry->addr |= (dirent->high_cluster_number << 16);
-
-  entry->creation = fat32_time_to_timestamp(dirent->creation_date, dirent->creation_time);
-  entry->mod      = fat32_time_to_timestamp(dirent->mod_date, dirent->mod_time);
-  entry->access   = fat32_date_to_timestamp(dirent->access_date);
-
-  return 0;
+  return cluster; // next cluster number
 }
 
 // assumes the buffer is at least FAT32_CHARS_PER_LFN long
@@ -111,13 +46,13 @@ uint8_t __fat32_lfn_read(struct fat32_lfn *lfn, char *buf) {
 
   uint8_t i = 0, e = 0, c = 0;
 
-  for (i = 0; i < sizeof(lfn->chars_first) && (c = lfn->chars_first[i] & 0x00ff) != 0 && c != 0xff; i++)
+  for (i = 0; i < sizeof(lfn->chars_first) / 2 && (c = lfn->chars_first[i] & 0x00ff) != 0 && c != 0xff; i++)
     buf[e++] = c;
 
-  for (i = 0; i < sizeof(lfn->chars_mid) && (c = lfn->chars_mid[i] & 0x00ff) != 0 && c != 0xff; i++)
+  for (i = 0; i < sizeof(lfn->chars_mid) / 2 && (c = lfn->chars_mid[i] & 0x00ff) != 0 && c != 0xff; i++)
     buf[e++] = c;
 
-  for (i = 0; i < sizeof(lfn->chars_last) && (c = lfn->chars_last[i] & 0x00ff) != 0 && c != 0xff; i++)
+  for (i = 0; i < sizeof(lfn->chars_last) / 2 && (c = lfn->chars_last[i] & 0x00ff) != 0 && c != 0xff; i++)
     buf[e++] = c;
 
   return e;
@@ -137,18 +72,20 @@ uint16_t __fat32_lfn_calc_size(struct fat32_lfn *lfn, uint8_t last_size) {
   return size;
 }
 
-int32_t fat32_entry_name(fs_t *fs, fs_entry_t *entry, char *name, uint16_t name_size) {
-  char cluster_buffer[fat32_data()->cluster_sector_count * fs->part->disk->sector_size],
-      lfn_buffer[FAT32_CHARS_PER_LFN + 1];
-  struct fat32_dir_entry *dirent   = NULL;
-  uint16_t                lfn_size = 0, lfn_total = 0, name_index = 0;
-  uint64_t                index = entry->index;
+int64_t __fat32_entry_name(fs_t *fs, struct fat32_dir_entry **entry, char *name, int64_t size) {
+  uint16_t lfn_size = 0, lfn_total = 0, name_index = 0;
+  char     lfn_buffer[FAT32_CHARS_PER_LFN + 1];
+
+  // just to prevent any possible memory issues
+  lfn_buffer[FAT32_CHARS_PER_LFN] = 0;
 
 #define name_check(s)                                                                                                  \
-  if (s > name_size)                                                                                                   \
-    return -ERANGE;                                                                                                    \
-  else if (s > NAME_MAX)                                                                                               \
-  return -ENAMETOOLONG
+  do {                                                                                                                 \
+    if (s > NAME_MAX)                                                                                                  \
+      return -ENAMETOOLONG;                                                                                            \
+    else if (s > size)                                                                                                 \
+      return -EOVERFLOW;                                                                                               \
+  } while (0);
 #define name_append(c)                                                                                                 \
   do {                                                                                                                 \
     name_check(name_index + 1);                                                                                        \
@@ -160,55 +97,30 @@ int32_t fat32_entry_name(fs_t *fs, fs_entry_t *entry, char *name, uint16_t name_
     memcpy(name + name_index, b, s);                                                                                   \
   } while (0);
 
-  // just to prevent any possible memory issues
-  lfn_buffer[FAT32_CHARS_PER_LFN] = 0;
-
-  if (!fat32_read_raw(entry->parent, fat32_data()->cluster_sector_count, cluster_buffer)) {
-    fat32_debg("failed to read the directory entries at sector: %u", entry->parent);
-    return -EFAULT;
-  }
-
-next_entry:
-  if (NULL == dirent)
-    dirent = (void *)cluster_buffer;
-  else
-    dirent++;
-
-  if (((uint8_t *)dirent)[0] == 0)
-    return -EFAULT; // we reached the end
-
-  if (((uint8_t *)dirent)[0] == 0xE5)
-    return -EADDRNOTAVAIL; // specified entry is unused
-
-  // skip LFN entries that doesn't belong to us
-  if (dirent->attr == FAT32_ATTR_LFN && index != 0)
-    goto next_entry;
-
-  // skip till we reached the entry at the specified index
-  if (index != 0) {
-    index--;
-    goto next_entry;
-  }
-
-  if (dirent->attr != FAT32_ATTR_LFN) {
+parse_entry:
+  if ((*entry)->attr != FAT32_ATTR_LFN) {
+    // did we already obtained the name from LFNs?
     if (name_index != 0)
-      return name_index;
+      goto ret;
 
-    for (uint8_t i = 0; i < sizeof(dirent->name) && dirent->name[i] != 0x20; i++) {
-      if (i == 8)
+    // no? alr lets just parse the directory entry's name
+    for (uint8_t i = 0; i < sizeof((*entry)->name) && (*entry)->name[i] != 0x20; i++) {
+      if (i == 8) // last 3 are the extension (ik FAT32 is weird)
         name_append('.');
-      name_append(dirent->name[i]);
+      name_append((*entry)->name[i]);
     }
 
+  ret:
+    name_append(0); // add NULL termiantor
     return name_index;
   }
 
   // copy current LFN to the lfn_buffer
-  lfn_size = __fat32_lfn_read((void *)dirent, lfn_buffer);
+  lfn_size = __fat32_lfn_read((void *)(*entry), lfn_buffer);
 
   // calculate the total size that all the LFNs are gonna take, will return non-zero on success
   if (lfn_total == 0) {
-    lfn_total  = __fat32_lfn_calc_size((void *)dirent, lfn_size);
+    lfn_total  = __fat32_lfn_calc_size((void *)(*entry), lfn_size);
     name_index = lfn_total; // last entry first
   }
 
@@ -222,5 +134,90 @@ next_entry:
       name_index = lfn_total;
   }
 
-  goto next_entry;
+  // get the next entry
+  while (true) {
+    (*entry)++;
+
+    if (fat32_entry_is_last(*entry))
+      return -ERANGE;
+
+    if (!fat32_entry_is_unused(*entry))
+      break;
+  }
+
+  goto parse_entry;
+}
+
+int64_t fat32_entry_get(fs_t *fs, uint64_t cluster, uint64_t offset, int64_t size, void *buffer) {
+  // https://wiki.osdev.org/FAT#Reading_Directories
+  char                    cluster_buffer[fat32_data_bytes_per_cluster()];
+  struct fat32_dir_entry *entry = NULL;
+  int32_t                 err   = 0;
+
+next_cluster:
+  if (!__fat32_read_cluster(cluster, cluster_buffer)) {
+    fat32_debg("failed to read the directory entries at cluster: %u", cluster);
+    return -EFAULT;
+  }
+
+  for (entry = (void *)cluster_buffer;; entry++) {
+    if (fat32_entry_is_last(entry)) {
+      if ((cluster = __fat32_cluster_next(fs, cluster)) == 0)
+        return -ERANGE; // we reached the end without getting to the offset
+      goto next_cluster;
+    }
+
+    if (fat32_entry_is_unused(entry))
+      continue; // skip unused entry
+
+    if (offset != 0 && entry->attr == FAT32_ATTR_LFN)
+      continue; // skip LFNs that doesn't belong to us
+
+    if (0 == offset--)
+      break;
+  }
+
+  /*
+
+   * at this point "dirent" points to entry at the offset
+   * or it points to a LFN that belongs to the entry we want
+
+  */
+  return __fat32_entry_name(fs, &entry, buffer, size);
+}
+
+int32_t fat32_entry_from(fs_t *fs, uint64_t cluster, char *name, struct fat32_dir_entry *entry) {
+  int64_t name_size = strlen(name) + 1;
+
+  if (name_size > NAME_MAX + 1)
+    return -ENAMETOOLONG;
+
+  char                    name_buffer[name_size], cluster_buffer[fat32_data_bytes_per_cluster()];
+  struct fat32_dir_entry *cur = NULL;
+
+next_cluster:
+  if (!__fat32_read_cluster(cluster, cluster_buffer)) {
+    fat32_debg("failed to read the directory entries at cluster: %u", cluster);
+    return -EFAULT;
+  }
+
+  for (cur = (void *)cluster_buffer;; cur++) {
+    if (fat32_entry_is_last(cur)) {
+      if ((cluster = __fat32_cluster_next(fs, cluster)) == 0)
+        return -ENOENT; // not found
+      goto next_cluster;
+    }
+
+    if (fat32_entry_is_unused(cur))
+      continue; // skip unused entry
+
+    if (__fat32_entry_name(fs, &cur, name_buffer, name_size) < 0)
+      continue; // move onto the next entry
+
+    if (strcmp(name_buffer, name) == 0)
+      break;
+  }
+
+  memcpy(entry, cur, sizeof(struct fat32_dir_entry));
+  return 0;
 }
