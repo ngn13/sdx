@@ -144,9 +144,14 @@ int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, v
   if (NULL == fs || NULL == buffer || size <= 0)
     return -EINVAL;
 
+  int64_t err = 0;
+
   switch (NULL == inode ? FS_ENTRY_TYPE_DIR : inode->type) {
   case FS_ENTRY_TYPE_DIR:
-    return fat32_entry_get(fs, NULL == inode ? fat32_data()->root_cluster : inode->addr, offset, size, buffer);
+    if ((err = fat32_entry_get(fs, NULL == inode ? fat32_data()->root_cluster : inode->addr, offset, size, buffer)) ==
+        -ERANGE)
+      return 0; // we reached the end so we didn't read anything
+    return err;
 
   case FS_ENTRY_TYPE_FILE:
     if (offset >= inode->size)
