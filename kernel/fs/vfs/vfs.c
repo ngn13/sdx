@@ -98,7 +98,7 @@ int32_t vfs_umount(char *path) {
   return 0;
 }
 
-int32_t vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer) {
+int64_t vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer) {
   if (NULL == node || NULL == buffer)
     return NULL;
 

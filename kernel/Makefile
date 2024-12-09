@@ -11,8 +11,8 @@ OBJS += $(patsubst %.S,$(DISTDIR)/%.S.o,$(SSRCS))
 SRCDIRS = $(shell find . -type d -not -path './dist/*')
 OUTDIRS = $(patsubst %,$(DISTDIR)/%,$(SRCDIRS))
 
-CFLAGS  = -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -Werror
-SFLAGS  = -g -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -Werror
+CFLAGS  = -nostdlib -nostartfiles -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -Werror
+SFLAGS  = -g -nostdlib -nostartfiles -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -Werror
 LFLAGS  = --nmagic
 INCLUDE = -I inc -I ../config
 

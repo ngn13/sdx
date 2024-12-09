@@ -40,7 +40,7 @@ int32_t            vfs_node_free(vfs_node_t *node);
 // fs/vfs/vfs.c
 #define vfs_has_root() (NULL != vfs_root)
 vfs_node_t *vfs_get(char *_path);
-int32_t     vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer);
+int64_t     vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer);
 int32_t     vfs_mount(char *path, fs_t *fs);
 int32_t     vfs_umount(char *path);
 void        vfs_free(vfs_node_t *node);

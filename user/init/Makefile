@@ -1,8 +1,8 @@
 DISTDIR = dist
 PREFIX  = /usr
 
-CFLAGS = -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -Werror
-LFLAGS = --nmagic -r
+CFLAGS = -nostartfiles -nostdlib -ffreestanding -fpic -Werror
+LFLAGS = -pie --no-dynamic-linker
 
 CSRCS = $(shell find . -type f -name '*.c')
 HSRCS = $(shell find . -type f -name '*.h')
@@ -14,7 +14,7 @@ $(DISTDIR):
 	mkdir -pv $@
 
 $(DISTDIR)/init: $(OBJS)
-	$(LD) $(LFLAGS) -o $@ $^
+	$(LD) -o $@ $(LFLAGS) $^
 
 $(DISTDIR)/%.c.o: %.c $(HSRCS)
 	$(CC) $(CFLAGS) -c $< -o $@
