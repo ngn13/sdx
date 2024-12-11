@@ -3,6 +3,13 @@
 #include "types.h"
 #include "util/printk.h"
 
+/*
+
+ * FAT32 filesystem driver definitions with no ur mom jokes (no cap no kizzy)
+ * see fs/fat32 for the actual implementations
+
+*/
+
 #define fat32_fail(f, ...) pfail("FAT32: (0x%x) " f, fs->part, ##__VA_ARGS__)
 #define fat32_debg(f, ...) pdebg("FAT32: (0x%x) " f, fs->part, ##__VA_ARGS__)
 
@@ -25,6 +32,8 @@ struct fat32_data {
 #define __fat32_read_raw(lba, sector_count, buf)                                                                       \
   (disk_read_raw(fs->part->disk, fs->part->start + lba, sector_count, (void *)buf))
 #define __fat32_read_lba(lba, size, buf) (disk_read_lba(fs->part->disk, fs->part->start + lba, size, (void *)buf))
+#define __fat32_read_cluster(cluster, buffer)                                                                          \
+  __fat32_read_raw(fat32_data_cluster_to_sector(cluster), fat32_data_sector_per_cluster(), buffer)
 #define __fat32_read(offset, size, buf)                                                                                \
   (disk_read(fs->part->disk, offset + (fs->part->start * fs->part->disk->sector_size), size, (void *)buf))
 
@@ -71,8 +80,9 @@ struct fat32_dir_entry {
       NULL == time ? 0 : ((struct creation_time *)time)->second_half * 2)
 
 // fs/fat32/entry.c
-int64_t fat32_entry_get(fs_t *fs, uint64_t cluster, uint64_t offset, int64_t size, void *buffer);
-int32_t fat32_entry_from(fs_t *fs, uint64_t cluster, char *name, struct fat32_dir_entry *entry);
+uint64_t fat32_cluster_next(fs_t *fs, uint64_t cluster);
+int64_t  fat32_entry_get(fs_t *fs, uint64_t cluster, uint64_t offset, int64_t size, void *buffer);
+int32_t  fat32_entry_from(fs_t *fs, uint64_t cluster, char *name, struct fat32_dir_entry *entry);
 
 // fs/fat32/fat32.c
 bool    fat32_new(fs_t *fs);

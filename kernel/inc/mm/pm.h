@@ -29,6 +29,7 @@
 #define PM_ENTRY_FLAGS_DEFAULT (PM_ENTRY_FLAG_P | PM_ENTRY_FLAG_RW)
 
 #ifndef ASM_FILE
+#include "util/math.h"
 
 // see boot/paging.S
 #define pm_start ((uint64_t)mb_mem_avail_addr) // address for the first paging table (where the page tables start)
@@ -41,6 +42,7 @@ typedef struct pm_page {
   uint64_t  size;
 } pm_page_t;
 
+#define pm_calc(size) (div_ceil(size, PM_PAGE_SIZE))
 bool pm_init(uint64_t start, uint64_t end);
 bool pm_is_mapped(uint64_t addr);
 bool pm_extend(uint64_t addr);

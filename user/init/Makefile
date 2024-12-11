@@ -1,8 +1,9 @@
 DISTDIR = dist
 PREFIX  = /usr
 
-CFLAGS = -nostartfiles -nostdlib -ffreestanding -fpic -Werror
-LFLAGS = -pie --no-dynamic-linker
+CFLAGS = -nostartfiles -nostdlib -ffreestanding -fpic -Werror -static-pie
+LFLAGS = -static -pie --no-dynamic-linker -e __slibc_main -L../slibc/dist
+LIBS   = -lslibc
 
 CSRCS = $(shell find . -type f -name '*.c')
 HSRCS = $(shell find . -type f -name '*.h')

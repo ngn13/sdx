@@ -157,13 +157,41 @@ int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, v
     if (offset >= inode->size)
       return 0;
 
-    uint64_t left_size = inode->size - offset;
+    uint64_t cluster_size = fat32_data_bytes_per_cluster(), cluster = inode->addr;
+    uint64_t cur_size = 0;
 
-    if (size > left_size)
-      size = left_size;
+    if ((cur_size = size) > inode->size - offset)
+      cur_size = size = inode->size - offset;
 
-    if (!__fat32_read(fat32_data_cluster_to_bytes(inode->addr) + offset, size, buffer))
-      return -EIO; // I/O error
+    while (offset > cluster_size) {
+      if ((cluster = fat32_cluster_next(fs, cluster)) == 0) {
+        fat32_debg("failed to get the next cluster for inode: 0x%p", inode);
+        return -EINVAL;
+      }
+      offset -= cluster_size;
+    }
+
+    while (cur_size > cluster_size) {
+      if (!__fat32_read_raw(fat32_data_cluster_to_bytes(cluster) + offset, cluster_size, buffer)) {
+        fat32_debg("failed to read the cluster %u for inode 0x%p", cluster, inode);
+        return -EIO; // I/O error
+      }
+
+      if ((cluster = fat32_cluster_next(fs, cluster)) == 0) {
+        fat32_debg("failed to get the next cluster for inode 0x%p", inode);
+        return -EINVAL;
+      }
+
+      if (offset > 0)
+        offset = 0; // we only use the offset once
+      buffer += cluster_size;
+      cur_size -= cluster_size;
+    }
+
+    if (cur_size > 0 && !__fat32_read(fat32_data_cluster_to_bytes(cluster) + offset, cur_size, buffer)) {
+      fat32_debg("failed to read the cluster %u for inode 0x%p", cluster, inode);
+      return -EIO;
+    }
 
     return size;
   }

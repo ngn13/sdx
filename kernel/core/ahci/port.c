@@ -2,7 +2,6 @@
 #include "mm/pm.h"
 
 #include "util/bit.h"
-#include "util/math.h"
 #include "util/mem.h"
 #include "util/printk.h"
 
@@ -189,7 +188,7 @@ bool ahci_port_init(ahci_port_t *port) {
     size += sizeof(struct ahci_cmd_table);
   }
 
-  page_count = div_ceil(size, PM_PAGE_SIZE);
+  page_count = pm_calc(size);
 
   /*
 

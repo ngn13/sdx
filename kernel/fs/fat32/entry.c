@@ -22,13 +22,15 @@ struct fat32_lfn {
 #define fat32_lfn_order(l)   (l->order & 0b11111)
 #define fat32_lfn_is_last(l) (bit_get(l->order, 6))
 
-#define __fat32_read_cluster(cluster, buffer)                                                                          \
-  __fat32_read_raw(fat32_data_cluster_to_sector(cluster), fat32_data_sector_per_cluster(), buffer)
-
-uint64_t __fat32_cluster_next(fs_t *fs, uint64_t cluster) {
+uint64_t fat32_cluster_next(fs_t *fs, uint64_t cluster) {
   // https://wiki.osdev.org/FAT#FAT_32_and_exFAT
   uint8_t  fat_table[fs_sector_size(fs)];
   uint32_t offset = (cluster * 4) % fs_sector_size(fs);
+
+  if (!__fat32_read_raw(fat32_data()->fat_sector, 1, fat_table)) {
+    fat32_debg("failed to read FAT");
+    return 0;
+  }
 
   cluster = *(uint32_t *)&fat_table[offset];
   cluster &= 0x0FFFFFFF; // remove high 4 bits
@@ -162,7 +164,7 @@ next_cluster:
 
   for (entry = (void *)cluster_buffer;; entry++) {
     if (fat32_entry_is_last(entry)) {
-      if ((cluster = __fat32_cluster_next(fs, cluster)) == 0)
+      if ((cluster = fat32_cluster_next(fs, cluster)) == 0)
         return -ERANGE; // we reached the end without getting to the offset
       goto next_cluster;
     }
@@ -203,7 +205,7 @@ next_cluster:
 
   for (cur = (void *)cluster_buffer;; cur++) {
     if (fat32_entry_is_last(cur)) {
-      if ((cluster = __fat32_cluster_next(fs, cluster)) == 0)
+      if ((cluster = fat32_cluster_next(fs, cluster)) == 0)
         return -ENOENT; // not found
       goto next_cluster;
     }
