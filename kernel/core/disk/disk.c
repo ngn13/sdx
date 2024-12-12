@@ -73,7 +73,7 @@ bool disk_read_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf) {
     goto do_copy;
 
   while (size != rem_size) {
-    if (!disk_do(disk, DISK_OP_READ, lba, 1, buf + buf_offset))
+    if (!disk_do(disk, DISK_OP_READ, lba++, 1, buf + buf_offset))
       return false;
     size -= disk->sector_size;
     buf_offset += disk->sector_size;

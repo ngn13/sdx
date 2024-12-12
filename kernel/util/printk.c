@@ -223,3 +223,28 @@ uint64_t printk(enum printk_level level, char *fmt, ...) {
 
   return size;
 }
+
+uint64_t dump(void *buffer, uint64_t size) {
+  uint64_t res = 0, i = 0;
+
+  for (; i < size; i++) {
+    if (i % 10 == 0) {
+      if (i != 0 && ++res)
+        __print_char('\n');
+      res += __print("      ");
+    }
+
+    if (printf("%x", ((uint8_t *)buffer)[i]) == 1)
+      __print_char('0');
+    __print_char(' ');
+
+    res += 3;
+  }
+
+  if (res > 0) {
+    __print_char('\n');
+    res++;
+  }
+
+  return res;
+}

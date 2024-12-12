@@ -41,7 +41,7 @@ setup_check_ret "Failed to format the root partition (${LOOP_PART})"
 # filesystem is now ready, we can mount the partitions
 loop_mount
 
-if [ -z "${ROOTDIR}" ] || [ -z "${LOOP_DIR}" ]; then
+if [ -z "${DESTDIR}" ] || [ -z "${LOOP_DIR}" ]; then
   error "Directory variables are not defined"
   loop_cleanup
   exit 1
@@ -56,13 +56,7 @@ grub-install --target=i386-pc --recheck          \
 setup_check_ret "GRUB installation failed"
 
 # copy sdx files and grub config
-info "Copying the sdx files and directories"
-cp -r "${ROOTDIR}/"* "${LOOP_DIR}"
-setup_check_ret "Failed to copy sdx files and directories"
-
-info "Copying the GRUB configuration"
-cp "config/grub.cfg" "${LOOP_DIR}/boot/grub"
-sed "s/VERSION_HERE/$(./scripts/version.sh)/g" -i "${LOOP_DIR}/boot/grub/grub.cfg"
+loop_copy
 
 # deattach the loop devices
 info "Unmounting and deattaching loop devices"

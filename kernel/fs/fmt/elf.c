@@ -143,32 +143,30 @@ struct elf_program_header {
   uint64_t align;
 } __attribute__((packed));
 
-#define ELF_PH_TYPE_NULL         0          // Program header table entry unused
-#define ELF_PH_TYPE_LOAD         1          // Loadable program segment
-#define ELF_PH_TYPE_DYNAMIC      2          // Dynamic linking information
-#define ELF_PH_TYPE_INTERP       3          // Program interpreter
-#define ELF_PH_TYPE_NOTE         4          // Auxiliary information
-#define ELF_PH_TYPE_SHLIB        5          // Reserved
-#define ELF_PH_TYPE_PHDR         6          // Entry for header table itself
-#define ELF_PH_TYPE_TLS          7          // Thread-local storage segment
-#define ELF_PH_TYPE_NUM          8          // Number of defined types
-#define ELF_PH_TYPE_LOOS         0x60000000 // Start of OS-specific
+#define ELF_PH_TYPE_NULL         0          // program header table entry unused
+#define ELF_PH_TYPE_LOAD         1          // loadable program segment
+#define ELF_PH_TYPE_DYNAMIC      2          // dynamic linking information
+#define ELF_PH_TYPE_INTERP       3          // program interpreter
+#define ELF_PH_TYPE_NOTE         4          // auxiliary information
+#define ELF_PH_TYPE_SHLIB        5          // reserved
+#define ELF_PH_TYPE_PHDR         6          // entry for header table itself
+#define ELF_PH_TYPE_TLS          7          // thread-local storage segment
+#define ELF_PH_TYPE_NUM          8          // number of defined types
+#define ELF_PH_TYPE_LOOS         0x60000000 // start of OS-specific
 #define ELF_PH_TYPE_GNU_EH_FRAME 0x6474e550 // GCC .eh_frame_hdr segment
-#define ELF_PH_TYPE_GNU_STACK    0x6474e551 // Indicates stack executability
-#define ELF_PH_TYPE_GNU_RELRO    0x6474e552 // Read-only after relocation
+#define ELF_PH_TYPE_GNU_STACK    0x6474e551 // indicates stack executability
+#define ELF_PH_TYPE_GNU_RELRO    0x6474e552 // read-only after relocation
 #define ELF_PH_TYPE_LOSUNW       0x6ffffffa
-#define ELF_PH_TYPE_SUNWBSS      0x6ffffffa // Sun Specific segment
-#define ELF_PH_TYPE_SUNWSTACK    0x6ffffffb // Stack segment
+#define ELF_PH_TYPE_SUNWBSS      0x6ffffffa // sun Specific segment
+#define ELF_PH_TYPE_SUNWSTACK    0x6ffffffb // stack segment
 #define ELF_PH_TYPE_HISUNW       0x6fffffff
-#define ELF_PH_TYPE_HIOS         0x6fffffff // End of OS-specific
-#define ELF_PH_TYPE_LOPROC       0x70000000 // Start of processor-specific
-#define ELF_PH_TYPE_HIPROC       0x7fffffff // End of processor-specific
+#define ELF_PH_TYPE_HIOS         0x6fffffff // end of OS-specific
+#define ELF_PH_TYPE_LOPROC       0x70000000 // start of processor-specific
+#define ELF_PH_TYPE_HIPROC       0x7fffffff // end of processor-specific
 
-#define ELF_PH_FLAGS_X        (1 << 0)   // Segment is executable
-#define ELF_PH_FLAGS_W        (1 << 1)   // Segment is writable
-#define ELF_PH_FLAGS_R        (1 << 2)   // Segment is readable
-#define ELF_PH_FLAGS_MASKOS   0x0ff00000 // OS-specific
-#define ELF_PH_FLAGS_MASKPROC 0xf0000000 // Processor-specific
+#define ELF_PH_FLAGS_X (1 << 0) // executable
+#define ELF_PH_FLAGS_W (1 << 1) // writable
+#define ELF_PH_FLAGS_R (1 << 2) // readable
 
 /*
 
@@ -237,14 +235,13 @@ int64_t __elf_ph_next(struct elf *elf, struct elf_program_header *header) {
   }
 
   uint64_t offset = elf->header.phoff + (elf->header.phentsize * elf->ph_pos++);
-  elf_debg("offset: %u + %u * %u = %u", elf->header.phoff, elf->header.phentsize, elf->ph_pos - 1, offset);
   return __elf_read(elf, offset, sizeof(struct elf_program_header), header);
 }
 
-int32_t __elf_load_dyn(struct elf *elf, void **addr) {
+int32_t __elf_load_dyn(struct elf *elf, fmt_info_t *info) {
   struct elf_program_header header;
-  void                     *page_start = NULL;
-  void                     *entry      = 0;
+  void                     *alloc_pos  = NULL;
+  uint64_t                  alloc_size = 0;
   int64_t                   err        = 0;
 
   while ((err = __elf_ph_next(elf, &header)) > 0) {
@@ -253,38 +250,62 @@ int32_t __elf_load_dyn(struct elf *elf, void **addr) {
     elf_debg("|- Offset: 0x%x VirtAddr: 0x%x PhysAddr: 0x%x", header.offset, header.vaddr, header.paddr);
     elf_debg("`- Filesz: 0x%x Memsz: 0x%x Align: 0x%x", header.filesz, header.memsz, header.align);
 
-    switch (header.type) {
-    case ELF_PH_TYPE_LOAD:
-      if (header.memsz == 0)
-        continue; // ignore if its empty
+    if (header.type != ELF_PH_TYPE_LOAD)
+      continue; // we only care about type LOAD
 
-      if ((page_start = pm_alloc(pm_calc(header.memsz))) == NULL) {
-        elf_debg("failed to allocate pages for %u. program header", elf->ph_pos);
-        return -ENOMEM;
-      }
+    if (header.memsz == 0)
+      continue; // ignore empty
 
-      // load filesz bytes from file to the allocated memory
-      if (header.filesz != 0 && (err = __elf_read(elf, header.offset, header.filesz, page_start)) < 0) {
-        elf_debg("failed to load %u. program header from the file: %s", strerror(err));
-        return -EIO;
-      }
-
-      // zero out the rest of the memory
-      for (uint64_t i = header.filesz; i < header.memsz; i++)
-        ((uint8_t *)page_start)[i] = 0;
-
-      // TODO: setup the flags
-
-      // see if this section contains the entrypoint
-      if (header.vaddr < elf->header.entry && header.vaddr + header.memsz > elf->header.entry)
-        entry = page_start + elf->header.entry;
-
-      break;
-
-    case ELF_PH_TYPE_DYNAMIC:
-      // idk what to do with this
-      break;
+    if (alloc_size > header.vaddr) {
+      elf_debg("invalid program header postioning");
+      return -ENOEXEC;
     }
+
+    alloc_size += header.vaddr - alloc_size;
+    alloc_size += header.memsz;
+
+    for (; alloc_size % PM_PAGE_SIZE != 0; alloc_size++)
+      ;
+  }
+
+  if ((info->addr = pm_alloc(info->pages = pm_calc(alloc_size))) == NULL) {
+    elf_debg("failed allocate memory (%u pages) for the program header");
+    return -ENOMEM;
+  }
+
+  elf->ph_pos = 0;
+
+  while ((err = __elf_ph_next(elf, &header)) > 0) {
+    if (header.type != ELF_PH_TYPE_LOAD)
+      continue; // again, we only care about type LOAD
+
+    if (header.memsz == 0)
+      continue; // ignore empty
+
+    alloc_pos = info->addr + header.vaddr;
+
+    // load filesz bytes from file to the allocated memory
+    elf_debg("offset: %u filesz: %u alloc_pos: 0x%x", header.offset, header.filesz, alloc_pos);
+    if (header.filesz != 0 && (err = __elf_read(elf, header.offset, header.filesz, alloc_pos)) < 0) {
+      elf_debg("failed to load %u. program header from the file: %s", strerror(err));
+      return -EIO;
+    }
+
+    // zero out the rest of the memory
+    for (uint64_t i = header.filesz; i < header.memsz; i++)
+      ((uint8_t *)alloc_pos)[i] = 0;
+
+    // see if we can disable r/w permissions for this segment's pages
+    if (!(header.flags & ELF_PH_FLAGS_R) && !(header.flags & ELF_PH_FLAGS_W))
+      pm_clear((uint64_t)alloc_pos, pm_calc(header.memsz), PM_ENTRY_FLAG_RW);
+
+    // see if we should disable the execution for this segment's pages
+    if (!(header.flags & ELF_PH_FLAGS_X))
+      pm_set((uint64_t)alloc_pos, pm_calc(header.memsz), PM_ENTRY_FLAG_XD);
+
+    // see if this section contains the entrypoint
+    if (header.vaddr < elf->header.entry && header.vaddr + header.memsz > elf->header.entry)
+      info->entry = alloc_pos + elf->header.entry;
   }
 
   if (err < 0) {
@@ -292,15 +313,16 @@ int32_t __elf_load_dyn(struct elf *elf, void **addr) {
     return err;
   }
 
-  // temporary
-  elf_debg("entry: 0x%p", entry);
-  ((void (*)())entry)();
+  if (info->entry == 0) {
+    elf_fail("failed to find the entry point");
+    return -ENOEXEC;
+  }
 
   return 0;
 }
 
-int32_t elf_load(vfs_node_t *node, void **addr) {
-  if (NULL == node || NULL == addr)
+int32_t elf_load(vfs_node_t *node, fmt_info_t *info) {
+  if (NULL == node || NULL == info)
     return -EINVAL;
 
   struct elf  _elf, *elf = &_elf;
@@ -322,7 +344,7 @@ int32_t elf_load(vfs_node_t *node, void **addr) {
 
   switch (elf->header.type) {
   case ELF_TYPE_DYN:
-    return __elf_load_dyn(elf, addr);
+    return __elf_load_dyn(elf, info);
 
   default:
     elf_debg("unsupported type");

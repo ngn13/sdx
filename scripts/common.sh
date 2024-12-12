@@ -15,9 +15,8 @@ else
 fi
 
 # static paths
-DISTDIR="dist"
-ROOTDIR="${DISTDIR}/root"
-IMAGE="${DISTDIR}/sdx.img"
+DESTDIR="dist"
+IMAGE="${DESTDIR}/sdx.img"
 
 # colors
 FG_YELLOW="\e[0;33m"

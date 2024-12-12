@@ -1,59 +1,60 @@
-DISTDIR  = $(abspath dist)
-
-ROOTDIR  = $(DISTDIR)/root
+# directory paths for different stuff
+DESTDIR  = $(abspath dist)
 CROSSDIR = /opt/cross/bin
 
+# (all) source files
 SRCS  = $(shell find . -type f -name '*.c')
 SRCS += $(shell find . -type f -name '*.h')
 
-USER_SRCS = $(shell find user/ -maxdepth 1 -mindepth 1 -type d)
-
-LD = $(CROSSDIR)/x86_64-elf-ld
+# compiler, linker and archiver
 CC = $(CROSSDIR)/x86_64-elf-gcc
+LD = $(CROSSDIR)/x86_64-elf-ld
+AR = $(CROSSDIR)/x86_64-elf-ar
 
-all: config/config.h $(ROOTDIR) kernel_bins user_bins
+# exports
+export DESTDIR
+export CROSSDIR
+export CC
+export LD
+export AR
 
-$(ROOTDIR): $(DISTDIR)
+all: config/config.h $(DESTDIR) kernel_bins user_bins
+
+$(DESTDIR):
 	mkdir -pv "$@/boot"
 	mkdir -pv "$@/bin"
 	mkdir -pv "$@/etc"
-
-$(DISTDIR):
-	mkdir -pv $@
 
 ##################################################
 ## build the kernel binary, see kernel/Makefile ##
 ##################################################
 kernel_bins:
-	make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C kernel all
-	make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C kernel install
+	make -C kernel all
+	make -C kernel install
 
 #####################################################
 ## build the disk image containing userspace files ##
 #####################################################
 user_bins:
-	for src in $(USER_SRCS); do \
-		make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C $$src all; \
-		make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C $$src install; \
-	done
+	make -C user all
+	make -C user install
+
+#################################################################
+## create the configuration header from the configuration JSON ##
+#################################################################
+config/config.h: config/config.json
+	python3 scripts/config.py $^ $@
 
 ##########################################################
 ## additional commands for configuration and formatting ##
 ##########################################################
-config/config.h: config/config.json
-	python3 scripts/config.py $^ $@
-
 clean:
-	rm -r $(DISTDIR)
-	make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C kernel clean
-	for src in $(USER_SRCS); do \
-		make PREFIX="$(ROOTDIR)" LD="$(LD)" CC="$(CC)" -C $$src clean; \
-	done
+	make -C kernel clean
+	make -C user clean
+	rm -f "$(DESTDIR)/sdx.img"
 
 image:
-	# first build the actual kernel/user binaries
 	make
-	# then run the image creation script
 	./scripts/image.sh
 
 qemu:
@@ -71,4 +72,4 @@ config:
 format:
 	clang-format -i -style=file $(SRCS)
 
-.PHONY: clean config format image qemu debug tools
+.PHONY: clean image qemu debug tools config format

@@ -24,9 +24,14 @@
 #define PM_ENTRY_FLAG_D   (1 << 6) // dirty
 #define PM_ENTRY_FLAG_PAT (1 << 7) // page attribute table
 #define PM_ENTRY_FLAG_G   (1 << 8) // global
+#define PM_ENTRY_FLAG_XD                                                                                               \
+  (1UL << 63) // execute disable (64 bit only, https://wiki.osdev.org/File:64-bit_page_tables2.png)
 
 // default flags for allocated pages
 #define PM_ENTRY_FLAGS_DEFAULT (PM_ENTRY_FLAG_P | PM_ENTRY_FLAG_RW)
+#define PM_ENTRY_FLAGS_CLEAR                                                                                           \
+  (~(PM_ENTRY_FLAG_P | PM_ENTRY_FLAG_RW | PM_ENTRY_FLAG_US | PM_ENTRY_FLAG_PWT | PM_ENTRY_FLAG_PCD | PM_ENTRY_FLAG_A | \
+      PM_ENTRY_FLAG_D | PM_ENTRY_FLAG_PAT | PM_ENTRY_FLAG_G | PM_ENTRY_FLAG_XD))
 
 #ifndef ASM_FILE
 #include "util/math.h"
@@ -46,7 +51,9 @@ typedef struct pm_page {
 bool pm_init(uint64_t start, uint64_t end);
 bool pm_is_mapped(uint64_t addr);
 bool pm_extend(uint64_t addr);
-bool pm_set(uint64_t addr, uint64_t count, uint16_t flags);
+bool pm_flags(uint64_t addr, uint64_t count, uint64_t flags, bool do_clear);
+#define pm_set(addr, count, flags)   (pm_flags(addr, count, flags, false))
+#define pm_clear(addr, count, flags) (pm_flags(addr, count, flags, true))
 
 void *pm_alloc(uint64_t count);
 void  pm_free(void *mem, uint64_t count);

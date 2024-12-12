@@ -24,13 +24,7 @@ loop_setup
 loop_mount
 
 # copy sdx files and grub config
-info "Copying the sdx files and directories"
-cp -r "${ROOTDIR}/"* "${LOOP_DIR}"
-loop_check_ret "Failed to copy sdx files and directories"
-
-info "Copying the GRUB configuration"
-cp "config/grub.cfg" "${LOOP_DIR}/boot/grub"
-sed "s/VERSION_HERE/$(./scripts/version.sh)/g" -i "${LOOP_DIR}/boot/grub/grub.cfg"
+loop_copy
 
 # deattach the loop devices
 info "Unmounting and deattaching loop devices"

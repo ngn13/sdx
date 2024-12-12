@@ -21,7 +21,7 @@
 
  * a part from that we don't really need to worry about other sections of the entry,
  * we'll just present and read/write bit for each of the entries, which is the first 2 bits,
- * see PM_ENTRY_FLAGS
+ * see PM_ENTRY_FLAGS_DEFAULT
 
  * also i would like to thank zid` from the IRC for explaining the address resolve process
  * the explanation of the address resolve process from the first link uses 3 level paging

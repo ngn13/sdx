@@ -11,6 +11,7 @@ enum printk_level {
 uint64_t vprintf(char *fmt, va_list args);
 uint64_t printf(char *fmt, ...);
 uint64_t printk(enum printk_level level, char *msg, ...);
+uint64_t dump(void *buffer, uint64_t size);
 
 #ifdef PPREFIX
 

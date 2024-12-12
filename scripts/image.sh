@@ -8,11 +8,21 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-if [ ! -d "${DISTDIR}" ]; then
+if [ ! -d "${DESTDIR}" ]; then
   error "Failed to access to the dist directory"
   desc  "Did you run make?"
   exit 1
 fi
+
+image_check_ret(){
+  if [ $? -ne 0 ]; then
+    if [ ! -z "${1}" ]; then
+      error "${1}"
+    fi
+    rm -f "${IMAGE}"
+    exit 1
+  fi
+}
 
 if [ -f "${IMAGE}" ]; then
   warn "Image is already available, not rebuilding it"
@@ -21,7 +31,7 @@ if [ -f "${IMAGE}" ]; then
   desc "Need root access to work with loop devices"
 
   $SUDO ./scripts/image/copy.sh
-  check_ret "Copy script failed"
+  image_check_ret "Copy script failed"
 
   info "Disk image is ready"
   exit 0
@@ -56,13 +66,13 @@ echo '8300' # change type to linux file system
 echo w # write the changes
 echo y # confirm
 ) | gdisk "${IMAGE}" &> /dev/null
-check_ret "Failed to partion the disk"
+image_check_ret "Failed to partion the disk"
 
 # setup the disk image
 info "Running the disk image setup script"
 desc "Need root access to work with loop devices"
 
 $SUDO ./scripts/image/setup.sh
-check_ret "Setup script failed"
+image_check_ret "Setup script failed"
 
 info "Disk image is ready"

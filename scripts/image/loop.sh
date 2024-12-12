@@ -57,3 +57,20 @@ loop_mount(){
   mount "${LOOP_PART}" "${LOOP_DIR}"
   loop_check_ret "Failed to mount the root partition (${LOOP_PART})"
 }
+
+loop_copy(){
+  [ ! -z "${DESTDIR}" ]
+  loop_check_ret "Install destination directory not specified"
+
+  info "Copying root filesystem directories and files"
+  find "${DESTDIR}/"* -maxdepth 0 -mindepth 0 -not -wholename "${IMAGE}" -exec cp -r {} "${LOOP_DIR}" \;
+  loop_check_ret "Failed to copy root filesystem directories and files"
+
+  info "Copying the GRUB configuration"
+  cp "config/grub.cfg" "${LOOP_DIR}/boot/grub"
+  loop_check_ret "Failed to copy the GRUB configuration"
+
+  info "Replacing version placeholder in the GRUB configuration"
+  sed "s/VERSION_HERE/$(./scripts/version.sh)/g" -i "${LOOP_DIR}/boot/grub/grub.cfg"
+  loop_check_ret "Failed to replace the version placeholder in the GRUB configuration"
+}

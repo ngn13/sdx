@@ -225,8 +225,8 @@ bool pm_extend(uint64_t addr) {
   return true;
 }
 
-// set page flags for "count" pages starting at "addr"
-bool pm_set(uint64_t addr, uint64_t count, uint16_t flags) {
+// set or clear page flags for "count" pages starting at "addr"
+bool pm_flags(uint64_t addr, uint64_t count, uint64_t flags, bool do_clear) {
   if (count == 0)
     return false;
 
@@ -235,8 +235,10 @@ bool pm_set(uint64_t addr, uint64_t count, uint16_t flags) {
 
   for (; count > 0; count--) {
     entry = pm_tp_entry(tp);
-    // only the first 9 bits are used for the flags
-    *entry |= (flags & 0x1FF);
+    if (do_clear)
+      *entry &= ~flags;
+    else
+      *entry |= flags;
     tp = pm_tp_next(tp);
   }
 
@@ -283,8 +285,8 @@ void *pm_alloc(uint64_t count) {
   for (; found > 0; found--) {
     entry  = pm_tp_entry(page);
     *entry = bit_set(*entry, PM_ENTRY_AVAIL_BIT, 1);
-    // only lower 9 bits are used for the flags
-    *entry |= (PM_ENTRY_FLAGS_DEFAULT & 0x1FF);
+    *entry &= PM_ENTRY_FLAGS_CLEAR;   // clear all the flags
+    *entry |= PM_ENTRY_FLAGS_DEFAULT; // and set the defaults
     page = pm_tp_next(page);
   }
 

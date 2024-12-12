@@ -150,15 +150,18 @@ void entry() {
   // temporary
   vfs_node_t *init_node = vfs_get("/init");
   void       *init_addr = NULL;
-  int32_t     err       = 0;
+  fmt_info_t  init_info;
+  int32_t     err = 0;
 
   if (NULL == init_node)
     panic("Failed to get the init node");
 
-  if ((err = fmt_load(init_node, &init_addr)) != 0) {
+  if ((err = fmt_load(init_node, &init_info)) != 0) {
     pfail("Failed to load the init: %s", strerror(err));
     panic("Failed to load init to the memory");
   }
+
+  fmt_free(&init_info);
 
   /*
 

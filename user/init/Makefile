@@ -1,13 +1,14 @@
+# dirs 
 DISTDIR = dist
-PREFIX  = /usr
+PREFIX  = /
 
-CFLAGS = -nostartfiles -nostdlib -ffreestanding -fpic -Werror -static-pie
-LFLAGS = -static -pie --no-dynamic-linker -e __slibc_main -L../slibc/dist
-LIBS   = -lslibc
+INCLUDE += -I../slibc/inc
+LIBS     = -L../slibc/dist -lc
 
+# source files & target objects
 CSRCS = $(shell find . -type f -name '*.c')
 HSRCS = $(shell find . -type f -name '*.h')
-OBJS  = $(patsubst %.c,$(DISTDIR)/%.c.o,$(CSRCS))
+OBJS  = ../slibc/dist/crt0.o $(patsubst %.c,$(DISTDIR)/%.c.o,$(CSRCS))
 
 all: $(DISTDIR) $(DISTDIR)/init
 
@@ -15,15 +16,16 @@ $(DISTDIR):
 	mkdir -pv $@
 
 $(DISTDIR)/init: $(OBJS)
-	$(LD) -o $@ $(LFLAGS) $^
+	$(LD) -o $@ $(LFLAGS) $^ $(LIBS)
 
 $(DISTDIR)/%.c.o: %.c $(HSRCS)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) -c $(CFLAGS) $(INCLUDE) $< -o $@
 
 clean:
-	rm -r $(DISTDIR)
+	rm -rf $(DISTDIR)
+	rm -f "$(DESTDIR)/$(PREFIX)/init"
 
 install:
-	install -Dm755 $(DISTDIR)/init $(PREFIX)/init
+	install -Dm755 "$(DISTDIR)/init" "$(DESTDIR)/$(PREFIX)/init"
 
 .PHONY: clean install
