@@ -1,5 +1,6 @@
 #include "util/string.h"
 #include "util/math.h"
+#include "util/mem.h"
 
 #include "video.h"
 
@@ -151,4 +152,16 @@ char *strstr(char *s1, char *s2) {
       return p;
 
   return NULL;
+}
+
+char *strncpy(char *dst, const char *src, uint64_t dsize) {
+  uint64_t ssize = strlen(src) + 1;
+
+  if (dsize > ssize)
+    dsize = ssize;
+
+  dst  = memcpy(dst, (void *)src, dsize - 1);
+  *dst = 0;
+
+  return dst;
 }

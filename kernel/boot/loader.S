@@ -202,9 +202,17 @@ __entry:
   cli
   lgdt gdt_pointer
 
-  // jump to long mode entry
-  // code segment is at index 2, so the offset is 8 for cs
-  jmp 0x08:__entry64
+  // long jump to 64 bit mode (there's no other way to change cs)
+  mov eax, gdt_desc_code_0_addr
+  mov ebx, gdt_start_addr
+  sub eax, ebx
+  push eax
+
+  lea eax, __entry64
+  push eax
+
+  // jmp 0x8:__entry64
+  retf
 
 .Lentry_fail_magic:
   lea eax, err_no_magic
@@ -225,7 +233,7 @@ __entry:
 .code64
 __entry64:
   // load the data segment offset
-  mov eax, gdt_desc_data_addr
+  mov eax, gdt_desc_data_0_addr
   mov ebx, gdt_start_addr
   sub eax, ebx
 

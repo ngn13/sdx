@@ -7,7 +7,7 @@
  * see: core/pic.c
 
 */
-typedef enum pic_irq {
+typedef enum {
   // https://wiki.osdev.org/Interrupts#Standard_ISA_IRQs
   PIC_IRQ_TIMER    = 0,
   PIC_IRQ_KEYBOARD = 1,
@@ -23,7 +23,9 @@ typedef enum pic_irq {
 } pic_irq_t;
 
 // IDT vector offset, 32 is enough to make sure we don't use exception interrupt vectors
-#define PIC_VECTOR_OFFSET 33
+#define PIC_VECTOR_OFFSET 32
+#define pic_to_int(i)     (i + PIC_VECTOR_OFFSET)
+#define pic_to_irq(i)     (i - PIC_VECTOR_OFFSET)
 
 bool pic_init(); // initialize the PIC
 

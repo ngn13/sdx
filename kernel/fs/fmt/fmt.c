@@ -4,8 +4,8 @@
 #include "util/mem.h"
 #include "errno.h"
 
-#define fmt_info(f, ...) pinfo("Format (0x%x): " f, node, ##__VA_ARGS__)
-#define fmt_fail(f, ...) pfail("Format (0x%x): " f, node, ##__VA_ARGS__)
+#define fmt_info(f, ...) pinfo("Format: (0x%x) " f, node, ##__VA_ARGS__)
+#define fmt_fail(f, ...) pfail("Format: (0x%x) " f, node, ##__VA_ARGS__)
 
 struct fmt {
   const char *name;

@@ -11,15 +11,18 @@
 #include "limits.h"
 
 disk_part_t *disk_part_add(disk_t *disk, uint64_t start, uint64_t size) {
-#define disk_part_match(p1, _) (p1->start == start && p1->size == size)
-
   if (NULL == disk)
     return NULL;
 
   disk_part_t *new = NULL;
 
   // check if the partition exists
-  slist_find(&disk->parts, &new, disk_part_match, NULL, disk_part_t);
+  slist_foreach(&disk->parts, disk_part_t) {
+    if (cur->start == start && cur->size == size) {
+      new = cur;
+      break;
+    }
+  }
 
   if (NULL != new)
     return new;

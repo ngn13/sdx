@@ -5,7 +5,9 @@
 #include "mm/vmm.h"
 
 #include "util/io.h"
+#include "util/bit.h"
 #include "util/mem.h"
+#include "util/list.h"
 #include "util/panic.h"
 #include "util/printk.h"
 
@@ -46,15 +48,14 @@ struct im_idtr {
 } __attribute__((packed));
 
 struct im_handler_entry {
-  struct im_handler_entry *next;   // next handler
-  im_handler_func         *func;   // handler function
-  uint8_t                  vector; // selected vector for the handler
+  im_handler_func_t       *func;       // handler function
+  uint8_t                  vector;     // selected vector for the handler
+  struct im_handler_entry *next, *pre; // next and previous handler
 };
 
 struct im_handler {
   uint64_t                 count;
-  struct im_handler_entry *head;
-  struct im_handler_entry *tail;
+  struct im_handler_entry *head, *tail;
 };
 
 #define IM_IDT_SIZE        sizeof(im_idt)
@@ -65,24 +66,6 @@ struct im_desc    im_idt[256];
 struct im_idtr    im_idtr = {.size = IM_IDT_SIZE - 1, .addr = (uint64_t)im_idt};
 struct im_handler im_handler;
 
-struct im_saved_state {
-  uint64_t r15;
-  uint64_t r14;
-  uint64_t r13;
-  uint64_t r12;
-  uint64_t r11;
-  uint64_t r10;
-  uint64_t r9;
-  uint64_t r8;
-  uint64_t rdi;
-  uint64_t rsi;
-  uint64_t rbp;
-  uint64_t rdx;
-  uint64_t rcx;
-  uint64_t rbx;
-  uint64_t rax;
-} __attribute__((packed));
-
 /*
 
  * default interrupt handler, this is called by __im_handle (see core/im.S)
@@ -90,13 +73,10 @@ struct im_saved_state {
  * make sure that the stack and everything is setup correctly when we iret
 
 */
-void im_handle(uint8_t vector, struct im_saved_state *state) {
-  struct im_handler_entry *entry = im_handler.head;
-
-  while (NULL != entry) {
-    if (entry->vector == vector)
-      entry->func(vector);
-    entry = entry->next;
+void im_handle(im_stack_t *stack) {
+  dlist_reveach(&im_handler.tail, struct im_handler_entry) {
+    if (cur->vector == stack->vector)
+      cur->func(stack);
   }
 
   /*
@@ -105,36 +85,49 @@ void im_handle(uint8_t vector, struct im_saved_state *state) {
    * list can be found at https://wiki.osdev.org/Exceptions
 
   */
-  switch (vector) {
+  switch (stack->vector) {
   case IM_INT_DIV_ERR:
-    panic("Received an interrupt for division by zero");
+    panic("Received an division by zero exception");
     break;
 
   case IM_INT_INV_OPCODE:
-    panic("Received an interrupt for bad opcode");
+    panic("Received an invalid opcode exception");
     break;
 
   case IM_INT_DOUBLE_FAULT:
-    panic("Received an interrupt for double fault");
+    panic("Received a double fault exception");
     break;
 
   case IM_INT_GENERAL_PROTECTION_FAULT:
-    panic("Received an interrupt for GPF");
+    panic("Received a general protection fault exception");
     break;
 
   case IM_INT_PAGE_FAULT:
-    panic("Received an interrupt for PF");
+    __asm__("nop");
+
+    uint64_t cr2 = 0;
+    __asm__("mov %0, %%cr2\n" : "=r"(cr2));
+
+    pfail("PF: (0x%x) P=%u W=%u U=%u R=%u I=%u PK=%u SS=%u SGX=%u",
+        cr2,
+        bit_get(stack->error, 0),
+        bit_get(stack->error, 1),
+        bit_get(stack->error, 2),
+        bit_get(stack->error, 3),
+        bit_get(stack->error, 4),
+        bit_get(stack->error, 5),
+        bit_get(stack->error, 6),
+        bit_get(stack->error, 7));
+    panic("Received an page fault exception");
     break;
   }
-
-  printk(KERN_DEBG, "IM: handled interrupt %d\n", vector);
 }
 
 void im_set_entry(uint8_t vector, uint8_t dpl) {
   struct im_desc *d = &im_idt[vector];
 
   // GDT code segment offset for the CS
-  d->selector = gdt_desc_code_addr - gdt_start_addr;
+  d->selector = gdt_offset(gdt_desc_code_0_addr);
 
   /*
 
@@ -151,74 +144,54 @@ void im_set_entry(uint8_t vector, uint8_t dpl) {
 }
 
 // add/set interrupt in the IDT
-void im_add_handler(uint8_t vector, im_handler_func handler) {
+void im_add_handler(uint8_t vector, im_handler_func_t handler) {
   if (NULL == handler)
     return;
 
-  struct im_handler_entry *entry = im_handler.head;
-
   // check if the handler is already in the list
-  while (NULL != entry) {
-    if (entry->vector == vector && entry->func == handler)
+  dlist_foreach(&im_handler.head, struct im_handler_entry) {
+    if (cur->vector == vector && cur->func == handler)
       return;
-    entry = entry->next;
   }
 
   // create a new entry
-  entry         = vmm_alloc(sizeof(struct im_handler_entry));
-  entry->next   = NULL;
-  entry->vector = vector;
-  entry->func   = handler;
+  struct im_handler_entry *entry = vmm_alloc(sizeof(struct im_handler_entry));
+  entry->next                    = NULL;
+  entry->vector                  = vector;
+  entry->func                    = handler;
 
-  // check if this is the first entry (head)
-  if (NULL == im_handler.head)
-    im_handler.head = entry;
-
-  // the new entry is the tail
-  im_handler.tail->next = entry;
-  im_handler.tail       = entry;
+  // add the new entry to the list
+  dlist_add(&im_handler.head, &im_handler.tail, entry);
 
   // increment the handler count
   im_handler.count++;
 }
 
-void im_del_handler(uint8_t vector, im_handler_func handler) {
+void im_del_handler(uint8_t vector, im_handler_func_t handler) {
   if (NULL == handler)
     return;
 
   // if list is empty it can't contain the handler
-  if (NULL == im_handler.head || NULL == im_handler.tail || im_handler.count == 0)
+  if (NULL == im_handler.head || im_handler.count == 0)
     return;
 
   // check if the list contains the handler
-  struct im_handler_entry *entry = im_handler.head, *pre = NULL;
+  struct im_handler_entry *entry = NULL;
 
-  while (NULL != entry) {
-    if (entry->vector == vector && entry->func == handler)
+  dlist_foreach(&im_handler.head, struct im_handler_entry) {
+    if (cur->vector == vector && cur->func == handler) {
+      entry = cur;
       break;
-
-    pre   = entry;
-    entry = entry->next;
+    }
   }
 
   // the entry not found
   if (NULL == entry)
     return;
 
-  if (NULL == pre)
-    im_handler.head = NULL;
-  else
-    pre->next = entry;
-
-  if (entry == im_handler.head)
-    im_handler.head = entry->next;
-
-  if (entry == im_handler.tail) {
-    if (NULL != entry->next)
-      im_handler.tail = entry->next;
-    else
-      im_handler.tail = pre;
-  }
+  // remove the handler from the list
+  dlist_del(&im_handler.head, &im_handler.tail, entry, struct im_handler_entry);
+  im_handler.count--;
 
   vmm_free(entry);
 }

@@ -98,9 +98,9 @@ bool __pic_out8_all(bool comm, uint8_t val) {
 }
 
 // default PIC interrupt (IRQ) handler
-void __pic_handler_default(uint8_t vector) {
-  if (!pic_eoi(vector - PIC_VECTOR_OFFSET)) {
-    printk(KERN_FAIL, "PIC: Failed to send EOI for %d (IRQ %d)", vector, vector - PIC_VECTOR_OFFSET);
+void __pic_handler_default(im_stack_t *stack) {
+  if (!pic_eoi(pic_to_irq(stack->vector))) {
+    printk(KERN_FAIL, "PIC: Failed to send EOI for %d (IRQ %d)", stack->vector, pic_to_irq(stack->vector));
     panic("Failed to send EOI");
   }
 }
@@ -204,7 +204,7 @@ bool pic_init() {
 
   // setup the default PIC interrupt handler (to send EOI to all the interrupts)
   for (uint16_t i = 0; i < PIC_IRQ_TOTAL; i++)
-    im_add_handler(i + PIC_VECTOR_OFFSET, __pic_handler_default);
+    im_add_handler(pic_to_int(i), __pic_handler_default);
 
   return true;
 }

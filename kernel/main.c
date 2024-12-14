@@ -26,6 +26,8 @@
 #include "core/pci.h"
 #include "core/pic.h"
 #include "core/serial.h"
+#include "core/sched.h"
+#include "core/user.h"
 
 #include "boot/end.h"
 #include "boot/multiboot.h"
@@ -111,11 +113,15 @@ void entry() {
   if (!pic_enable())
     panic("Failed to enable the PIC");
 
-  if (!pic_mask(PIC_IRQ_TIMER))
-    panic("Failed to mask timer IRQ");
-
   // enable the interrupts
   im_enable();
+
+  // initialize the scheduler
+  if (sched_init() != 0)
+    panic("Failed to start the scheduler");
+
+  // make current task (us) critikal
+  sched_level(TASK_LEVEL_CRITIKAL);
 
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
@@ -147,28 +153,12 @@ void entry() {
   if (vfs_mount("/", rootfs) != 0)
     panic("Failed to mount the root filesystem");
 
-  // temporary
-  vfs_node_t *init_node = vfs_get("/init");
-  void       *init_addr = NULL;
-  fmt_info_t  init_info;
-  int32_t     err = 0;
+  // execute the init program
+  if (user_exec("/init") < 0)
+    panic("Failed to execute init");
 
-  if (NULL == init_node)
-    panic("Failed to get the init node");
+  sched_kill();
 
-  if ((err = fmt_load(init_node, &init_info)) != 0) {
-    pfail("Failed to load the init: %s", strerror(err));
-    panic("Failed to load init to the memory");
-  }
-
-  fmt_free(&init_info);
-
-  /*
-
-   * this is where we are gonna start the init program and wait for userland calls
-   * for now tho, lets just hang the kernel
-
-  */
   while (true)
     continue;
 

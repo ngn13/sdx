@@ -5,29 +5,64 @@
 #define slist_foreach(head, type) for (type *cur = *head; NULL != cur; cur = cur->next)
 
 #define slist_add(head, entry, type)                                                                                   \
-  type *cur = NULL;                                                                                                    \
-  if (NULL == (cur = *head))                                                                                           \
-    *head = entry;                                                                                                     \
-  else {                                                                                                               \
-    for (; NULL != cur->next; cur = cur->next)                                                                         \
-      ;                                                                                                                \
-    cur->next = entry;                                                                                                 \
-  }
+  do {                                                                                                                 \
+    type *cur = NULL;                                                                                                  \
+    if (NULL == (cur = *head))                                                                                         \
+      *head = entry;                                                                                                   \
+    else {                                                                                                             \
+      for (; NULL != cur->next; cur = cur->next)                                                                       \
+        ;                                                                                                              \
+      cur->next = entry;                                                                                               \
+    }                                                                                                                  \
+  } while (0);
 
 #define slist_del(head, entry, type)                                                                                   \
-  if (NULL != *head) {                                                                                                 \
-    for (type *cur = *head; NULL != cur->next; cur = cur->next) {                                                      \
-      if (entry != cur->next)                                                                                          \
-        continue;                                                                                                      \
-      cur->next = cur->next->next;                                                                                     \
-      break;                                                                                                           \
+  do {                                                                                                                 \
+    if (entry == *head) {                                                                                              \
+      *head = (*head)->next;                                                                                           \
+    } else if (NULL != *head) {                                                                                        \
+      slist_foreach(head, type) {                                                                                      \
+        if (entry != cur->next)                                                                                        \
+          continue;                                                                                                    \
+        cur->next = cur->next->next;                                                                                   \
+        break;                                                                                                         \
+      }                                                                                                                \
     }                                                                                                                  \
-  }
+  } while (0);
 
-#define slist_find(head, entry, comparer, value, type)                                                                 \
-  slist_foreach(head, type) {                                                                                          \
-    if (!comparer(cur, value))                                                                                         \
-      continue;                                                                                                        \
-    *entry = cur;                                                                                                      \
-    break;                                                                                                             \
-  }
+// doubly-linked list macros
+
+#define dlist_foreach(head, type) for (type *cur = *head; NULL != cur; cur = cur->next)
+#define dlist_reveach(tail, type) for (type *cur = *tail; NULL != cur; cur = cur->pre)
+
+#define dlist_add(head, tail, entry)                                                                                   \
+  do {                                                                                                                 \
+    if (NULL == *tail) {                                                                                               \
+      *tail = *head = entry;                                                                                           \
+      entry->next = entry->pre = NULL;                                                                                 \
+    } else {                                                                                                           \
+      (entry)->pre = *tail;                                                                                            \
+      *tail = *tail->next = entry;                                                                                     \
+    }                                                                                                                  \
+  } while (0);
+
+#define dlist_del(head, tail, entry, type)                                                                             \
+  do {                                                                                                                 \
+    if (entry == *head) {                                                                                              \
+      *head      = (*head)->next;                                                                                      \
+      *head->pre = NULL;                                                                                               \
+    }                                                                                                                  \
+    if (entry == *tail) {                                                                                              \
+      *tail       = (*tail)->pre;                                                                                      \
+      *tail->next = NULL;                                                                                              \
+    } else if (NULL != *head) {                                                                                        \
+      dlist_foreach(head, type) {                                                                                      \
+        if (entry != cur->next)                                                                                        \
+          continue;                                                                                                    \
+        if (NULL != cur->next->next)                                                                                   \
+          cur->next->next->pre = cur->pre;                                                                             \
+        cur->next = cur->next->next;                                                                                   \
+        break;                                                                                                         \
+      }                                                                                                                \
+    }                                                                                                                  \
+  } while (0);

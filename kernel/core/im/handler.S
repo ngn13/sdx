@@ -16,21 +16,56 @@ __int_err_codes:
 
 /*
 
- * this macro is used to create unique handlers for every macro
- * so we can save and latter on process the interrupt vector
+ * this macro is used to create unique handlers for every interrupt
+ * it saves the interrupt vector and the registers to the stack
 
 */
 .macro __im_handle_n n
 .global __im_handle_\n
 __im_handle_\n:
-  push_all
+  push_all // save all the registers (temporary)
 
-  // save the interrupt vector to rsi (first argument)
-  mov rdi, \n
+  /*
 
-  // save the stack start address to rsi (second argument)
-  mov rsi, rsp
+   * see if we have the error code on the stack,
+   * if not, then push a fake error code
 
+   * the reason why we are doing this is that only some
+   * interrupt vectors push an error code (see the list at the start)
+
+   * to do this we loop over the list of interrupt vectors
+   * that push an error code to the stack:
+   * - rbx = stores the pointer for __int_err_codes
+   * - rcx = stores the current char
+
+  */
+  lea rbx, __int_err_codes
+
+  .Lim_handle_check_err_codes_\n:
+    // get the next vector on the list
+    xor rcx, rcx
+    mov cl, byte ptr [rbx+0]
+    inc rbx
+
+    // check if we reached the end of the list (0x0)
+    test cl, cl
+    jmp .Lim_handle_no_err_\n
+
+    // see if the current vector matches our vector
+    cmp cl, \n
+    jne .Lim_handle_check_err_codes_\n
+
+.Lim_handle_has_err_\n:
+  pop_all
+  push \n  // save the interrupt vector
+  push_all // save all the registers
+  jmp __im_handle
+
+.Lim_handle_no_err_\n:
+  pop_all
+  push 0 // fake error
+  push \n // save the interrupt vector
+  push_all // save all the registers
   jmp __im_handle
 .endm
 
@@ -55,53 +90,26 @@ __im_handle_\n:
 
  * interrupt handler wrapper
 
- * called by unique interrupt handlers, this function make sures the stack is setup
- * correctly by removing the error code that is pushed by some exception interrupts
+ * this function calls the actual handler with by passing rsp as a argument
+ * and at this point stack has the following structure:
+ * - all the registers
+ * - interrupt vector
+ * - interrupt error code
+ * - iret frame (rip, cs, rflags, rsp, ss)
 
- * after making sure the stack is setup correctly, it calls the actual interrupt handler
- * which is defined in core/im.c
+ * which is interpereted as a pointer to im_stack_t structure by the acutal handler
+ * and it's used to keep track of the interrupt status
 
- * this function is called with a single argument, which is the interrupt vector, and it's
- * set by the unique interrupt handlers
+ * this wrapper function also makes sure that the iret frame remains on the top
+ * before calling iretq to return back
 
 */
 __im_handle:
-  xor rax, rax
-  lea rbx, __int_err_codes
-  xor rcx, rcx
+  mov rdi, rsp
+  call im_handle
 
-  /*
-
-   * we are gonna loop over all the interrupt vectors that push an error code
-   * and we are gonna pop it if the current vector code pushed an error code:
-
-   * and currently the register status is:
-   * - rax = used to save the rbp
-   * - rbx = stores the pointer for __int_err_codes
-   * - rcx = stores the current char
-
-  */
-  .Lim_handle_check_err_codes:
-    xor rcx, rcx
-    mov cl, byte ptr [rbx+0]
-
-    add rbx, 1
-
-    test cl, cl
-    je .Lim_handle_check_err_end
-
-    cmp rcx, rdi
-    jne .Lim_handle_check_err_codes
-
-    mov rax, rsp
-    add rsp, 15*8
-    pop rdx
-    mov rsp, rax
-
-  .Lim_handle_check_err_end:
-    call im_handle
-
-  pop_all
+  pop_all // restore all the registers
+  add rsp, 16 // remove the error code and the vector
   iretq
 
 // load IDTR

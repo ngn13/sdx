@@ -10,14 +10,14 @@ bool bzero(void *data, int64_t size) {
   return true;
 }
 
-bool memcpy(void *dst, void *src, int64_t size) {
+void *memcpy(void *dst, void *src, int64_t size) {
   if (NULL == dst || NULL == src || size <= 0)
-    return false;
+    return NULL;
 
-  for (--size; size >= 0; size--)
-    ((char *)dst)[size] = ((char *)src)[size];
+  for (--size; size >= 0; size--, dst++, src++)
+    *((char *)dst) = *((char *)src);
 
-  return true;
+  return dst;
 }
 
 void memswap(char *x, char *y) {

@@ -78,17 +78,21 @@ pm_tp_t pm_tp_pre(pm_tp_t tp) {
   return __pm_tp_pre(tp, PM_LEVEL - 1);
 }
 
-uint64_t *__pm_tp_entry(pm_tp_t tp, uint64_t *table, uint16_t level) {
-  if (PM_LEVEL - 1 == level)
-    return &table[pm_tp_get_level(tp, level)];
-  return __pm_tp_entry(tp, (uint64_t *)(table[pm_tp_get_level(tp, level)] & PM_ENTRY_ADDR_MASK), (level + 1));
+uint64_t *__pm_tp_entry(pm_tp_t tp, uint64_t *table, uint16_t cur_level, uint16_t dst_level) {
+  if (PM_LEVEL - 1 == cur_level || dst_level - 1 == cur_level)
+    return &table[pm_tp_get_level(tp, cur_level)];
+  return __pm_tp_entry(
+      tp, (uint64_t *)(table[pm_tp_get_level(tp, cur_level)] & PM_ENTRY_ADDR_MASK), (cur_level + 1), dst_level);
 }
 
-// get the PT page entry from a table pointer
-uint64_t *pm_tp_entry(pm_tp_t tp) {
+// get the specified level entry from a table pointer
+uint64_t *pm_tp_entry_at(pm_tp_t tp, uint16_t level) {
   uint64_t *start = (uint64_t *)pm_start;
-  return __pm_tp_entry(tp, start, 0);
+  return __pm_tp_entry(tp, start, 0, level);
 }
+
+// get PT entry from a table pointer
+#define pm_tp_entry(p) pm_tp_entry_at(p, PM_LEVEL)
 
 // recursively calculates the min table size that a pointer can fit in
 uint64_t __pm_tp_size_min(pm_tp_t tp, uint16_t level, bool last) {
@@ -225,22 +229,30 @@ bool pm_extend(uint64_t addr) {
   return true;
 }
 
-// set or clear page flags for "count" pages starting at "addr"
-bool pm_flags(uint64_t addr, uint64_t count, uint64_t flags, bool do_clear) {
-  if (count == 0)
-    return false;
-
-  pm_tp_t   tp    = pm_tp(addr);
+// set or clear page entry flags for a given table pointer
+bool __pm_flags(pm_tp_t tp, uint64_t flags, bool do_clear, bool all_levels) {
   uint64_t *entry = NULL;
+  uint16_t  level = PM_LEVEL;
 
-  for (; count > 0; count--) {
-    entry = pm_tp_entry(tp);
+  for (; level > 0 && (all_levels || level == 0); level--) {
+    entry = pm_tp_entry_at(tp, level);
+
     if (do_clear)
       *entry &= ~flags;
     else
       *entry |= flags;
-    tp = pm_tp_next(tp);
   }
+
+  return true;
+}
+
+// set or clear page entry flags for "count" pages starting at "addr"
+bool pm_flags(uint64_t addr, uint64_t count, uint64_t flags, bool do_clear, bool all_levels) {
+  if (count == 0)
+    return false;
+
+  for (pm_tp_t tp = pm_tp(addr); count > 0; tp = pm_tp_next(tp), count--)
+    __pm_flags(tp, flags, do_clear, all_levels);
 
   return true;
 }

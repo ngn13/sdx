@@ -51,9 +51,11 @@ typedef struct pm_page {
 bool pm_init(uint64_t start, uint64_t end);
 bool pm_is_mapped(uint64_t addr);
 bool pm_extend(uint64_t addr);
-bool pm_flags(uint64_t addr, uint64_t count, uint64_t flags, bool do_clear);
-#define pm_set(addr, count, flags)   (pm_flags(addr, count, flags, false))
-#define pm_clear(addr, count, flags) (pm_flags(addr, count, flags, true))
+bool pm_flags(uint64_t addr, uint64_t count, uint64_t flags, bool do_clear, bool all_levels);
+#define pm_set(addr, count, flags)       (pm_flags(addr, count, flags, false, false))
+#define pm_clear(addr, count, flags)     (pm_flags(addr, count, flags, true, false))
+#define pm_set_all(addr, count, flags)   (pm_flags(addr, count, flags, false, true))
+#define pm_clear_all(addr, count, flags) (pm_flags(addr, count, flags, true, true))
 
 void *pm_alloc(uint64_t count);
 void  pm_free(void *mem, uint64_t count);
