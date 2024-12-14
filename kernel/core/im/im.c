@@ -2,7 +2,9 @@
 
 #include "boot/gdt.h"
 #include "core/im.h"
+
 #include "mm/vmm.h"
+#include "mm/pm.h"
 
 #include "util/io.h"
 #include "util/bit.h"
@@ -58,10 +60,30 @@ struct im_handler {
   struct im_handler_entry *head, *tail;
 };
 
+struct tss {
+  uint32_t reserved0;
+  uint64_t rsp0;
+  uint64_t rsp1;
+  uint64_t rsp2;
+  uint64_t reserved1;
+  uint64_t reserved2;
+  uint64_t ist1;
+  uint64_t ist2;
+  uint64_t ist3;
+  uint64_t ist4;
+  uint64_t ist5;
+  uint64_t ist6;
+  uint64_t ist7;
+  uint64_t reserved3;
+  uint16_t reserved4;
+  uint16_t io_bitmap_offset;
+} __attribute__((packed));
+
 #define IM_IDT_SIZE        sizeof(im_idt)
 #define IM_IDT_ENTRY_SIZE  sizeof(struct im_desc)
 #define IM_IDT_ENTRY_COUNT (IM_IDT_SIZE / IM_IDT_ENTRY_SIZE)
 
+struct tss        im_tss;
 struct im_desc    im_idt[256];
 struct im_idtr    im_idtr = {.size = IM_IDT_SIZE - 1, .addr = (uint64_t)im_idt};
 struct im_handler im_handler;
@@ -133,11 +155,11 @@ void im_set_entry(uint8_t vector, uint8_t dpl) {
 
    * gate type = 0b1110/0xE (interrupt gate)
    * [random fucking zero here]
-   * dpl = 0 (ring 0)
-   * p = 1 (it needs to be set as 1 otherwise its not valid)
+   * DPL = dpl
+   * P = 1 (it needs to be set as 1 otherwise its not valid)
 
   */
-  d->attr = (0b1 << 7) | ((dpl & 0b11) << 5) | 0b1110;
+  d->attr = (1 << 7) | ((dpl & 0b11) << 5) | 0b1110;
 
   // for now we are just gonna disable the IST (and clear out the reserved area as well)
   d->ist = 0;
@@ -219,6 +241,17 @@ void im_init() {
   // init the handler list
   bzero(&im_handler, sizeof(im_handler));
 
-  // load the IDTR (see im/handler.S)
-  __im_load_idtr();
+  // setup the TSS
+  bzero(&im_tss, sizeof(struct tss));
+
+  if ((im_tss.rsp0 = (uint64_t)pm_alloc(1)) == NULL)
+    panic("Failed to allocate memory for the TSS");
+
+  im_tss.rsp0 += PM_PAGE_SIZE;
+  pdebg("IM: Created TSS stack at 0x%x", im_tss.rsp0);
+
+  gdt_tss_set(&im_tss, (sizeof(struct tss) - 1));
+
+  // load the IDTR and TSS (see im/handler.S)
+  __im_load();
 }

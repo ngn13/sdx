@@ -226,7 +226,9 @@ find_new:
 
   // switch to new task
   if (current != new_task) {
-    sched_debg("switching to the new task (%s)", new_task->name); // only print if we are not the only task
+    sched_debg("switching to the new task (%s, 0x%x)",
+        new_task->name,
+        new_task->regs.rip); // only print if we are not the only task
     current = new_task;
     __sched_switch(stack);
   }

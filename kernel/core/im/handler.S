@@ -81,7 +81,7 @@ __im_handle_\n:
 .type __im_load_idtr, @function
 
 .global __im_handle
-.global __im_load_idtr
+.global __im_load
 
 // see core/im/im.c
 .global im_idtr
@@ -112,7 +112,10 @@ __im_handle:
   add rsp, 16 // remove the error code and the vector
   iretq
 
-// load IDTR
-__im_load_idtr:
+// load IDTR and TSS
+__im_load:
   lidt im_idtr
+  mov rax, gdt_desc_tss_addr
+  sub rax, gdt_start_addr
+  ltr ax
   ret

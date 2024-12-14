@@ -1,13 +1,11 @@
-# sdx | simple/shitty and dirty UNIX for x86_64
-as of oct 30 ive been working on this UNIX like OS for over 2 months now, and i decided
-to publish the git repo even tho the project itself is not even close to a stable release yet
+# sdx | shitty and dirty UNIX for x86_64
+a simple, work-in-progress hobby operating system for `x86_64` architecture, written in C and assembly,
+and uses GRUB multiboot2
 
-tons of shit missing and still bunch of shit i need to do so im actively working on this project
+to be clear i have absolutely no idea what i am doing, so i'm learning stuff along the way, which is the
+main motivation of this project, to learn OS development!
 
-### roadmap
-this is not an actual roadmap idk wtf im doing i just add shit here
-when i complete it
-
+### roadmap/todo
 - [x] multiboot
 - [x] paging
 - [x] long mode entry
@@ -18,10 +16,16 @@ when i complete it
 - [x] PIC
 - [x] PCI
 - [X] AHCI
+- [x] serial
 - [ ] IDE
 - [ ] FAT32
-- [ ] scheduler
-- ...
+- [x] scheduler
+- [x] userland
+- [ ] TSS
+- [ ] syscalls
+- [ ] libc
+- [ ] init
+- [ ] possibly a shell and more programs?
 
 ### building
 start by obtaining the source code, you can just clone the repository:
@@ -69,7 +73,6 @@ you can also use the QEMU monitor
 if you want to help me check off some of the shit on the roadmap or if you just want to make fun of my dogshit code or
 if you want to discuss about the [best cars moive](kernel/main.c) feel free to create an issue/PR
 
-
 ### resources
 here is an awesome list of resources/documentation that i use (ill keep extending this as i find more resources),
 this list doesn't contain any spec documents, however specs are referenced in the source code
@@ -82,4 +85,4 @@ this list doesn't contain any spec documents, however specs are referenced in th
 - [The 32 bit x86 C Calling Convention](https://aaronbloomfield.github.io/pdr/book/x86-32bit-ccc-chapter.pdf)
 - [The 64 bit x86 C Calling Convention](https://aaronbloomfield.github.io/pdr/book/x86-64bit-ccc-chapter.pdf)
 
-also there's a great community with bunch of helpfull people in [#osdev](ircs://irc.libera.chat/#osdev) chanel on libera
+also there's a great community with bunch of helpfull people in [#osdev](ircs://irc.libera.chat/#osdev) channel on libera

@@ -8,9 +8,9 @@
 #include "errno.h"
 #include "types.h"
 
-#define elf_info(f, ...) pinfo("ELF (0x%x): " f, elf->node, ##__VA_ARGS__)
-#define elf_fail(f, ...) pfail("ELF (0x%x): " f, elf->node, ##__VA_ARGS__)
-#define elf_debg(f, ...) pdebg("ELF (0x%x): " f, elf->node, ##__VA_ARGS__)
+#define elf_info(f, ...) pinfo("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
+#define elf_fail(f, ...) pfail("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
+#define elf_debg(f, ...) pdebg("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
 
 /*
 

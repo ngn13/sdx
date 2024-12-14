@@ -54,8 +54,8 @@
  |   7 |             6 |      5 | 4 - 2 | 1 - 0 |
  | --- | ------------- | ------ | ----- | ----- |
  | ptr | flags + limit | access |   ptr | limit |
- 
- * i know, go grab some bleach for your eyes 
+
+ * i know, go grab some bleach for your eyes
 
  * anyway we are gonna use the max limit (set all the bits) for the segments
  * and we are gonna use 0 for the pointer (base address), bc as i mentioned earlier we are not doing
@@ -63,13 +63,14 @@
 
  * to learn more about flag and access bits, see this page from osdev:
  * https://wiki.osdev.org/Global_Descriptor_Table
+ * also theres a system segment descriptor with a different format
 
  * it explains everything very well with tables
 
 */
 
 gdt_start:
-  // first GDT descriptor should be empty (NULL descriptor) 
+  // first GDT descriptor should be empty (NULL descriptor)
   gdt_desc_null:
     .quad 0
 
@@ -81,7 +82,7 @@ gdt_start:
     .byte 0b10011010 // access (RW, E, S, P)
     .byte 0b10101111 // flags (G, L) and limit
     .byte 0 // pointer
-   
+
   // data segment (ring 0)
   gdt_desc_data_0:
     .short 0xffff // limit
@@ -99,7 +100,7 @@ gdt_start:
     .byte 0b11111010 // access (DPL = 3, RW, E, S, P)
     .byte 0b10101111 // flags (G, L) and limit
     .byte 0 // pointer
-   
+
   // data segment (ring 3)
   gdt_desc_data_3:
     .short 0xffff // limit
@@ -109,8 +110,22 @@ gdt_start:
     .byte 0b11001111 // flags (G, DB) and limit
     .byte 0 // pointer
 
-  // TODO: TSS segment (low)
-  // TODO: TSS segment (high)
+  /*
+
+   * TSS segment, uses a different descriptor format
+   * see https://wiki.osdev.org/Global_Descriptor_Table#Long_Mode_System_Segment_Descriptor
+
+  */
+  gdt_desc_tss:
+    .short 0 // limit
+    .short 0 // pointer
+    .byte 0 // pointer
+    .byte 0b11101001 // access (DPL = 3, A, E, P)
+    .byte 0 // flags, limit
+    .byte 0 // pointer
+    .int 0 // pointer
+    .int 0 // reserved
+
 gdt_end:
 
 gdt_pointer:
@@ -124,6 +139,7 @@ gdt_desc_code_0_addr: .int gdt_desc_code_0
 gdt_desc_data_0_addr: .int gdt_desc_data_0
 gdt_desc_code_3_addr: .int gdt_desc_code_3
 gdt_desc_data_3_addr: .int gdt_desc_data_3
+gdt_desc_tss_addr: .int gdt_desc_tss
 
 .global gdt_pointer
 
@@ -134,3 +150,4 @@ gdt_desc_data_3_addr: .int gdt_desc_data_3
 .global gdt_desc_data_0_addr
 .global gdt_desc_code_3_addr
 .global gdt_desc_data_3_addr
+.global gdt_desc_tss_addr

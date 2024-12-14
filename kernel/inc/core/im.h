@@ -53,7 +53,7 @@ typedef struct {
 } __attribute__((packed)) im_stack_t;
 
 extern void __im_handle();
-extern void __im_load_idtr();
+extern void __im_load();
 
 // these wrapper handlers are only used for calculating other wrappers addreses
 extern void __im_handle_0();
