@@ -21,7 +21,7 @@ main motivation of this project, to learn OS development!
 - [ ] FAT32
 - [x] scheduler
 - [x] userland
-- [ ] TSS
+- [x] TSS
 - [ ] syscalls
 - [ ] libc
 - [ ] init
