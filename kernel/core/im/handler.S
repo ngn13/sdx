@@ -1,4 +1,3 @@
-.intel_syntax noprefix
 #include "util/stack.S"
 
 .section .data
@@ -39,32 +38,32 @@ __im_handle_\n:
    * - rcx = stores the current char
 
   */
-  lea rbx, __int_err_codes
+  movq $__int_err_codes, %rbx
 
   .Lim_handle_check_err_codes_\n:
     // get the next vector on the list
-    xor rcx, rcx
-    mov cl, byte ptr [rbx+0]
-    inc rbx
+    xor %rcx, %rcx
+    movb (%rbx), %cl
+    inc %rbx
 
     // check if we reached the end of the list (0x0)
-    test cl, cl
-    jmp .Lim_handle_no_err_\n
+    test %cl, %cl
+    je .Lim_handle_no_err_\n
 
     // see if the current vector matches our vector
-    cmp cl, \n
+    cmp $\n, %cl
     jne .Lim_handle_check_err_codes_\n
 
 .Lim_handle_has_err_\n:
   pop_all
-  push \n  // save the interrupt vector
+  push $\n  // save the interrupt vector
   push_all // save all the registers
   jmp __im_handle
 
 .Lim_handle_no_err_\n:
   pop_all
-  push 0 // fake error
-  push \n // save the interrupt vector
+  push $0 // fake error
+  push $\n // save the interrupt vector
   push_all // save all the registers
   jmp __im_handle
 .endm
@@ -79,9 +78,7 @@ __im_handle_\n:
 
 .type __im_handle, @function
 .type __im_load_idtr, @function
-
 .global __im_handle
-.global __im_load
 
 // see core/im/im.c
 .global im_idtr
@@ -105,17 +102,9 @@ __im_handle_\n:
 
 */
 __im_handle:
-  mov rdi, rsp
+  mov %rsp, %rdi
   call im_handle
 
   pop_all // restore all the registers
-  add rsp, 16 // remove the error code and the vector
+  add $PUSH_ALL_COUNT, %rsp // remove the error code and the vector
   iretq
-
-// load IDTR and TSS
-__im_load:
-  lidt im_idtr
-  mov rax, gdt_desc_tss_addr
-  sub rax, gdt_start_addr
-  ltr ax
-  ret

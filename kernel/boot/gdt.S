@@ -1,5 +1,3 @@
-.intel_syntax noprefix
-
 .section .data
 .align 16
 

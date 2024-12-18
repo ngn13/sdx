@@ -1,4 +1,5 @@
 #pragma once
+#include "core/im.h"
 #include "types.h"
 
 /*
@@ -23,7 +24,7 @@ typedef enum {
 } pic_irq_t;
 
 // IDT vector offset, 32 is enough to make sure we don't use exception interrupt vectors
-#define PIC_VECTOR_OFFSET 32
+#define PIC_VECTOR_OFFSET (IM_INT_EXCEPTIONS)
 #define pic_to_int(i)     (i + PIC_VECTOR_OFFSET)
 #define pic_to_irq(i)     (i - PIC_VECTOR_OFFSET)
 

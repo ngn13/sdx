@@ -27,7 +27,7 @@
 #include "core/pic.h"
 #include "core/serial.h"
 #include "core/sched.h"
-#include "core/user.h"
+#include "core/proc.h"
 
 #include "boot/end.h"
 #include "boot/multiboot.h"
@@ -42,7 +42,7 @@
 
 #include "util/panic.h"
 #include "util/printk.h"
-#include "util/string.h"
+#include "util/asm.h"
 
 #include "errno.h"
 #include "types.h"
@@ -121,12 +121,25 @@ void entry() {
     panic("Failed to start the scheduler");
 
   // make current task (us) critikal
-  sched_level(TASK_LEVEL_CRITIKAL);
+  sched_level(current, TASK_LEVEL_CRITIKAL);
 
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
 
-  // look for an available rootfs and mount it
+  /*
+
+   * look for an available root filesystem and mount it
+
+   * to do so we will loop over all the disk partitions with disk_next()
+   * then we will attempt to load a filesystem from the partitions
+
+   * if we successfully load a filesystem from a partition, we will
+   * check the filesysteö is a possible root filesystem using fs_is_rootfs()
+
+   * if we end up finding a possible root filesystem, then we will mount
+   * the filesystem to the root (/) using vfs_mount()
+
+  */
   pinfo("Looking for an available root filesystem partition");
 
   disk_part_t *part   = NULL;
@@ -153,14 +166,23 @@ void entry() {
   if (vfs_mount("/", rootfs) != 0)
     panic("Failed to mount the root filesystem");
 
-  // execute the init program
-  if (user_exec("/init") < 0)
-    panic("Failed to execute init");
+  /*
 
-  sched_kill();
+   * initialize the process list
+   * this will also execute the /init process
 
-  while (true)
-    continue;
+  */
+  proc_init();
 
-  return;
+  /*
+
+   * after executing /init we don't have anything to do now
+   * we will just wait for userland system calls
+
+   * so we can just kill the current task, which will happen next
+   * time sched() gets called, we can manually call it or we can just wait
+
+  */
+  sched_kill(current);
+  _hang(); // wait forever
 }

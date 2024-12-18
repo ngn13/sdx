@@ -8,7 +8,7 @@
 
 */
 
-typedef enum {
+enum {
   // https://wiki.osdev.org/Exceptions
   IM_INT_DIV_ERR = 0x0,
   // ...
@@ -20,7 +20,9 @@ typedef enum {
   IM_INT_GENERAL_PROTECTION_FAULT = 0xD,
   IM_INT_PAGE_FAULT               = 0xE,
   // ...
-} im_interrupts_t;
+};
+
+#define IM_INT_EXCEPTIONS 32
 
 typedef struct {
   // all da registers
@@ -52,20 +54,25 @@ typedef struct {
   uint64_t ss;
 } __attribute__((packed)) im_stack_t;
 
+typedef void im_handler_func_t(im_stack_t *s);
+
+typedef enum {
+  IM_HANDLER_PRIO_FIRST  = 0,
+  IM_HANDLER_PRIO_SECOND = 1,
+  IM_HANDLER_PRIO_LAST   = 2,
+} im_handler_prio_t;
+
 extern void __im_handle();
-extern void __im_load();
 
 // these wrapper handlers are only used for calculating other wrappers addreses
 extern void __im_handle_0();
 extern void __im_handle_1();
 
-typedef void im_handler_func_t(im_stack_t *s);
-
-void im_init();                     // initialize IDT with the default handler
-#define im_enable()  __asm__("sti") // enable the interrupts (set interrupt)
-#define im_disable() __asm__("cli") // disable the interrupts (clear interrupt)
-
+void im_init();                                 // initialize IDT with the default handler
+#define im_enable()  __asm__("sti")             // enable the interrupts (set interrupt)
+#define im_disable() __asm__("cli")             // disable the interrupts (clear interrupt)
 void im_set_entry(uint8_t vector, uint8_t dpl); // modfiy a IDT entry
-
-void im_del_handler(uint8_t vector, im_handler_func_t handler); // switch a given IDT entry with the default handler
-void im_add_handler(uint8_t vector, im_handler_func_t handler); // set a given IDT entry to a handler
+void im_del_handler(uint8_t vector, im_handler_prio_t prio,
+    im_handler_func_t handler); // switch a given IDT entry with the default handler
+void im_add_handler(
+    uint8_t vector, im_handler_prio_t prio, im_handler_func_t handler); // set a given IDT entry to a handler

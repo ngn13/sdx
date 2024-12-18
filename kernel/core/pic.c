@@ -204,7 +204,7 @@ bool pic_init() {
 
   // setup the default PIC interrupt handler (to send EOI to all the interrupts)
   for (uint16_t i = 0; i < PIC_IRQ_TOTAL; i++)
-    im_add_handler(pic_to_int(i), __pic_handler_default);
+    im_add_handler(pic_to_int(i), IM_HANDLER_PRIO_LAST, __pic_handler_default);
 
   return true;
 }

@@ -1,5 +1,7 @@
 .intel_syntax noprefix
 
+// TODO: rewrite in GAS (AT&T) syntax
+
 .equ STACK_SIZE, 0x10000
 
 .section .data

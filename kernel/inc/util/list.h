@@ -3,6 +3,7 @@
 // singly-linked list macros
 
 #define slist_foreach(head, type) for (type *cur = *head; NULL != cur; cur = cur->next)
+#define slist_is_end()            (cur->next == NULL)
 
 #define slist_add(head, entry, type)                                                                                   \
   do {                                                                                                                 \
@@ -34,6 +35,8 @@
 
 #define dlist_foreach(head, type) for (type *cur = *head; NULL != cur; cur = cur->next)
 #define dlist_reveach(tail, type) for (type *cur = *tail; NULL != cur; cur = cur->pre)
+#define dlist_is_start()          (cur->pre == NULL)
+#define dlist_is_end()            (cur->next == NULL)
 
 #define dlist_add(head, tail, entry)                                                                                   \
   do {                                                                                                                 \

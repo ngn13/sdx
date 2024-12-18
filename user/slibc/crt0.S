@@ -26,6 +26,25 @@
 .global _start
 
 _start:
+  // pop the argv and envp
+  pop rsi
+  pop rdx
+
+  // calculate argc
+  xor rdi, rdi
+  mov rbx, rsi
+
+  .Lstart_argc_loop:
+    mov rax, [rbx]
+
+    add rbx, 8
+    inc rdi
+
+    test rax, rax
+    jne .Lstart_argc_loop
+
+  dec rdi
+
   // initalize slibc internal stuff
   call _slibc_start
 

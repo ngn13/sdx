@@ -4,11 +4,9 @@ bool out8(uint16_t port, uint8_t val) {
   if (port == 0)
     return false;
 
-  __asm__(".intel_syntax noprefix;"
-          "mov dx, %0;"
-          "mov al, %1;"
-          "out dx, al;"
-          ".att_syntax;"
+  __asm__("mov %0, %%dx\n"
+          "mov %1, %%al\n"
+          "out %%al, %%dx\n"
           :
           : "ir"(port), "ir"(val)
           : "rax", "rdx");
@@ -20,11 +18,9 @@ bool out16(uint16_t port, uint16_t val) {
   if (port == 0)
     return false;
 
-  __asm__(".intel_syntax noprefix;"
-          "mov dx, %0;"
-          "mov ax, %1;"
-          "out dx, ax;"
-          ".att_syntax;"
+  __asm__("mov %0, %%dx\n"
+          "mov %1, %%ax\n"
+          "out %%ax, %%dx\n"
           :
           : "ir"(port), "ir"(val)
           : "rax", "rdx");
@@ -36,11 +32,9 @@ bool out32(uint16_t port, uint32_t val) {
   if (port == 0)
     return false;
 
-  __asm__(".intel_syntax noprefix;"
-          "mov dx, %0;"
-          "mov eax, %1;"
-          "out dx, eax;"
-          ".att_syntax;"
+  __asm__("mov %0, %%dx\n"
+          "mov %1, %%eax\n"
+          "out %%eax, %%dx\n"
           :
           : "ir"(port), "ir"(val)
           : "rax", "rdx");
@@ -54,12 +48,10 @@ uint8_t in8(uint16_t port) {
 
   uint8_t val = 0;
 
-  __asm__(".intel_syntax noprefix;"
-          "xor rax, rax;"
-          "mov dx, %1;"
-          "in al, dx;"
-          "mov %0, al;"
-          ".att_syntax;"
+  __asm__("xor %%rax, %%rax\n"
+          "mov %1, %%dx\n"
+          "in %%dx, %%al\n"
+          "mov %%al, %0\n"
           : "=r"(val)
           : "ir"(port)
           : "rax", "rdx");
@@ -73,12 +65,10 @@ uint16_t in16(uint16_t port) {
 
   uint16_t val = 0;
 
-  __asm__(".intel_syntax noprefix;"
-          "xor rax, rax;"
-          "mov dx, %1;"
-          "in ax, dx;"
-          "mov %0, ax;"
-          ".att_syntax;"
+  __asm__("xor %%rax, %%rax\n"
+          "mov %1, %%dx\n"
+          "in %%dx, %%ax\n"
+          "mov %%ax, %0\n"
           : "=r"(val)
           : "ir"(port)
           : "rax", "rdx");
@@ -92,12 +82,10 @@ uint32_t in32(uint16_t port) {
 
   uint32_t val = 0;
 
-  __asm__(".intel_syntax noprefix;"
-          "xor rax, rax;"
-          "mov dx, %1;"
-          "in eax, dx;"
-          "mov %0, eax;"
-          ".att_syntax;"
+  __asm__("xor %%rax, %%rax\n"
+          "mov %1, %%dx\n"
+          "in %%dx, %%eax\n"
+          "mov %%eax, %0\n"
           : "=r"(val)
           : "ir"(port)
           : "rax", "rdx");

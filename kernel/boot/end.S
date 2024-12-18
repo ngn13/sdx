@@ -1,5 +1,3 @@
-.intel_syntax noprefix
-
 /*
 
  * stores the end section, which used to make sure that a region
@@ -21,10 +19,10 @@
 .code32
 
 __end_get_addr:
-  push eax
+  pushl %eax
 
-  lea eax, _end_addr
-  mov [end_addr+0], eax
+  mov $end_addr, %eax
+  mov $_end_addr, (%eax)
 
-  pop eax
+  pop %eax
   ret

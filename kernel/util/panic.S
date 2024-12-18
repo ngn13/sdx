@@ -1,41 +1,72 @@
-.intel_syntax noprefix
-
+#define ASM_FILE 1
 #include "util/stack.S"
+#include "core/sched.h"
+
+.section .data
+_panic_local_regs_start:
+  .skip (TASK_REG_COUNT*8)
+_panic_local_regs_end:
+
+.global _panic_local_regs_start
+.global _panic_local_regs_end
 
 .section .text
 .code64
 
-.global _panic
+.type __panic_with, @function // see util/panic.c
+.type _panic_with, @function
+
+.extern __panic_with 
+.global _panic_with
 
 /*
 
- * panic is using assembly instead of C, because we need to save the registers
- * and the stack for an accurate register and stack dump
-
- * otherwise all the registers and shit would be overwritten by the function
+ * panic_with is using assembly, because if task_regs_t is not specified
+ * we need to obtain it ourselfs, ofc without modifiying the registers,
+ * which is not possible using C
 
 */
 
-_panic:
-  push rbp // lets make sure to not break the stack trace
+_panic_with:
+  // save all the registers (in order, see task_regs_t in inc/core/sched.h)
+  push %rsp
+  pushfq
+  push $0 // cs
+  push $0 // ss
+  push $0 // rip
+  push_all
 
-  push rdi // save first arg (function name)
-  push rsi // save second arg (panic message)
-  push [rsp+(8*3)] // save the return address
-
-  // rdi will store the stack frame end for the caller
-  mov rdi, rsp
-  sub rdi, (8*15) // get space for all 16 registers
+  // fix the rsp (make sure it points to the callers stack frame)
+  //movq -4(%rsp), %rax
+  addq $8, (TASK_REG_COUNT-1) *8(%rsp)
+  //add [rsp+((TASK_REG_COUNT-1)*8)], al
   
-  push_all // save all the registers
+  // restore the stack
+  add $(TASK_REG_COUNT*8), %rsp
 
-  call __panic
+  // copy all the pushed registers to _panic_local_regs
+  movq %rsp, %r15
+  movq $_panic_local_regs_end, %r14
 
-  // this part doesn't really matter because panic won't return anyway
-  pop_all // restore all the registers
+  .Lpanic_with_copy_reg:
+    sub $8, %r15
+    sub $8, %r14
 
-  pop rsi
-  pop rdi
-  pop rbp
+    movq (%r15), %r13
+    movq %r13, (%r14)
 
-  ret
+    cmpq $_panic_local_regs_start, %r14
+    jne .Lpanic_with_copy_reg
+
+  // if register structure is not specified, use _panic_local_regs
+  mov $_panic_local_regs_start, %r15
+  test %rdi, %rdi
+  cmove %r15, %rdi
+
+  call __panic_with
+
+  // if somehow return, just halt
+  .Lpanic_with_halt:
+    cli
+    hlt
+    jmp .Lpanic_with_halt

@@ -51,6 +51,7 @@ struct im_idtr {
 
 struct im_handler_entry {
   im_handler_func_t       *func;       // handler function
+  im_handler_prio_t        prio;       // handler function priority
   uint8_t                  vector;     // selected vector for the handler
   struct im_handler_entry *next, *pre; // next and previous handler
 };
@@ -96,53 +97,9 @@ struct im_handler im_handler;
 
 */
 void im_handle(im_stack_t *stack) {
-  dlist_reveach(&im_handler.tail, struct im_handler_entry) {
-    if (cur->vector == stack->vector)
-      cur->func(stack);
-  }
-
-  /*
-
-   * panic on critical faults/traps
-   * list can be found at https://wiki.osdev.org/Exceptions
-
-  */
-  switch (stack->vector) {
-  case IM_INT_DIV_ERR:
-    panic("Received an division by zero exception");
-    break;
-
-  case IM_INT_INV_OPCODE:
-    panic("Received an invalid opcode exception");
-    break;
-
-  case IM_INT_DOUBLE_FAULT:
-    panic("Received a double fault exception");
-    break;
-
-  case IM_INT_GENERAL_PROTECTION_FAULT:
-    panic("Received a general protection fault exception");
-    break;
-
-  case IM_INT_PAGE_FAULT:
-    __asm__("nop");
-
-    uint64_t cr2 = 0;
-    __asm__("mov %0, %%cr2\n" : "=r"(cr2));
-
-    pfail("PF: (0x%x) P=%u W=%u U=%u R=%u I=%u PK=%u SS=%u SGX=%u",
-        cr2,
-        bit_get(stack->error, 0),
-        bit_get(stack->error, 1),
-        bit_get(stack->error, 2),
-        bit_get(stack->error, 3),
-        bit_get(stack->error, 4),
-        bit_get(stack->error, 5),
-        bit_get(stack->error, 6),
-        bit_get(stack->error, 7));
-    panic("Received an page fault exception");
-    break;
-  }
+  for (uint8_t i = IM_HANDLER_PRIO_FIRST; i <= IM_HANDLER_PRIO_LAST; i++)
+    dlist_reveach(&im_handler.tail, struct im_handler_entry) if (cur->prio == i && cur->vector == stack->vector)
+        cur->func(stack);
 }
 
 void im_set_entry(uint8_t vector, uint8_t dpl) {
@@ -166,7 +123,7 @@ void im_set_entry(uint8_t vector, uint8_t dpl) {
 }
 
 // add/set interrupt in the IDT
-void im_add_handler(uint8_t vector, im_handler_func_t handler) {
+void im_add_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t handler) {
   if (NULL == handler)
     return;
 
@@ -181,6 +138,7 @@ void im_add_handler(uint8_t vector, im_handler_func_t handler) {
   entry->next                    = NULL;
   entry->vector                  = vector;
   entry->func                    = handler;
+  entry->prio                    = prio;
 
   // add the new entry to the list
   dlist_add(&im_handler.head, &im_handler.tail, entry);
@@ -189,7 +147,7 @@ void im_add_handler(uint8_t vector, im_handler_func_t handler) {
   im_handler.count++;
 }
 
-void im_del_handler(uint8_t vector, im_handler_func_t handler) {
+void im_del_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t handler) {
   if (NULL == handler)
     return;
 
@@ -201,7 +159,7 @@ void im_del_handler(uint8_t vector, im_handler_func_t handler) {
   struct im_handler_entry *entry = NULL;
 
   dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler) {
+    if (cur->vector == vector && cur->prio == prio && cur->func == handler) {
       entry = cur;
       break;
     }
@@ -252,6 +210,9 @@ void im_init() {
 
   gdt_tss_set(&im_tss, (sizeof(struct tss) - 1));
 
-  // load the IDTR and TSS (see im/handler.S)
-  __im_load();
+  // load the IDTR
+  __asm__("lidt (%0)" ::"rm"(&im_idtr));
+
+  // load the TSS
+  __asm__("ltr %0" ::"r"(gdt_offset(gdt_desc_tss_addr)));
 }

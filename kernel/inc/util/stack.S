@@ -1,40 +1,37 @@
-.intel_syntax noprefix
-
-.section .text
-.code64
+#define PUSH_ALL_COUNT (16)
 
 .macro push_all
-  push rax
-  push rbx
-  push rcx
-  push rdx
-  push rbp
-  push rsi
-  push rdi
-  push r8
-  push r9
-  push r10
-  push r11
-  push r12
-  push r13
-  push r14
-  push r15
+  pushq %rax
+  pushq %rbx
+  pushq %rcx
+  pushq %rdx
+  pushq %rbp
+  pushq %rsi
+  pushq %rdi
+  pushq %r8
+  pushq %r9
+  pushq %r10
+  pushq %r11
+  pushq %r12
+  pushq %r13
+  pushq %r14
+  pushq %r15
 .endm
 
 .macro pop_all
-  pop r15
-  pop r14
-  pop r13
-  pop r12
-  pop r11
-  pop r10
-  pop r9
-  pop r8
-  pop rdi
-  pop rsi
-  pop rbp
-  pop rdx
-  pop rcx
-  pop rbx
-  pop rax
+  popq %r15
+  popq %r14
+  popq %r13
+  popq %r12
+  popq %r11
+  popq %r10
+  popq %r9
+  popq %r8
+  popq %rdi
+  popq %rsi
+  popq %rbp
+  popq %rdx
+  popq %rcx
+  popq %rbx
+  popq %rax
 .endm
