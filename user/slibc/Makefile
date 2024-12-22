@@ -22,7 +22,7 @@ $(DISTDIR)/%.c.o: %.c $(HSRCS)
 	$(CC) -c $(CFLAGS) $(INCLUDE) $< -o $@
 
 $(DISTDIR)/crt0.o: crt0.S $(HSRCS)
-	$(CC) -c $(CFLAGS) $(INCLUDE) $< -o $@
+	$(CC) -c $(SFLAGS) $(INCLUDE) $< -o $@
 
 clean:
 	rm -rf $(DISTDIR)

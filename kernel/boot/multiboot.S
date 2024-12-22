@@ -2,7 +2,6 @@
 
 // TODO: rewrite in GAS (AT&T) syntax
 
-#define ASM_FILE 1
 #include "boot/multiboot.h"
 
 .section .multiboot

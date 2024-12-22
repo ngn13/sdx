@@ -1,6 +1,7 @@
 #pragma once
-#include "fs/fs.h"
+#include "util/lock.h"
 #include "mm/vmm.h"
+#include "fs/fs.h"
 
 #include "limits.h"
 #include "types.h"
@@ -14,9 +15,13 @@ typedef struct vfs_node {
   fs_t            *fs;                 // filesystem the inode belongs to
   char             name[NAME_MAX + 1]; // name of the node
   fs_inode_t       inode;              // inode for the node
-  uint64_t         use_lock;           // is node in use?
+  spinlock_t       use_lock;           // is node in use?
   struct vfs_node *parent, *child, *sibling;
 } vfs_node_t;
+
+#define vfs_node_is_locked(node) spinlock_is_locked(node->use_lock)
+#define vfs_node_unlock(node)    spinlock_unlock(node->use_lock)
+#define vfs_node_lock(node)      spinlock_lock(node->use_lock)
 
 #define vfs_path_next(path, name)                                                                                      \
   do {                                                                                                                 \

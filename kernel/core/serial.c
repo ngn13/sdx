@@ -3,6 +3,9 @@
 #include "util/mem.h"
 #include "util/printk.h"
 
+#include "types.h"
+#include "errno.h"
+
 /*
 
  * functions for serial ports
@@ -66,7 +69,7 @@ enum serial_port_offsets {
 #define in8_port(o)     in8(port->addr + o)
 
 // enum and load available ports
-bool serial_init() {
+int32_t serial_init() {
 #define __out8_fail_cont(o, v)                                                                                         \
   if (!out8_port(o, v))                                                                                                \
     continue;
@@ -142,7 +145,7 @@ bool serial_init() {
         i);
   }
 
-  return true;
+  return 0;
 }
 
 struct serial_port *__serial_find(serial_port_addr_t addr) {
@@ -164,29 +167,29 @@ bool __serial_port_readable(struct serial_port *port) {
   return in8_port(SERIAL_OFF_LINE_STATUS) & 1;
 }
 
-bool serial_write(serial_port_addr_t addr, char *msg) {
+int32_t serial_write(serial_port_addr_t addr, char *msg) {
   struct serial_port *port = __serial_find(addr);
 
   if (NULL == port || !port->available)
-    return false;
+    return -EINVAL;
 
   for (; *msg != 0; msg++) {
     while (!__serial_port_writeable(port))
       continue;
 
     if (!out8_port(SERIAL_OFF_WRITE, *msg))
-      return false;
+      return -EIO;
   }
 
-  return true;
+  return 0;
 }
 
-bool serial_read(serial_port_addr_t addr, char *msg, uint64_t size) {
+int32_t serial_read(serial_port_addr_t addr, char *msg, uint64_t size) {
   struct serial_port *port = __serial_find(addr);
   uint64_t            cur  = 0;
 
   if (NULL == port || !port->available)
-    return false;
+    return -EINVAL;
 
   for (; cur < size; cur++) {
     while (!__serial_port_readable(port))
@@ -194,5 +197,5 @@ bool serial_read(serial_port_addr_t addr, char *msg, uint64_t size) {
     msg[cur] = in8_port(SERIAL_OFF_READ);
   }
 
-  return true;
+  return 0;
 }

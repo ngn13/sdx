@@ -1,17 +1,15 @@
-#include "types.h"
-
 #include "boot/gdt.h"
 #include "core/im.h"
 
 #include "mm/vmm.h"
 #include "mm/pm.h"
 
-#include "util/io.h"
+#include "util/printk.h"
+#include "util/panic.h"
+#include "util/list.h"
 #include "util/bit.h"
 #include "util/mem.h"
-#include "util/list.h"
-#include "util/panic.h"
-#include "util/printk.h"
+#include "util/io.h"
 
 /*
 
@@ -53,6 +51,7 @@ struct im_handler_entry {
   im_handler_func_t       *func;       // handler function
   im_handler_prio_t        prio;       // handler function priority
   uint8_t                  vector;     // selected vector for the handler
+  bool                     is_enabled; // is the handler enabled
   struct im_handler_entry *next, *pre; // next and previous handler
 };
 
@@ -147,7 +146,7 @@ void im_add_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t ha
   im_handler.count++;
 }
 
-void im_del_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t handler) {
+void im_del_handler(uint8_t vector, im_handler_func_t handler) {
   if (NULL == handler)
     return;
 
@@ -159,7 +158,7 @@ void im_del_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t ha
   struct im_handler_entry *entry = NULL;
 
   dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->prio == prio && cur->func == handler) {
+    if (cur->vector == vector && cur->func == handler) {
       entry = cur;
       break;
     }
@@ -174,6 +173,24 @@ void im_del_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t ha
   im_handler.count--;
 
   vmm_free(entry);
+}
+
+void im_disable_handler(uint8_t vector, im_handler_func_t handler) {
+  dlist_foreach(&im_handler.head, struct im_handler_entry) {
+    if (cur->vector == vector && cur->func == handler) {
+      cur->is_enabled = false;
+      break;
+    }
+  }
+}
+
+void im_enable_handler(uint8_t vector, im_handler_func_t handler) {
+  dlist_foreach(&im_handler.head, struct im_handler_entry) {
+    if (cur->vector == vector && cur->func == handler) {
+      cur->is_enabled = true;
+      break;
+    }
+  }
 }
 
 // initialize the interrupt manager

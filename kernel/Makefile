@@ -15,17 +15,18 @@ SRCDIRS = $(shell find . -type d -not -path './dist/*')
 OUTDIRS = $(patsubst %,$(DISTDIR)/%,$(SRCDIRS))
 
 # C compiler flags 
-CFLAGS  = -nostdlib -nostartfiles -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2
-CFLAGS += -Werror # warnings = errors
+CFLAGS  = -g -nostdlib -nostartfiles -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2
 CFLAGS += -Wno-packed-bitfield-compat # disable useless ABI change warning
+CFLAGS += -Werror # warnings = errors
 
 # ASM compiler flags
-SFLAGS  = -g -nostdlib -nostartfiles -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2
-SFLAGS += -Werror
+SFLAGS  = $(CFLAGS)
+SFLAGS += -D__ASSEMBLY__=1 # make sure assembly source files have __ASSEMBLY__ defined
+SFLAGS += -Werror # warnings = errors
 
 # other flags
 LFLAGS  = --nmagic
-INCLUDE = -I inc -I ../config
+INCLUDE = -I inc -I ../inc -I ../config
 
 all: $(DISTDIR) $(OUTDIRS) $(DISTDIR)/kernel
 

@@ -26,8 +26,10 @@
 #include "core/pci.h"
 #include "core/pic.h"
 #include "core/serial.h"
-#include "core/sched.h"
-#include "core/proc.h"
+#include "core/user.h"
+
+#include "sched/sched.h"
+#include "sched/task.h"
 
 #include "boot/end.h"
 #include "boot/multiboot.h"
@@ -48,6 +50,7 @@
 #include "types.h"
 
 void entry() {
+  int32_t err = 0;
   /*
 
    * here, we initialize video memory in width the framebuffer mode
@@ -61,7 +64,8 @@ void entry() {
     panic("Failed to initialize the framebuffer video mode");
 
   // initialize serial communication ports (UART)
-  serial_init();
+  if ((err = serial_init()) != 0)
+    pfail("Failed to initalize the serial communication: %s", strerror(err));
 
   /*
 
@@ -117,11 +121,11 @@ void entry() {
   im_enable();
 
   // initialize the scheduler
-  if (sched_init() != 0)
-    panic("Failed to start the scheduler");
+  if ((err = sched_init()) != 0)
+    panic("Failed to start the scheduler: %s", strerror(err));
 
   // make current task (us) critikal
-  sched_level(current, TASK_LEVEL_CRITIKAL);
+  task_level(current, TASK_LEVEL_CRITIKAL);
 
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
@@ -163,26 +167,19 @@ void entry() {
   pdebg("Loaded a %s root filesystem from 0x%x", fs_name(rootfs), part);
   pdebg("Mounting the root filesystem");
 
-  if (vfs_mount("/", rootfs) != 0)
-    panic("Failed to mount the root filesystem");
+  if ((err = vfs_mount("/", rootfs)) != 0)
+    panic("Failed to mount the root filesystem: %s", strerror(err));
 
   /*
 
-   * initialize the process list
-   * this will also execute the /init process
+   * setup the user system calls (syscalls)
+   * we'll need them before starting userland processes
 
   */
-  proc_init();
+  if ((err = user_setup()) != 0)
+    panic("Failed to setup the user calls: %s", strerror(err));
 
-  /*
-
-   * after executing /init we don't have anything to do now
-   * we will just wait for userland system calls
-
-   * so we can just kill the current task, which will happen next
-   * time sched() gets called, we can manually call it or we can just wait
-
-  */
-  sched_kill(current);
-  _hang(); // wait forever
+  // execute the init program
+  if ((err = user_exec("/init", NULL, NULL)) < 0)
+    panic("Failed to execute init: %s", strerror(err));
 }

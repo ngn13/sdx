@@ -56,7 +56,7 @@ int32_t vfs_node_add(vfs_node_t *node, vfs_node_t *child) {
 }
 
 bool vfs_node_deleteable(vfs_node_t *node) {
-  if (node->use_lock > 0)
+  if (vfs_node_is_locked(node))
     return false;
 
   vfs_node_foreach(node) {

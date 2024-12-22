@@ -135,5 +135,3 @@
 #define ERFKILL         132 // Operation not possible due to RF-kill
 #define EHWPOISON       133 // Memory page has hardware error
 #define ENOTSUP         95  // Operation not supported
-
-const char *strerror(int32_t err);

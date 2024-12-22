@@ -2,7 +2,6 @@
 
 // TODO: rewrite in GAS (AT&T) syntax
 
-#define ASM_FILE 1
 #include "mm/pm.h"
 
 /*

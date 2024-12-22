@@ -15,6 +15,7 @@
   err_bad_vendor: .string "HALTING: Your CPU is not supported (unknown vendor)"
   err_no_magic:   .string "HALTING: Magic number is not set (did you boot with GRUB multiboot2?)"
   err_no_long:    .string "HALTING: Your CPU is not supported (no long mode, are you on x64?)"
+  err_no_msr:     .string "HALTING: Your CPU is not supported (no MSR)"
 
 .section .bss
   // simple stack
@@ -86,7 +87,7 @@ __entry:
   // load the stack
   lea esp, [stack + STACK_SIZE]
 
-  /* 
+  /*
 
    * verify the multiboot magic number
    * we have to make sure we are booted with GRUB multiboot2
@@ -97,13 +98,13 @@ __entry:
    * https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html
 
   */
-  mov ecx, 0x36d76289 
+  mov ecx, 0x36d76289
   cmp eax, ecx
   jne .Lentry_fail_magic
 
   // now lets save the multiboot data
   push ebx
- 
+
   // initalize video memory (pass the multiboot data as the first argument)
   call __video_init
 
@@ -132,7 +133,7 @@ __entry:
   je .Lentry_fail_cpuid
 
   // obtain and check CPU vendor name
-  mov eax, 0x0
+  xor eax, eax
   cpuid
 
   push ecx
@@ -164,7 +165,38 @@ __entry:
 
   call __check_vendor
 
-  // check if extended CPUID is available
+  /*
+
+   * check if MSR is available
+
+   * we need MSR for SYSCALL/SYSRET, and we can check it by calling CPUID with EAX = 1
+   * to get "Feature Information" in EDX, and bit 5 of this information stores 1 if MSR is
+   * supported (Table 3-20. More on Feature Information Returned in the EDX Register from SDM Vol. 2)
+
+   * also SDM says SEP bit is "The SYSENTER and SYSEXIT and associated MSRs are supported"
+   * so i guess we don't need to check it for SYSCALL/SYSRET support?
+
+   * we probably don't as we control them with EFER, which should be enabled if we have long mode
+   * which will check in a minute
+
+  */
+  mov eax, 1
+  cpuid
+  test edx, 1 << 5
+  je .Lentry_fail_msr
+
+  /*
+
+   * check if extended CPUID is available
+
+   * as provided in "Extended Function CPUID Information" section of
+   * "Table 3-17. Information Returned by CPUID Instruction (Contd.)" (SDM Vol. 2)
+   * when we call CPUID with EAX = 0x80000000, EAX is set to
+   * "Maximum Input Value for Extended Function CPUID Information"
+
+   * and for the long mode check we need at least 0x80000001
+
+  */
   mov eax, 0x80000000
   cpuid
   cmp eax, 0x80000001
@@ -228,6 +260,10 @@ __entry:
   lea eax, err_no_long
   jmp .Lentry_fail_call
 
+.Lentry_fail_msr:
+  lea eax, err_no_msr
+  jmp .Lentry_fail_call
+
 .Lentry_fail_call:
   push eax
   call __fail
@@ -252,7 +288,7 @@ __entry64:
   // clear the stack
   lea edi, [stack + STACK_SIZE]
   xor eax, eax
-  mov ecx, STACK_SIZE 
+  mov ecx, STACK_SIZE
   rep stosd
 
   // reset stack

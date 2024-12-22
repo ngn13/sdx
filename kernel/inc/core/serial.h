@@ -12,7 +12,6 @@ typedef enum serial_port_addr {
   SERIAL_PORT_COM8 = 0x4E8,
 } serial_port_addr_t;
 
-bool serial_init();
-
-bool serial_write(serial_port_addr_t addr, char *msg);
-bool serial_read(serial_port_addr_t addr, char *msg, uint64_t size);
+int32_t serial_init();
+int32_t serial_write(serial_port_addr_t addr, char *msg);
+int32_t serial_read(serial_port_addr_t addr, char *msg, uint64_t size);

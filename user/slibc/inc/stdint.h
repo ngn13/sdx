@@ -1,8 +1,5 @@
 #pragma once
 
-// just some common data type definitions to make the life easier
-#ifndef ASM_FILE
-
 typedef unsigned char  uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int   uint32_t;
@@ -20,8 +17,6 @@ typedef __builtin_va_list va_list;
 #define va_end(ap)          __builtin_va_end(ap)
 #define va_arg(ap, type)    __builtin_va_arg(ap, type)
 #define va_copy(dest, src)  __builtin_va_copy(dest, src)
-
-#endif
 
 #define NULL 0
 

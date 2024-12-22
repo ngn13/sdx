@@ -1,6 +1,7 @@
-#define ASM_FILE 1
+#include "sched/sched.h"
+#include "sched/task.h"
+
 #include "util/stack.S"
-#include "core/sched.h"
 
 .section .data
 _panic_local_regs_start:
@@ -16,7 +17,7 @@ _panic_local_regs_end:
 .type __panic_with, @function // see util/panic.c
 .type _panic_with, @function
 
-.extern __panic_with 
+.extern __panic_with
 .global _panic_with
 
 /*
@@ -37,10 +38,8 @@ _panic_with:
   push_all
 
   // fix the rsp (make sure it points to the callers stack frame)
-  //movq -4(%rsp), %rax
   addq $8, (TASK_REG_COUNT-1) *8(%rsp)
-  //add [rsp+((TASK_REG_COUNT-1)*8)], al
-  
+
   // restore the stack
   add $(TASK_REG_COUNT*8), %rsp
 

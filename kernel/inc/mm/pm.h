@@ -1,21 +1,13 @@
 #pragma once
-#include "boot/multiboot.h"
-#include "types.h"
+#include "limits.h"
 
-// max size of a page/table (we are using the smallest available amount)
-#define PM_PAGE_SIZE 4096
-
-// level of paging we are using
-#define PM_LEVEL 4
-
-// size of each entry in a table
-#define PM_ENTRY_SIZE 8
-
-// maximum amount of entires per table (PM_TABLE_SIZE / PM_ENTRY_SIZE)
-#define PM_ENTRY_MAX 512
+#define PM_PAGE_SIZE  (PAGE_SIZE) // max size of a page/table (we are using the smallest available amount)
+#define PM_LEVEL      (4)         // level of paging we are using
+#define PM_ENTRY_SIZE (8)         // size of each entry in a table
+#define PM_ENTRY_MAX  (512)       // maximum amount of entires per table (PM_TABLE_SIZE / PM_ENTRY_SIZE)
 
 // paging entry flags (https://wiki.osdev.org/Paging#Page_Directory)
-#define PM_ENTRY_FLAG_P   1        // present
+#define PM_ENTRY_FLAG_P   (1)      // present
 #define PM_ENTRY_FLAG_RW  (1 << 1) // read/write
 #define PM_ENTRY_FLAG_US  (1 << 2) // user/supervisor
 #define PM_ENTRY_FLAG_PWT (1 << 3) // page write through
@@ -33,8 +25,11 @@
   (~(PM_ENTRY_FLAG_P | PM_ENTRY_FLAG_RW | PM_ENTRY_FLAG_US | PM_ENTRY_FLAG_PWT | PM_ENTRY_FLAG_PCD | PM_ENTRY_FLAG_A | \
       PM_ENTRY_FLAG_D | PM_ENTRY_FLAG_PAT | PM_ENTRY_FLAG_G | PM_ENTRY_FLAG_XD))
 
-#ifndef ASM_FILE
+#ifndef __ASSEMBLY__
+
+#include "boot/multiboot.h"
 #include "util/math.h"
+#include "types.h"
 
 // see boot/paging.S
 #define pm_start ((uint64_t)mb_mem_avail_addr) // address for the first paging table (where the page tables start)
@@ -47,7 +42,8 @@ typedef struct pm_page {
   uint64_t  size;
 } pm_page_t;
 
-#define pm_calc(size) (div_ceil(size, PM_PAGE_SIZE))
+#define pm_calc(size)  (div_ceil(size, PM_PAGE_SIZE))
+#define pm_size(count) (count * PM_PAGE_SIZE)
 bool pm_init(uint64_t start, uint64_t end);
 bool pm_is_mapped(uint64_t addr);
 bool pm_extend(uint64_t addr);

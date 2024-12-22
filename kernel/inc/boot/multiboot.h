@@ -83,8 +83,7 @@
 #define MULTIBOOT_FRAMEBUFFER_TYPE_RGB      1
 #define MULTIBOOT_FRAMEBUFFER_TYPE_EGA_TEXT 2
 
-#ifndef ASM_FILE
-
+#ifndef __ASSEMBLY__
 #include "types.h"
 
 struct multiboot_color {

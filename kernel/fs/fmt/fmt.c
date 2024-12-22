@@ -9,7 +9,7 @@
 
 struct fmt {
   const char *name;
-  int32_t (*load)(vfs_node_t *, fmt_info_t *);
+  int32_t (*load)(vfs_node_t *, void **, void **, uint64_t *);
 };
 
 struct fmt fmt_table[] = {
@@ -17,21 +17,25 @@ struct fmt fmt_table[] = {
     {.name = NULL,  .load = NULL    },
 };
 
-int32_t fmt_load(vfs_node_t *node, fmt_info_t *info) {
-  if (NULL == node || NULL == info)
+int32_t fmt_load(vfs_node_t *node, void **entry, void **addr, uint64_t *count) {
+  if (NULL == node || NULL == entry || NULL == addr || NULL == count)
     return -EINVAL;
 
   struct fmt *fmt = fmt_table;
   int32_t     err = 0;
-  bzero(info, sizeof(fmt_info_t));
 
   for (; fmt->name != NULL; fmt++) {
-    if ((err = fmt->load(node, info)) == 0) {
+    if ((err = fmt->load(node, entry, addr, count)) == 0) {
       fmt_info("%s loader successfuly loaded the node", fmt->name);
       return 0;
     }
 
-    fmt_free(info);
+    if (NULL != *addr && *count != 0)
+      pm_free(*addr, *count);
+
+    *addr  = NULL;
+    *entry = NULL;
+    *count = 0;
 
     /*
 
@@ -47,14 +51,4 @@ int32_t fmt_load(vfs_node_t *node, fmt_info_t *info) {
 
   fmt_fail("no compatible format for the node");
   return -ENOEXEC;
-}
-
-void fmt_free(fmt_info_t *info) {
-  if (NULL == info)
-    return;
-
-  if (info->addr != 0 && info->pages != 0)
-    pm_free(info->addr, info->pages);
-
-  bzero(info, sizeof(fmt_info_t));
 }

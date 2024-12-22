@@ -31,6 +31,17 @@
     }                                                                                                                  \
   } while (0);
 
+#define slist_clear(head, free, type)                                                                                  \
+  do {                                                                                                                 \
+    type *cur = *head, *next = NULL;                                                                                   \
+    while (NULL != cur) {                                                                                              \
+      next = cur->next;                                                                                                \
+      free(cur);                                                                                                       \
+      cur = next;                                                                                                      \
+    }                                                                                                                  \
+    *head = NULL;                                                                                                      \
+  } while (0)
+
 // doubly-linked list macros
 
 #define dlist_foreach(head, type) for (type *cur = *head; NULL != cur; cur = cur->next)
@@ -69,3 +80,15 @@
       }                                                                                                                \
     }                                                                                                                  \
   } while (0);
+
+#define dlist_clear(head, tail, free, type)                                                                            \
+  do {                                                                                                                 \
+    type *cur = *head, *next = NULL;                                                                                   \
+    while (NULL != cur) {                                                                                              \
+      next = cur->next;                                                                                                \
+      free(cur);                                                                                                       \
+      cur = next;                                                                                                      \
+    }                                                                                                                  \
+    *head = NULL;                                                                                                      \
+    *tail = NULL;                                                                                                      \
+  } while (0)

@@ -307,6 +307,9 @@ void *pm_alloc(uint64_t count) {
 
 // free "count" amount of pages, first page is pointed by "mem"
 void pm_free(void *mem, uint64_t count) {
+  if (NULL == mem || count == 0)
+    return;
+
   pm_tp_t   page  = pm_tp((uint64_t)mem);
   uint64_t *entry = NULL;
 

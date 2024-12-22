@@ -1,4 +1,4 @@
-void _slibc_start() {
+void _slibc_start(int argc, char *argv[], char *envp[]) {
   return;
 }
 

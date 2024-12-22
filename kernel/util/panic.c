@@ -43,7 +43,10 @@ void core_dump(task_regs_t *r) {
   printf("\n===========================\n");
 }
 
-void __panic_with(task_regs_t *regs, bool do_core_dump, const char *func, char *fmt, ...) {
+void __panic_with(task_regs_t *regs, const char *func, char *fmt, ...) {
+  // disable CPU interrupts, there's no turning back after this point anyway
+  im_disable();
+
   va_list args;
   va_start(args, fmt);
 
@@ -59,19 +62,11 @@ void __panic_with(task_regs_t *regs, bool do_core_dump, const char *func, char *
   vprintf(fmt, args);
   printf("\n");
 
-  if (do_core_dump)
-    core_dump(regs);
-
   video_bg_set(VIDEO_COLOR_BLACK);
   video_fg_set(VIDEO_COLOR_LIGHT_RED);
 
   printf("Kernel crashed, there is no way to recover, you should reboot\n");
 
-  // disable CPU interrupts
-  im_disable();
-
-  // hang forever
+  // hang forever (should never return)
   _hang();
-
-  // should never return
 }

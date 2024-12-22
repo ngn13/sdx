@@ -176,6 +176,9 @@ struct elf_program_header {
 
 */
 struct elf {
+  void             *entry; // entry point
+  void             *addr;  // allocated page address
+  uint64_t          count; // allocated page count
   vfs_node_t       *node;
   struct elf_header header;
   uint32_t          ph_pos;
@@ -238,7 +241,7 @@ int64_t __elf_ph_next(struct elf *elf, struct elf_program_header *header) {
   return __elf_read(elf, offset, sizeof(struct elf_program_header), header);
 }
 
-int32_t __elf_load_dyn(struct elf *elf, fmt_info_t *info) {
+int32_t __elf_load_dyn(struct elf *elf) {
   struct elf_program_header header;
   void                     *alloc_pos  = NULL;
   uint64_t                  alloc_size = 0;
@@ -268,7 +271,7 @@ int32_t __elf_load_dyn(struct elf *elf, fmt_info_t *info) {
       ;
   }
 
-  if ((info->addr = pm_alloc(info->pages = pm_calc(alloc_size))) == NULL) {
+  if ((elf->addr = pm_alloc(elf->count = pm_calc(alloc_size))) == NULL) {
     elf_debg("failed allocate memory (%u pages) for the program header");
     return -ENOMEM;
   }
@@ -282,7 +285,7 @@ int32_t __elf_load_dyn(struct elf *elf, fmt_info_t *info) {
     if (header.memsz == 0)
       continue; // ignore empty
 
-    alloc_pos = info->addr + header.vaddr;
+    alloc_pos = elf->addr + header.vaddr;
 
     // load filesz bytes from file to the allocated memory
     elf_debg("offset: %u filesz: %u alloc_pos: 0x%x", header.offset, header.filesz, alloc_pos);
@@ -305,7 +308,7 @@ int32_t __elf_load_dyn(struct elf *elf, fmt_info_t *info) {
 
     // see if this section contains the entrypoint
     if (header.vaddr < elf->header.entry && header.vaddr + header.memsz > elf->header.entry)
-      info->entry = alloc_pos + elf->header.entry;
+      elf->entry = alloc_pos + elf->header.entry;
   }
 
   if (err < 0) {
@@ -313,7 +316,7 @@ int32_t __elf_load_dyn(struct elf *elf, fmt_info_t *info) {
     return err;
   }
 
-  if (info->entry == 0) {
+  if (elf->entry == 0) {
     elf_fail("failed to find the entry point");
     return -ENOEXEC;
   }
@@ -321,8 +324,8 @@ int32_t __elf_load_dyn(struct elf *elf, fmt_info_t *info) {
   return 0;
 }
 
-int32_t elf_load(vfs_node_t *node, fmt_info_t *info) {
-  if (NULL == node || NULL == info)
+int32_t elf_load(vfs_node_t *node, void **entry, void **addr, uint64_t *count) {
+  if (NULL == node || NULL == entry || NULL == addr || NULL == count)
     return -EINVAL;
 
   struct elf  _elf, *elf = &_elf;
@@ -344,12 +347,17 @@ int32_t elf_load(vfs_node_t *node, fmt_info_t *info) {
 
   switch (elf->header.type) {
   case ELF_TYPE_DYN:
-    return __elf_load_dyn(elf, info);
+    err = __elf_load_dyn(elf);
+    break;
 
   default:
     elf_debg("unsupported type");
     return -ENOEXEC;
   }
 
-  return -ENOSYS;
+  *entry = elf->entry;
+  *addr  = elf->addr;
+  *count = elf->count;
+
+  return err;
 }

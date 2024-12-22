@@ -90,14 +90,13 @@ gdt_start:
     .byte 0b11001111 // flags (G, DB) and limit
     .byte 0 // pointer
 
-  // code segment (ring 3)
-  gdt_desc_code_3:
-    .short 0xffff // limit
-    .short 0 // pointer
-    .byte 0 // pointer
-    .byte 0b11111010 // access (DPL = 3, RW, E, S, P)
-    .byte 0b10101111 // flags (G, L) and limit
-    .byte 0 // pointer
+  /*
+
+   * you might be wondering why the ring 0 code segment comes first
+   * while the ring 3 code segment doesn't, well you should see core/user.c to see
+   * how intel decided to ass fuck my GDT with their shit MSR, yeah, fuck you intel
+
+  */
 
   // data segment (ring 3)
   gdt_desc_data_3:
@@ -106,6 +105,15 @@ gdt_start:
     .byte 0 // pointer
     .byte 0b11110010 // access (DPL = 3, RW, S, P)
     .byte 0b11001111 // flags (G, DB) and limit
+    .byte 0 // pointer
+
+  // code segment (ring 3)
+  gdt_desc_code_3:
+    .short 0xffff // limit
+    .short 0 // pointer
+    .byte 0 // pointer
+    .byte 0b11111010 // access (DPL = 3, RW, E, S, P)
+    .byte 0b10101111 // flags (G, L) and limit
     .byte 0 // pointer
 
   /*

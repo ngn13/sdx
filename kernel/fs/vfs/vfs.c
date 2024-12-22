@@ -38,7 +38,7 @@ vfs_node_t *vfs_get(char *path) {
   }
 
   if (NULL != cur)
-    cur->use_lock++;
+    vfs_node_lock(cur);
 
   return cur;
 }
@@ -62,7 +62,7 @@ int32_t vfs_mount(char *path, fs_t *fs) {
       return err;
     }
 
-    node->use_lock++;
+    vfs_node_lock(node);
     vfs_info("mounted node to root");
 
     return 0;
@@ -106,7 +106,8 @@ int64_t vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer)
 }
 
 void vfs_free(vfs_node_t *node) {
-  if (node->use_lock > 0)
-    node->use_lock--;
-  vfs_node_free(node);
+  vfs_node_unlock(node);
+
+  if (!vfs_node_is_locked(node))
+    vfs_node_free(node);
 }
