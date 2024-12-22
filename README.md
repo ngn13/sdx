@@ -22,7 +22,7 @@ main motivation of this project, to learn OS development!
 - [x] scheduler
 - [x] userland
 - [x] TSS
-- [ ] syscalls
+- [x] SYSCALL/SYSRET
 - [ ] libc
 - [ ] init
 - [ ] possibly a shell and more programs?
