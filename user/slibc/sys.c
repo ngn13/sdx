@@ -1,15 +1,13 @@
 #include "sys.h"
 
 int32_t exit(int32_t code) {
-  __asm__("mov $0, %%rax\n"
-          "mov %0, %%rdi\n"
-          "syscall" ::"m"(code)
-          : "rax", "rdi");
+  syscall(0, code);
 }
 
-int32_t open(const char *path) {
-  __asm__("mov $1, %%rax\n"
-          "mov %0, %%rdi\n"
-          "syscall" ::"m"(path)
-          : "rax", "rdi");
+int32_t fork() {
+  syscall(1);
+}
+
+int32_t exec(char *path, char *argv[], char *envp[]) {
+  syscall(2, path, argv, envp);
 }

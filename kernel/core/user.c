@@ -31,7 +31,6 @@ struct user_call user_calls[] = {
     {.code = 0, .func = user_exit},
     {.code = 1, .func = user_fork},
     {.code = 2, .func = user_exec},
-    {.code = 3, .func = user_open},
     {.func = NULL},
 };
 
@@ -71,11 +70,6 @@ int32_t user_setup() {
       UINT64_MAX - (1 << 1)); // bit 1 reserved in eflags (see https://en.wikipedia.org/wiki/FLAGS_register#FLAGS)
 
   return 0;
-}
-
-int32_t user_open(char *path) {
-  // TODO: implement
-  return -ENOSYS;
 }
 
 int32_t user_exit(int32_t code) {

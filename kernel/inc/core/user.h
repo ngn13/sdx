@@ -17,6 +17,5 @@ int32_t user_setup();    // setup user syscalls
 int32_t user_exit(int32_t code);
 int32_t user_fork();
 int32_t user_exec(char *path, char *argv[], char *envp[]);
-int32_t user_open(char *path);
 
 #endif
