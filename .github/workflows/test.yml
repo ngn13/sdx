@@ -19,6 +19,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Copy default config
+        run: make config
+
       - name: Build binaries
         run: make CC=/usr/bin/x86_64-linux-gnu-gcc-14 \
                   LD=/usr/bin/x86_64-gnu-ld           \
