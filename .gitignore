@@ -10,3 +10,6 @@ config/config.h
 user/*/dist
 kernel/dist
 dist
+
+# log files
+*.log

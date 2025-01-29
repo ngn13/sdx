@@ -15,6 +15,7 @@ else
 fi
 
 # static paths
+SERIALLOG="serial.log"
 DESTDIR="dist"
 IMAGE="${DESTDIR}/sdx.img"
 

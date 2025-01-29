@@ -101,7 +101,7 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
 
   // try to load the file using a known format
   if ((err = fmt_load(node, &fmt_entry, &fmt_addr, &fmt_count)) < 0) {
-    user_debg("failed to load %s: %s", path, strerror(err));
+    user_fail("failed to load %s: %s", path, strerror(err));
     return err;
   }
 
@@ -128,10 +128,10 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
 
   current->state = TASK_STATE_READY; // mark the current task ready
 
-  // enable scheduling back again after we are done modifying the current task
-  sched_unlock();
+  user_info("new executable is ready");
 
-  sched(); // call the scheduler so next time we switch to this task, we will be running as the new process
+  sched_unlock(); // enable scheduling back again after we are done modifying the current task
+  sched();        // call the scheduler so next time we switch to this task, we will be running as the new process
 
   return 0; // will never return
 }

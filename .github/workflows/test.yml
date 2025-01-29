@@ -1,0 +1,36 @@
+name: Build and run image with QEMU
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install depends
+        run: |
+          apt update
+          apt install gcc-14-x86-64-linux-gnu  \
+                      binutils-x86-64-gnu      \
+                      gdisk dosfstools grub-pc \
+                      qemu-system pcre2-utils
+
+      - name: Checkout repository
+        uses: "https://github.com/actions/checkout@v4"
+
+      - name: Build binaries
+        run: make CC=/usr/bin/x86_64-linux-gnu-gcc-14 \
+                  LD=/usr/bin/x86_64-gnu-ld           \
+                  AR=/usr/bin/x86_64-gnu-ar
+
+      - name: Build image
+        run: make image
+
+      - name: Run with QEMU
+        run: |
+          (./scripts/qemu.sh --log --no-display &> /dev/null &)
+          sleep 15 && killall -9 qemu-system-x86_64
+
+      - name: Run test script
+        run: make test

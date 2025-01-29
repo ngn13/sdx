@@ -58,7 +58,10 @@ image:
 	./scripts/image.sh
 
 qemu:
-	./scripts/qemu.sh
+	./scripts/qemu.sh --log
+
+test:
+	./scripts/test.sh
 
 debug:
 	./scripts/debug.sh
