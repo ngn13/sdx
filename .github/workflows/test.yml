@@ -32,9 +32,10 @@ jobs:
 
       - name: Run with QEMU
         run: |
-          tail -n5 *.log
           (./scripts/qemu.sh --log --no-display &> /dev/null &)
           sleep 20 && killall -9 qemu-system-x86_64
 
       - name: Run test script
-        run: make test
+        run: |
+          tail -n5 *.log
+          make test
