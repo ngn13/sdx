@@ -10,8 +10,8 @@ jobs:
     steps:
       - name: Install depends
         run: |
-          apt update
-          apt install gcc-14-x86-64-linux-gnu  \
+          sudo apt update
+          sudo apt install gcc-14-x86-64-linux-gnu  \
                       binutils-x86-64-gnu      \
                       gdisk dosfstools grub-pc \
                       qemu-system pcre2-utils
