@@ -15,22 +15,42 @@ if [ ! -f "${SERIALLOG}" ]; then
 fi
 
 matches=(
-  'Serial: enumerated \d+ ports'                                      # test 0: serial
-  'PCI: enumerated \d+ devices'                                       # test 1: PCI
-  'PM: extended paged memory to 0[xX][0-9a-fA-F]+'                    # test 2: PM
-  'AHCI: \(0[xX][0-9a-fA-F]+\) HBA supports version'                  # test 3: AHCI
-  'Disk: \(0[xX][0-9a-fA-F]+\) loaded \d+ GPT partitions'             # test 4: GPT
-  'VFS: \(0[xX][0-9a-fA-F]+:0[xX][0-9a-fA-F]+\) mounted node to root' # test 5: mount
-  'User: \(/init:1:user_exec\) new executable is ready'               # test 6: init
+  'Serial: enumerated \d+ ports'                                      # test 1: serial
+  'PCI: enumerated \d+ devices'                                       # test 2: PCI
+  'PM: extended paged memory to 0[xX][0-9a-fA-F]+'                    # test 3: PM
+  'AHCI: \(0[xX][0-9a-fA-F]+\) HBA supports version'                  # test 4: AHCI
+  'Disk: \(0[xX][0-9a-fA-F]+\) loaded \d+ GPT partitions'             # test 5: GPT
+  'VFS: \(0[xX][0-9a-fA-F]+:0[xX][0-9a-fA-F]+\) mounted node to root' # test 6: mount
+  'User: \(/init:1:user_exec\) new executable is ready'               # test 7: init
 )
 
-for i in "${!matches[@]}"; do
-  match="${matches[$i]}"
+_test_match() {
+  pcre2grep "${matches[$1]}" "${SERIALLOG}" &> /dev/null && return 0
+  return 1
+}
 
-  if ! pcre2grep "${match}" "${SERIALLOG}" &> /dev/null; then
-    error "Test #${i} failed (${match})"
+if [ ! -z "${1}" ]; then
+  if [ "${1}" -gt "${#matches[@]}" ] || [ "${1}" -lt 1 ]; then
+    error "Please specify a valid test number"
+    desc  "${#matches[@]} tests available"
     exit 1
   fi
 
-  info "Test #${i} was successful"
+  index=$(($1-1))
+
+  if _test_match $index; then
+    info "Test #${1} was successful"
+  else
+    error "Test #${1} failed"
+  fi
+
+  exit 0
+fi
+
+for i in "${!matches[@]}"; do
+  if _test_match $i; then
+    info "Test #$(($i+1)) was successful"
+  else
+    error "Test #$(($i+1)) failed"
+  fi
 done

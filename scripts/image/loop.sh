@@ -67,7 +67,7 @@ loop_copy(){
   loop_check_ret "Failed to copy root filesystem directories and files"
 
   info "Copying the GRUB configuration"
-  cp "config/grub.cfg" "${LOOP_DIR}/boot/grub"
+  cp -v "config/grub.cfg" "${LOOP_DIR}/boot/grub"
   loop_check_ret "Failed to copy the GRUB configuration"
 
   info "Replacing version placeholder in the GRUB configuration"

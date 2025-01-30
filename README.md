@@ -1,9 +1,9 @@
 # sdx | shitty and dirty UNIX for x86_64
 
-![test workflow status](https://img.shields.io/github/actions/workflow/status/ngn13/sdx/test.yml)
+![test workflow status](https://img.shields.io/github/actions/workflow/status/ngn13/sdx/test.yml?label=tests)
 
-a simple, work-in-progress UNIX-like hobby operating system for `x86_64` architecture, written in C and assembly,
-and uses GRUB multiboot2
+a simple, work-in-progress UNIX-like hobby operating system for `x86_64` architecture, written in C and
+assembly and uses GRUB multiboot2
 
 to be clear i have absolutely no idea what i am doing, so i'm learning stuff along the way, which is the
 main motivation of this project, to learn OS development
@@ -36,7 +36,7 @@ here's a list of depends you'll need for building from source, running and testi
 | Name                                                   | Reason                                              | Note                                                                              |
 | ------------------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------- |
 | [Git](https://git-scm.com/)                            | For obtaning the source code                        | You can also download the source code as an archive using github's interface      |
-| [GNU binutils](https://www.gnu.org/software/binutils/) | Needed for cross-compilation                        | Ideally version 2.43, can be built with `make tools`, see [building](###building) |
+| [GNU binutils](https://www.gnu.org/software/binutils/) | Needed for cross-compilation                        | Ideally version 2.43, can be built with `make tools`, see [building](#building)   |
 | [GNU GCC](https://gcc.gnu.org/)                        | For cross-compilation                               | Ideally version 14.2.0, can also be built with `make tools`                       |
 | [Python](https://www.python.org/)                      | For generating the configuration header             | You'll need python3                                                               |
 | [GPT fdisk](https://www.rodsbooks.com/gdisk/)          | For creating the disk image                         |                                                                                   |

@@ -34,8 +34,25 @@ jobs:
         run: |
           (./scripts/qemu.sh --log --no-display &> /dev/null &)
           sleep 20 && killall -9 qemu-system-x86_64
+          cat serial.log
 
-      - name: Run test script
-        run: |
-          tail -n5 *.log
-          make test
+      - name: 'Run test #1'
+        run: ./scripts/test.sh 1
+
+      - name: 'Run test #2'
+        run: ./scripts/test.sh 2
+
+      - name: 'Run test #3'
+        run: ./scripts/test.sh 3
+
+      - name: 'Run test #4'
+        run: ./scripts/test.sh 4
+
+      - name: 'Run test #5'
+        run: ./scripts/test.sh 5
+
+      - name: 'Run test #6'
+        run: ./scripts/test.sh 6
+
+      - name: 'Run test #7'
+        run: ./scripts/test.sh 7
