@@ -1,9 +1,6 @@
 #include "fs/vfs.h"
 #include "errno.h"
 
-#include "util/mem.h"
-#include "util/list.h"
-
 vfs_node_t *vfs_get(char *path) {
   if (NULL == path || *path == 0)
     return NULL;

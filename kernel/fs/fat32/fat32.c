@@ -222,6 +222,7 @@ int32_t fat32_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode) {
 
   inode->serial = fs_inode_serial(fs, inode);
 
+  fat32_debg("obtained inode with serial %u for \"%s\"", inode->serial, name);
   return 0;
 }
 
