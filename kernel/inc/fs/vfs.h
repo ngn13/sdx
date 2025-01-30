@@ -30,7 +30,7 @@ typedef struct vfs_node {
         return NULL;                                                                                                   \
       name[i] = *path;                                                                                                 \
     }                                                                                                                  \
-    name[++i] = 0;                                                                                                     \
+    name[i] = 0;                                                                                                     \
   } while (0);
 
 // fs/vfs/node.c
