@@ -1,9 +1,12 @@
 # sdx | shitty and dirty UNIX for x86_64
-a simple, work-in-progress hobby operating system for `x86_64` architecture, written in C and assembly,
+
+![test workflow status](https://img.shields.io/github/actions/workflow/status/ngn13/sdx/test.yml)
+
+a simple, work-in-progress UNIX-like hobby operating system for `x86_64` architecture, written in C and assembly,
 and uses GRUB multiboot2
 
 to be clear i have absolutely no idea what i am doing, so i'm learning stuff along the way, which is the
-main motivation of this project, to learn OS development!
+main motivation of this project, to learn OS development
 
 ### roadmap/todo
 - [x] multiboot
@@ -27,30 +30,47 @@ main motivation of this project, to learn OS development!
 - [ ] init
 - [ ] possibly a shell and more programs?
 
+### dependencies
+here's a list of depends you'll need for building from source, running and testing:
+
+| Name                                                   | Reason                                              | Note                                                                              |
+| ------------------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------- |
+| [Git](https://git-scm.com/)                            | For obtaning the source code                        | You can also download the source code as an archive using github's interface      |
+| [GNU binutils](https://www.gnu.org/software/binutils/) | Needed for cross-compilation                        | Ideally version 2.43, can be built with `make tools`, see [building](###building) |
+| [GNU GCC](https://gcc.gnu.org/)                        | For cross-compilation                               | Ideally version 14.2.0, can also be built with `make tools`                       |
+| [Python](https://www.python.org/)                      | For generating the configuration header             | You'll need python3                                                               |
+| [GPT fdisk](https://www.rodsbooks.com/gdisk/)          | For creating the disk image                         |                                                                                   |
+| [dosfstools](https://github.com/dosfstools/dosfstools) | For formatting the disk image                       |                                                                                   |
+| [GNU GRUB](https://www.gnu.org/software/grub/)         | The bootloader                                      | Make sure it has multiboot2 support                                               |
+| [QEMU](https://www.qemu.org/)                          | For booting the image in a safe virtual environment | Ideally with GTK display support                                                  |
+| [PCRE2](https://github.com/PCRE2Project/pcre2)         | To check QEMU's serial logs                         | Only needed for `pcre2grep`, in some distros package is called `pcre2-utils`      |
+
 ### building
 start by obtaining the source code, you can just clone the repository:
 ```bash
 git clone https://github.com/ngn13/sdx
 ```
 
-for building from source, you will need cross-compilation tools for x86_64, this tools may be available
-in your distribution's package repository, or you can build them from the scratch using the automated script:
+the cross-compilation tools may be available in your distribution's package repository, or you can build them
+from the scratch using the automated script:
 ```bash
 make tools
 ```
-this script will build the necessary tools and install them to `/opt/cross/bin`
+this script will build the necessary tools and install them to `/opt/cross/bin`, if you have your cross tools
+in an another directory, you'll need to pass the `CROSSDIR` option to make in order to change the  path used for
+the build, or you can directly specify the path for GNU `gcc`, `ld` and `ar` with `CC`, `LD` and `AR` options.
 
 after installing these tools, you should generate a create a configuration file, you can just copy the default:
 ```bash
 make config
 ```
 
-then you can use `make` to build all the binaries:
+then you can use `make` to build all the binaries (they will be placed in `dist/`)
 ```bash
 make
 ```
 
-and you can create a raw disk image using the scripts again:
+and you can create a raw disk image (`dist/sdx.img`) using the scripts again:
 ```bash
 make image
 ```
@@ -61,17 +81,27 @@ distribution's package repository:
 ```bash
 make qemu
 ```
+this will run QEMU with GTK display, if you don't have the GTK display installed, you run the script manually to run QEMU with
+no display and only with serial output:
+```bash
+./scripts/qemu.sh --log --no-gtk
+```
+
+### testing
+after running the QEMU script, you can check the serial output's logs (`serial.log`) to make sure that everything went good:
+```bash
+make test
+```
 
 ### debugging
 if you use the QEMU setup detailed in the previous section, then you can debug the system using a remote GDB setup:
 ```bash
 make debug
 ```
-you can also use the QEMU monitor
 
 ### contributing
 if you want to help me check off some of the shit on the roadmap or if you just want to make fun of my dogshit code or
-if you want to discuss about the [best cars moive](kernel/main.c) feel free to create an issue/PR
+if you want to discuss about the [best cars moive](kernel/main.c#L60) feel free to create an issue/PR
 
 ### resources
 here is an awesome list of resources/documentation that i use (ill keep extending this as i find more resources),

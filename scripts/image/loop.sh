@@ -63,7 +63,7 @@ loop_copy(){
   loop_check_ret "Install destination directory not specified"
 
   info "Copying root filesystem directories and files"
-  find "${DESTDIR}/"* -maxdepth 0 -mindepth 0 -not -wholename "${IMAGE}" -exec cp -r {} "${LOOP_DIR}" \;
+  find "${DESTDIR}/"* -maxdepth 0 -mindepth 0 -not -wholename "${IMAGE}" -exec cp -rv {} "${LOOP_DIR}" \;
   loop_check_ret "Failed to copy root filesystem directories and files"
 
   info "Copying the GRUB configuration"
