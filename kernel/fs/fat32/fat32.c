@@ -208,7 +208,7 @@ int32_t fat32_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode) {
   int32_t                err         = 0;
 
   if ((err = fat32_entry_from(fs, dir_cluster, name, &entry)) != 0) {
-    fat32_debg("failed to obtain entry from name (%s): %s", name, strerror(err));
+    fat32_debg("failed to obtain entry from name (\"%s\"): %s", name, strerror(err));
     return err;
   }
 

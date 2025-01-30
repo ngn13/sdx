@@ -216,18 +216,10 @@ next_cluster:
     if (__fat32_entry_name(fs, &cur, name_buffer, name_size) < 0)
       continue; // move onto the next entry
 
-    fat32_debg("%s == %s", name_buffer, name);
-    fat32_debg("%x,%x,%x,%x,%x == %x,%x,%x,%x,%x",
-               name_buffer[0], name_buffer[1], name_buffer[2], name_buffer[3], name_buffer[4],
-               name[0], name[1], name[2], name[3], name[4]);
-
-    if (strcmp(name_buffer, name) == 0){
-      fat32_debg("found name: %s", name_buffer);
+    if (strcmp(name_buffer, name) == 0)
       break;
-    }
   }
 
   memcpy(entry, cur, sizeof(struct fat32_dir_entry));
-  fat32_debg("return 0");
   return 0;
 }
