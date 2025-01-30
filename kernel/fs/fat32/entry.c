@@ -216,6 +216,8 @@ next_cluster:
     if (__fat32_entry_name(fs, &cur, name_buffer, name_size) < 0)
       continue; // move onto the next entry
 
+    fat32_debg("%s == %s", name_buffer, name);
+
     if (strcmp(name_buffer, name) == 0)
       break;
   }
