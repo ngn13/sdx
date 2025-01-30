@@ -179,13 +179,6 @@ void entry() {
   if ((err = user_setup()) != 0)
     panic("Failed to setup the user calls: %s", strerror(err));
 
-  vfs_node_t *node = vfs_get("/");
-  char name[NAME_MAX+1];
-  int i = 0;
-
-  while(vfs_read(node, i, sizeof(name), name) > 0)
-    pdebg("vfs_read (%d): %s", i++, name);
-
   // execute the init program
   if ((err = user_exec("/init", NULL, NULL)) < 0)
     panic("Failed to execute init: %s", strerror(err));

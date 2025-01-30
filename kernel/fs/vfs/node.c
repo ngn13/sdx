@@ -126,6 +126,10 @@ vfs_node_t *vfs_node_get(vfs_node_t *node, char *name) {
     return NULL;
 
   if (fs_namei(node->fs, vfs_node_is_fs_root(node) ? NULL : &node->inode, name, &new->inode) != 0) {
+    if (vfs_node_is_fs_root(node))
+      vfs_debg("namei for \"%s\" failed on root node", name);
+    else
+      vfs_debg("namei for \"%s\" failed on non-root node", name);
     vfs_node_free(new);
     return NULL;
   }
