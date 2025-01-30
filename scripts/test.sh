@@ -40,17 +40,18 @@ if [ ! -z "${1}" ]; then
 
   if _test_match $index; then
     info "Test #${1} was successful"
-  else
-    error "Test #${1} failed"
+    exit 0
   fi
 
-  exit 0
+  error "Test #${1} failed"
+  exit 1
 fi
 
 for i in "${!matches[@]}"; do
-  if _test_match $i; then
-    info "Test #$(($i+1)) was successful"
-  else
+  if ! _test_match $i; then
     error "Test #$(($i+1)) failed"
+    exit 1
   fi
+
+  info "Test #$(($i+1)) was successful"
 done
