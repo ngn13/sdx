@@ -5,82 +5,26 @@
 .equ STACK_SIZE, 0x10000
 
 .section .data
-  cpu_vendor:         .string "not detected"
-
-  // supported CPU vendor IDs
-  cpu_vendor_supported: .string "AuthenticAMDAMDisbetter!GenuineIntelTCGTCGTCGTCG KVMKVMKVM  VMwareVMwareVBoxVBoxVBox"
-
-  // error messages
-  err_no_cpuid:   .string "HALTING: Your CPU is not supported (no CPUID)"
-  err_bad_vendor: .string "HALTING: Your CPU is not supported (unknown vendor)"
-  err_no_magic:   .string "HALTING: Magic number is not set (did you boot with GRUB multiboot2?)"
-  err_no_long:    .string "HALTING: Your CPU is not supported (no long mode, are you on x64?)"
-  err_no_msr:     .string "HALTING: Your CPU is not supported (no MSR)"
+// error messages
+err_no_cpuid:   .string "HALTING: Your CPU is not supported (no CPUID)"
+err_bad_vendor: .string "HALTING: Your CPU is not supported (unknown vendor)"
+err_no_magic:   .string "HALTING: Magic number is not set (did you boot with GRUB multiboot2?)"
+err_no_long:    .string "HALTING: Your CPU is not supported (no long mode, are you on x64?)"
+err_no_msr:     .string "HALTING: Your CPU is not supported (no MSR)"
 
 .section .bss
-  // simple stack
-  .align 16
-  .skip STACK_SIZE
-  stack:
+// simple stack
+.align 16
+.skip STACK_SIZE
+stack:
 
 .section .text
 .code32
 
 .type __entry,        @function
 .type __entry_fail,   @function
-.type __check_vendor, @function
 
 .global __entry
-
-// checks if the CPU vendor is supported
-__check_vendor:
-  push eax // stores the return value
-  push ebx // stores the supported vendor string
-  push ecx // stores the CPU vendor string
-  push edx // stores the current char at esi index
-  push esi // stores the index for ebx
-  push edi // stores the current CPU vendor string
-
-  lea ebx, cpu_vendor_supported
-  lea ecx, cpu_vendor
-  xor edx, edx
-  xor esi, esi
-
-  .Lcheck_vendor_next:
-    lea edi, [ebx+esi]
-
-    push 12  // vendor string length
-    push edi // supported vendor string (offset by current position)
-    push ecx // CPU vendor string
-
-    call __string_compare
-
-    add esp, 12
-
-    test eax, eax
-    je .Lcheck_vendor_ok
-
-    add esi, 12
-    mov dh, [ebx+esi]
-
-    test dh, dh
-    je .Lcheck_vendor_fail
-
-    jmp .Lcheck_vendor_next
-
-  .Lcheck_vendor_fail:
-    lea ecx, err_bad_vendor
-    push ecx
-    call __fail
-
-  .Lcheck_vendor_ok:
-    pop edi
-    pop esi
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-    ret
 
 // kernel loader entry point
 __entry:
@@ -132,38 +76,10 @@ __entry:
   xor eax, ecx
   je .Lentry_fail_cpuid
 
-  // obtain and check CPU vendor name
-  xor eax, eax
-  cpuid
-
-  push ecx
-  push edx
-  push ebx
-
-  xor eax, eax
-  lea ebx, cpu_vendor
-  xor ecx, ecx
-  xor edx, edx
-
-  .Lentry_read_vendor:
-    pop eax
-
-    mov byte [ebx+ecx-1], al
-    mov byte [ebx+ecx], ah
-
-    shr eax, 16
-
-    mov byte [ebx+ecx+1], al
-    mov byte [ebx+ecx+2], ah
-
-    add ecx, 4
-
-    inc edx
-    cmp dl, 3
-
-    jne .Lentry_read_vendor
-
-  call __check_vendor
+  // check CPU vendor ID (obtained with CPUID, see vendor.S)
+  call __vendor_check
+  test eax, eax
+  jne .Lentry_fail_vendor
 
   /*
 
@@ -213,9 +129,9 @@ __entry:
   or al, 2
   out 0x92, al
 
-  // setup paging (also passing multiboot data as the first argument)
-  call __pm_get
-  mov cr3, eax
+  // TODO: setup paging
+
+  call __halt
 
   mov eax, cr4
   or eax, 1 << 5
@@ -254,6 +170,10 @@ __entry:
 
 .Lentry_fail_cpuid:
   lea eax, err_no_cpuid
+  jmp .Lentry_fail_call
+
+.Lentry_fail_vendor:
+  lea eax, err_bad_vendor
   jmp .Lentry_fail_call
 
 .Lentry_fail_long:

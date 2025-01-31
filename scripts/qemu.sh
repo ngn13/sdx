@@ -25,6 +25,7 @@ opt_gtk=1     # using GTK display, switch to nographic option with --no-gtk
 opt_display=1 # video display is enabled, disable video display with --no-display
 
 qemu_args=(
+  -s
   -d int,cpu_reset
   -no-shutdown
   -no-reboot
