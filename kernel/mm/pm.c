@@ -135,11 +135,13 @@ struct pm_state pm_st;
 
 // returns true if the given address is mapped
 bool pm_is_mapped(uint64_t addr) {
-  return pm_mapped > addr;
+  // return pm_mapped > addr;
+  return false;
 }
 
 // checks if the paging is setup correctly, and load the available memory start address
 bool pm_init(uint64_t start, uint64_t end) {
+  /*
   if (mb_mem_avail_limit == 0) {
     printk(KERN_FAIL, "PM: invalid available memory address limit");
     return false;
@@ -169,8 +171,9 @@ bool pm_init(uint64_t start, uint64_t end) {
 
   pm_st.avail_start = pm_tp(start);              // table pointer for the first (available) page
   pm_st.avail_end   = pm_tp(end - PM_PAGE_SIZE); // table pointer for the last (available) page
+  */
 
-  return true;
+  return false;
 }
 
 // recursive paging extend function
@@ -209,6 +212,7 @@ uint64_t *__pm_extend(pm_tp_t tp, uint64_t *addr, uint64_t *mem, uint16_t level,
 
 // extends the page table until it maps the given address
 bool pm_extend(uint64_t addr) {
+  /*
   // is the address already mapped?
   if (pm_is_mapped(addr))
     return true;
@@ -226,7 +230,8 @@ bool pm_extend(uint64_t addr) {
   if (printk(KERN_DEBG, "PM: extended paged memory to 0x%p ", pm_mapped) != 0)
     __pm_tp_print(tp_paged);
 
-  return true;
+  return true;*/
+  return false;
 }
 
 // set or clear page entry flags for a given table pointer

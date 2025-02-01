@@ -8,6 +8,7 @@
 .section .data
 
 cpu_vendor:           .string "not detected"
+err_bad_vendor:       .string "HALTING: Your CPU is not supported (unknown vendor)"
 cpu_vendor_supported: .string "AuthenticAMDAMDisbetter!GenuineIntelTCGTCGTCGTCG KVMKVMKVM  VMwareVMwareVBoxVBoxVBox"
 
 .section .text
@@ -73,9 +74,7 @@ __vendor_check:
 
     add $12, %esp // remove arguments from the stack
 
-    mov $0, %edx
     test %eax, %eax
-    cmove %edx, %eax
     je .Lvendor_check_ok
 
     // move onto the enxt supported vendor ID
@@ -86,7 +85,9 @@ __vendor_check:
     test %dh, %dh
     jne .Lvendor_check_next
 
-  mov $1, %eax
+  mov $err_bad_vendor, %eax
+  push %eax
+  call __fail
 
   .Lvendor_check_ok:
     pop %edx

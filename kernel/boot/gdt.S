@@ -1,3 +1,21 @@
+.global gdt_pointer
+.global gdt_start_addr
+.global gdt_end_addr
+.global gdt_desc_code_0_addr
+.global gdt_desc_data_0_addr
+.global gdt_desc_code_3_addr
+.global gdt_desc_data_3_addr
+.global gdt_desc_tss_addr
+
+.type gdt_pointer,          @function
+.type gdt_start_addr,       @function
+.type gdt_end_addr,         @function
+.type gdt_desc_code_0_addr, @function
+.type gdt_desc_data_0_addr, @function
+.type gdt_desc_code_3_addr, @function
+.type gdt_desc_data_3_addr, @function
+.type gdt_desc_tss_addr,    @function
+
 .section .data
 .align 16
 
@@ -138,22 +156,10 @@ gdt_pointer:
   .short gdt_end - gdt_start - 1
   .int gdt_start
 
-gdt_start_addr: .int gdt_start
-gdt_end_addr: .int gdt_end
-
+gdt_start_addr:       .int gdt_start
+gdt_end_addr:         .int gdt_end
 gdt_desc_code_0_addr: .int gdt_desc_code_0
 gdt_desc_data_0_addr: .int gdt_desc_data_0
 gdt_desc_code_3_addr: .int gdt_desc_code_3
 gdt_desc_data_3_addr: .int gdt_desc_data_3
-gdt_desc_tss_addr: .int gdt_desc_tss
-
-.global gdt_pointer
-
-.global gdt_start_addr
-.global gdt_end_addr
-
-.global gdt_desc_code_0_addr
-.global gdt_desc_data_0_addr
-.global gdt_desc_code_3_addr
-.global gdt_desc_data_3_addr
-.global gdt_desc_tss_addr
+gdt_desc_tss_addr:    .int gdt_desc_tss

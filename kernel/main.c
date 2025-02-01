@@ -31,23 +31,13 @@
 #include "sched/sched.h"
 #include "sched/task.h"
 
-#include "boot/end.h"
-#include "boot/multiboot.h"
-
-#include "mm/pm.h"
-#include "mm/vmm.h"
-
-#include "fs/vfs.h"
-#include "fs/fmt.h"
-
 #include "video.h"
+#include "mm/pm.h"
+#include "fs/vfs.h"
 
 #include "util/panic.h"
 #include "util/printk.h"
 #include "util/asm.h"
-
-#include "errno.h"
-#include "types.h"
 
 void entry() {
   int32_t err = 0;
@@ -67,19 +57,7 @@ void entry() {
   if ((err = serial_init()) != 0)
     pfail("Failed to initalize the serial communication: %s", strerror(err));
 
-  /*
-
-   * obtain the available memory region start and the end address
-
-   * for the start: we check if the page table's end address is larger then
-   * the end address for the kernel, if so, we use the page table's end address
-
-   * for the end: we check if the last mapped memory address is larger then the
-   * available memory region's end address, if so, we use the region's address
-
-  */
-  uint64_t avail_start = pm_end > end_addr ? pm_end : end_addr;
-  uint64_t avail_end   = pm_mapped > mb_mem_avail_limit ? mb_mem_avail_limit : pm_mapped;
+  _hang();
 
   /*
 
@@ -89,7 +67,7 @@ void entry() {
    * see boot/paging.S and boot/multiboot.S
 
   */
-  if (!pm_init(avail_start, avail_end))
+  if (!pm_init(0, 0))
     panic("Failed to initialize the paging manager");
 
   /*
