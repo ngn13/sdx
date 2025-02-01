@@ -12,7 +12,7 @@ err_no_msr:     .string "HALTING: Your CPU is not supported (no MSR)"
 .section .bss
 // simple stack
 .align 16
-.skip STACK_SIZE
+.fill STACK_SIZE, 1, 0
 stack:
 
 .section .text
@@ -112,10 +112,13 @@ __entry:
   or $2, %al
   out %al, $0x92
 
-  // TODO: setup paging
+  // setup paging
+  call __paging_setup
 
+  // TEMPORARY
   call __halt
 
+  // enable paging (__paging_setup returns address of the PML4)
   mov %cr4, %eax
   or $(1 << 5), %eax
   mov %eax, %cr4
@@ -147,19 +150,15 @@ __entry:
   retf
 
 .Lentry_fail_cpuid:
-  mov $err_no_cpuid, %eax
-  jmp .Lentry_fail_call
+  push $err_no_cpuid
+  call __fail
 
 .Lentry_fail_long:
-  mov $err_no_long, %eax
-  jmp .Lentry_fail_call
+  push $err_no_long
+  call __fail
 
 .Lentry_fail_msr:
-  mov $err_no_msr, %eax
-  jmp .Lentry_fail_call
-
-.Lentry_fail_call:
-  push %eax
+  push $err_no_msr
   call __fail
 
 .code64
