@@ -21,7 +21,7 @@ stack:
 // kernel loader entry point
 __entry:
   // load the stack
-  mov $(stack + STACK_SIZE), %esp
+  mov $(stack - STACK_SIZE), %esp
 
   /*
 
@@ -114,11 +114,9 @@ __entry:
 
   // setup paging
   call __paging_setup
+  mov %eax, %cr3
 
-  // TEMPORARY
-  call __halt
-
-  // enable paging (__paging_setup returns address of the PML4)
+  // enable PAE
   mov %cr4, %eax
   or $(1 << 5), %eax
   mov %eax, %cr4
@@ -133,6 +131,9 @@ __entry:
   mov %cr0, %eax
   or $(1 << 31 | 1 << 0), %eax
   mov %eax, %cr0
+
+  // TEMPORARY
+  call __halt
 
   // setup GDT
   cli
@@ -179,10 +180,10 @@ __entry64:
   pop %rsi
 
   // clear the stack
-  mov $(stack + STACK_SIZE), %edi
+  mov $(stack - STACK_SIZE), %edi
   xor %eax, %eax
   mov $STACK_SIZE, %ecx
-  rep stos
+  rep stosl
 
   // reset stack
   xor %rbp, %rbp

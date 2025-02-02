@@ -3,28 +3,22 @@
 .global __mb_check
 .global __mb_get_tag
 .global __mb_get_fb
-.global __mb_get_mem
 .global mb_len
 .global mb_fb_addr
 .global mb_fb_width
 .global mb_fb_height
 .global mb_fb_type
 .global mb_fb_size
-.global mb_mem_addr
-.global mb_mem_len
 
 .type __mb_check,   @function
 .type __mb_get_tag, @function
 .type __mb_get_fb,  @function
-.type __mb_get_mem, @function
 .type mb_len,       @common
 .type mb_fb_addr    @common
 .type mb_fb_width,  @common
 .type mb_fb_height, @common
 .type mb_fb_type,   @common
 .type mb_fb_size,   @common
-.type mb_mem_addr,  @common
-.type mb_mem_len,   @common
 
 .section .multiboot
 
@@ -37,27 +31,25 @@
 
 */
 multiboot_start:
-.int 0xe85250d6                       // magic number
-.int 0                                // architecture (0 = i386)
-.int multiboot_end -  multiboot_start // multiboot header length
+  .int 0xe85250d6                       // magic number
+  .int 0                                // architecture (0 = i386)
+  .int multiboot_end -  multiboot_start // multiboot header length
 
-// checksum
-.int 0x100000000 - (0xe85250d6 + 0 + (multiboot_end - multiboot_start))
+  // checksum
+  .int 0x100000000 - (0xe85250d6 + 0 + (multiboot_end - multiboot_start))
 
-// the header tag
-.long 0 // type
-.long 0 // flags
-.long 8 // size
+  // the header tag
+  .long 0 // type
+  .long 0 // flags
+  .long 8 // size
 multiboot_end:
 
 .section .data
 
 // error messages
-err_no_mmap_mb:  .string "HALTING: No mmap tag found in multiboot information"
-err_bad_fb_mb:   .string "HALTING: Framebuffer address is not accessible"
-err_no_fb_mb:    .string "HALTING: No framebuffer tag found in multiboot information"
-err_no_magic:    .string "HALTING: Magic number is not set (did you boot with GRUB multiboot2?)"
-err_no_mem:      .string "HALTING: Found no accessible free memory"
+err_bad_fb_mb: .string "HALTING: Framebuffer address is not accessible"
+err_no_fb_mb:  .string "HALTING: No framebuffer tag found in multiboot information"
+err_no_magic:  .string "HALTING: Magic number is not set (did you boot with GRUB multiboot2?)"
 
 // stores data extracted from the boot info
 mb_len:       .int 0
@@ -66,8 +58,6 @@ mb_fb_width:  .int 0
 mb_fb_height: .int 0
 mb_fb_type:   .byte MULTIBOOT_FRAMEBUFFER_TYPE_RGB
 mb_fb_size:   .byte 2
-mb_mem_addr:  .int 0 // available memory region's address
-mb_mem_len:   .int 0 // available memory region's length
 
 .section .text
 .code32
@@ -263,158 +253,4 @@ __mb_get_fb:
 
   .Lmb_get_fb_bad_addr:
     push $err_bad_fb_mb
-    call __fail
-
-/*
-
- * checks mmap multiboot tags to find free memory regions
- * this function does few different things:
- * - first it obtains the mmap tag
- * - then it loops through all the regions listed in the mmap tag
- * - checks the available (free) ones and obtains the largest region
-     that is accessible with 32 bit code
- * - then it copies the obtained regions address to mb_mem_addr
- * - lastly it copies the regions length to mb_mem_len
-
- * this obtained memory is used to store temporary page tables
- * which is required for switching to the long mode
-
-*/
-__mb_get_mem:
-  push %ebp
-  mov %esp, %ebp
-
-  // save used registers
-  push %ebx
-  push %ecx
-  push %edi
-  push %esi
-
-  // move multiboot info address (first arg) to eax
-  mov 8(%ebp), %eax
-
-  // get the mmap tag
-  push $MULTIBOOT_TAG_TYPE_MMAP
-  push %eax
-  call __mb_get_tag
-
-  // if we don't find a mmap tag, fail
-  test %eax, %eax
-  je .Lmb_get_mem_find_fail
-
-  /*
-
-   * if we got here, then eax stores the mmap tag address
-   * for reference, here's the tag structure from multiboot.h
-
-   struct multiboot_tag_mmap {
-      uint32_t                    type;
-      uint32_t                    size;
-      uint32_t                    entry_size;
-      uint32_t                    entry_version;
-      struct multiboot_mmap_entry entries[0];
-    };
-
-    * also we don't need to check the entry_version, all versions
-    * are backwards compatible
-
-  */
-
-  mov 4(%eax), %ebx // ebx = size
-  mov 8(%eax), %ecx // ecx = entry_size
-  add $16, %eax     // eax = entries
-
-  /*
-
-   * after this point loop over all the entries again, for reference,
-   * here's the entry structure from multiboot.h:
-
-   struct multiboot_mmap_entry {
-      uint64_t addr;
-      uint64_t len;
-      uint32_t type;
-      uint32_t zero;
-   };
-
-   * also decrease the size (ebx) with the entry_size (ecx)
-   * each time so we know when we hit the end
-
-  */
-
-  .Lmb_get_mem_loop:
-    // check if the entry is for available memory region
-    mov 16(%eax), %esi
-    cmp $MULTIBOOT_MEMORY_AVAILABLE, %esi
-    jne .Lmb_get_mem_next
-
-    // check if the address is larger than 32 bits
-    cmp $0, 4(%eax)
-    jne .Lmb_get_mem_next
-
-    // make sure the region does not include the kernel binary
-    mov (%eax), %edi // edi = address (lower 32 bit, higher is clear)
-    cmp $end_addr, %edi
-    jl .Lmb_get_mem_next
-
-    // calculate the max 32 bit length this region can have
-    mov $0xffffffff, %esi
-    sub %edi, %esi // esi = max 32 bit length
-
-    /*
-
-     * check if the length we calculated is larger than the real length
-     * if so use the real length instead of the calculated
-
-    */
-    cmp $0, 12(%eax)
-    jne .Lmb_get_mem_next_use_cur
-
-    // use the real length
-    mov 8(%eax), %esi
-
-    .Lmb_get_mem_next_use_cur:
-      /*
-
-       * if we are here:
-       * - we found a available/free memory region
-       * - edi has the address for the memory region
-       * - esi has the length for the memory region
-
-       * all we need to do is to check if this new region is
-       * larger then the current region stored in "mb_mem_len"
-
-      */
-      cmp %esi, mb_mem_len
-      jae .Lmb_get_mem_next
-
-      mov %esi, mb_mem_len
-      mov %edi, mb_mem_addr
-
-    .Lmb_get_mem_next:
-      add %ecx, %eax // move onto the next entry
-      sub %ecx, %ebx // subtract the entry size from the remaining size
-      ja .Lmb_get_mem_loop // do we have any entries remanining?
-
-  // check if we found any available memory
-  mov mb_mem_addr, %edi
-  test %edi, mb_mem_addr
-  je .Lmb_get_mem_not_found
-
-  // restore registers
-  pop %esi
-  pop %edi
-  pop %ecx
-  pop %ebx
-
-  mov %ebp, %esp
-  pop %ebp
-
-  ret
-
-  .Lmb_get_mem_find_fail:
-    push $err_no_mmap_mb
-    call __fail
-
-  .Lmb_get_mem_not_found:
-    push $err_no_mem
     call __fail
