@@ -64,7 +64,7 @@ test:
 	./scripts/test.sh
 
 debug:
-	./scripts/debug.sh
+	./scripts/debug.sh kernel
 
 tools:
 	./scripts/tools.sh

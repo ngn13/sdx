@@ -7,9 +7,7 @@
 #include "util/printk.h"
 #include "util/panic.h"
 #include "util/list.h"
-#include "util/bit.h"
 #include "util/mem.h"
-#include "util/io.h"
 
 /*
 
@@ -105,7 +103,7 @@ void im_set_entry(uint8_t vector, uint8_t dpl) {
   struct im_desc *d = &im_idt[vector];
 
   // GDT code segment offset for the CS
-  d->selector = gdt_offset(gdt_desc_code_0_addr);
+  d->selector = gdt_offset(gdt_desc_kernel_code_addr);
 
   /*
 

@@ -1,20 +1,37 @@
-.global gdt_pointer
+#include "boot/boot.h"
+
+.global gdt_desc_kernel_code_addr
+.global gdt_desc_kernel_data_addr
+.global gdt_desc_user_code_addr
+.global gdt_desc_user_data_addr
+.global gdt_desc_tss_addr
+.global gdt_pointer_addr
 .global gdt_start_addr
 .global gdt_end_addr
-.global gdt_desc_code_0_addr
-.global gdt_desc_data_0_addr
-.global gdt_desc_code_3_addr
-.global gdt_desc_data_3_addr
-.global gdt_desc_tss_addr
+.global gdt_desc_kernel_code
+.global gdt_desc_kernel_data
+.global gdt_desc_user_code
+.global gdt_desc_user_data
+.global gdt_desc_tss
+.global gdt_start
+.global gdt_end
+.global gdt_pointer
 
-.type gdt_pointer,          @function
-.type gdt_start_addr,       @function
-.type gdt_end_addr,         @function
-.type gdt_desc_code_0_addr, @function
-.type gdt_desc_data_0_addr, @function
-.type gdt_desc_code_3_addr, @function
-.type gdt_desc_data_3_addr, @function
-.type gdt_desc_tss_addr,    @function
+.type gdt_desc_kernel_code_addr, @common
+.type gdt_desc_kernel_data_addr, @common
+.type gdt_desc_user_code_addr,   @common
+.type gdt_desc_user_data_addr,   @common
+.type gdt_desc_tss_addr,         @common
+.type gdt_start_addr,            @common
+.type gdt_end_addr,              @common
+.type gdt_desc_kernel_code,      @common
+.type gdt_desc_kernel_data,      @common
+.type gdt_desc_user_code,        @common
+.type gdt_desc_user_data,        @common
+.type gdt_desc_tss,              @common
+.type gdt_start,                 @common
+.type gdt_end,                   @common
+.type gdt_pointer,               @common
 
 .section .data
 .align 16
@@ -91,22 +108,22 @@ gdt_start:
     .quad 0
 
   // code segment (ring 0)
-  gdt_desc_code_0:
-    .short 0xffff // limit
-    .short 0 // pointer
-    .byte 0 // pointer
+  gdt_desc_kernel_code:
+    .short 0xffff    // limit
+    .short 0         // pointer
+    .byte 0          // pointer
     .byte 0b10011010 // access (RW, E, S, P)
     .byte 0b10101111 // flags (G, L) and limit
-    .byte 0 // pointer
+    .byte 0          // pointer
 
   // data segment (ring 0)
-  gdt_desc_data_0:
-    .short 0xffff // limit
-    .short 0 // pointer
-    .byte 0 // pointer
+  gdt_desc_kernel_data:
+    .short 0xffff    // limit
+    .short 0         // pointer
+    .byte 0          // pointer
     .byte 0b10010010 // access (RW, S, P)
     .byte 0b11001111 // flags (G, DB) and limit
-    .byte 0 // pointer
+    .byte 0          // pointer
 
   /*
 
@@ -117,22 +134,22 @@ gdt_start:
   */
 
   // data segment (ring 3)
-  gdt_desc_data_3:
-    .short 0xffff // limit
-    .short 0 // pointer
-    .byte 0 // pointer
+  gdt_desc_user_data:
+    .short 0xffff    // limit
+    .short 0         // pointer
+    .byte 0          // pointer
     .byte 0b11110010 // access (DPL = 3, RW, S, P)
     .byte 0b11001111 // flags (G, DB) and limit
-    .byte 0 // pointer
+    .byte 0          // pointer
 
   // code segment (ring 3)
-  gdt_desc_code_3:
-    .short 0xffff // limit
-    .short 0 // pointer
-    .byte 0 // pointer
+  gdt_desc_user_code:
+    .short 0xffff    // limit
+    .short 0         // pointer
+    .byte 0          // pointer
     .byte 0b11111010 // access (DPL = 3, RW, E, S, P)
     .byte 0b10101111 // flags (G, L) and limit
-    .byte 0 // pointer
+    .byte 0          // pointer
 
   /*
 
@@ -141,25 +158,26 @@ gdt_start:
 
   */
   gdt_desc_tss:
-    .short 0 // limit
-    .short 0 // pointer
-    .byte 0 // pointer
+    .short 0         // limit
+    .short 0         // pointer
+    .byte 0          // pointer
     .byte 0b11101001 // access (DPL = 3, A, E, P)
-    .byte 0 // flags, limit
-    .byte 0 // pointer
-    .int 0 // pointer
-    .int 0 // reserved
-
+    .byte 0          // flags, limit
+    .byte 0          // pointer
+    .int 0           // pointer
+    .int 0           // reserved
 gdt_end:
 
 gdt_pointer:
   .short gdt_end - gdt_start - 1
   .int gdt_start
 
-gdt_start_addr:       .int gdt_start
-gdt_end_addr:         .int gdt_end
-gdt_desc_code_0_addr: .int gdt_desc_code_0
-gdt_desc_data_0_addr: .int gdt_desc_data_0
-gdt_desc_code_3_addr: .int gdt_desc_code_3
-gdt_desc_data_3_addr: .int gdt_desc_data_3
-gdt_desc_tss_addr:    .int gdt_desc_tss
+.section .data
+gdt_desc_kernel_code_addr: .quad gdt_desc_kernel_code + BOOT_KERNEL_ADDR
+gdt_desc_kernel_data_addr: .quad gdt_desc_kernel_data
+gdt_desc_user_code_addr:   .quad gdt_desc_user_code
+gdt_desc_user_data_addr:   .quad gdt_desc_user_data
+gdt_desc_tss_addr:         .quad gdt_desc_tss
+gdt_pointer_addr:          .quad gdt_pointer
+gdt_start_addr:            .quad gdt_start
+gdt_end_addr:              .quad gdt_end

@@ -65,14 +65,14 @@ int32_t task_update(task_t *task, const char *name, uint8_t ring, void *entry) {
 
   switch (task->ring) {
   case TASK_RING_KERNEL:
-    task->regs.cs  = gdt_offset(gdt_desc_code_0_addr);
-    task->regs.ss  = gdt_offset(gdt_desc_data_0_addr);
+    task->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
+    task->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
     task->regs.rsp = (uint64_t)task->stack.kernel + pm_size(TASK_STACK_PAGE_COUNT);
     break;
 
   case TASK_RING_USER:
-    task->regs.cs  = gdt_offset(gdt_desc_code_3_addr);
-    task->regs.ss  = gdt_offset(gdt_desc_data_3_addr);
+    task->regs.cs  = gdt_offset(gdt_desc_user_code_addr);
+    task->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
     task->regs.rsp = (uint64_t)task->stack.user + pm_size(TASK_STACK_PAGE_COUNT);
 
     /*

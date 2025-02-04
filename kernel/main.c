@@ -22,6 +22,7 @@
 
 // clang-format on
 
+#include "boot/gdt.h"
 #include "core/im.h"
 #include "core/pci.h"
 #include "core/pic.h"
@@ -32,22 +33,21 @@
 #include "sched/task.h"
 
 #include "video.h"
-#include "mm/pm.h"
 #include "fs/vfs.h"
 
 #include "util/panic.h"
 #include "util/printk.h"
 #include "util/asm.h"
 
-void entry() {
+void entry(void *mb_addr) {
   int32_t err = 0;
+
   /*
 
-   * here, we initialize video memory in width the framebuffer mode
+   * here, we initialize video memory in the framebuffer mode
    * framebuffer info is obtained from the multiboot data
-   * see boot/multiboot.S
 
-   * also cars 2 is the best cars movie btw
+   * see boot/multiboot.S
 
   */
   if (!video_init(VIDEO_MODE_FRAMEBUFFER))
@@ -57,18 +57,10 @@ void entry() {
   if ((err = serial_init()) != 0)
     pfail("Failed to initalize the serial communication: %s", strerror(err));
 
+  // temporary
   _hang();
 
-  /*
-
-   * paging is done in before switching to long mode
-   * here we are just doing some extra checks and logging
-
-   * see boot/paging.S and boot/multiboot.S
-
-  */
-  if (!pm_init(0, 0))
-    panic("Failed to initialize the paging manager");
+  // TODO: setup PMM, paging, VMM and heap
 
   /*
 
@@ -84,9 +76,9 @@ void entry() {
 
    * initialize the programmable interrupt controller (PIC)
 
-   * we need to enable this before enabling interrupts
-   * otherwise since the vector offset is not set we would get a random
-   * exception interrupt from the PIC
+   * we need to enable this before enabling interrupts otherwise
+   * since the vector offset is not set we would get a random exception
+   * interrupt from the PIC
 
   */
   if (!pic_init())

@@ -1,9 +1,9 @@
 .global __paging_setup
-.type __paging_setup, @function
+.type __paging_setup,     @function
 
 .section .bss
 .align 0x1000
-tables:
+paging_temp_tables:
   .fill 512*3,8,0
 
 .section .text
@@ -19,7 +19,7 @@ __paging_setup:
   push %ecx
 
   // setup page table addresses
-  mov $tables, %eax  // eax = PML4
+  mov $paging_temp_tables, %eax  // eax = PML4
   mov %eax, %ebx
   add $(512*8), %ebx // ebx = PDPT
   mov %ebx, %ecx
@@ -45,7 +45,7 @@ __paging_setup:
 
    * so map first 1 GiB of:
    * - 0x0000000000000000 (lower half start)
-   * - 0xfffffff800000000 (upper half start)
+   * - 0xfffffff800000000 (higher half start)
 
   */
   mov %ecx, (%ebx)
@@ -57,15 +57,15 @@ __paging_setup:
   /*
 
    * setup PD (level 2 page table)
-   * map first 4 MiBs of lower and upper half to 0x0
+   * map first 4 MiBs of lower and higher half to 0x0
    * so we are id mapping the lower half
 
- */
+  */
   mov $0x0000000000000083, (%ecx)
   mov $0x0000000000200083, 8(%ecx)
 
   // return PML4 address
-  mov $tables, %eax
+  mov $paging_temp_tables, %eax
 
   // restore registers
   pop %ecx

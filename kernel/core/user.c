@@ -55,16 +55,17 @@ int32_t user_setup() {
    * first 32 bits are reserved so its actually calculating the EFLAGS... why? well fuck you
 
   */
-  if (gdt_offset(gdt_desc_code_0_addr) + 8 != gdt_offset(gdt_desc_data_0_addr))
+  if (gdt_offset(gdt_desc_kernel_code_addr) + 8 != gdt_offset(gdt_desc_kernel_data_addr))
     panic("Invalid GDT structure (bad ring 0 SS offset)");
 
-  if (gdt_offset(gdt_desc_data_3_addr) + 8 != gdt_offset(gdt_desc_code_3_addr))
+  if (gdt_offset(gdt_desc_user_data_addr) + 8 != gdt_offset(gdt_desc_user_code_addr))
     panic("Invalid GDT structure (bad ring 3 CS offset)");
 
   uint64_t efer = _msr_read(MSR_EFER);
   _msr_write(MSR_EFER, efer | 1); // just enable SCE
 
-  _msr_write(MSR_STAR, (gdt_offset(gdt_desc_code_0_addr) << 32) | ((gdt_offset(gdt_desc_data_0_addr) - 5) << 48));
+  _msr_write(
+      MSR_STAR, (gdt_offset(gdt_desc_kernel_code_addr) << 32) | ((gdt_offset(gdt_desc_kernel_data_addr) - 5) << 48));
   _msr_write(MSR_LSTAR, (uint64_t)_user_handler);
   _msr_write(MSR_FMASK,
       UINT64_MAX - (1 << 1)); // bit 1 reserved in eflags (see https://en.wikipedia.org/wiki/FLAGS_register#FLAGS)

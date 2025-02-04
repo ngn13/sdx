@@ -1,18 +1,18 @@
+#include "boot/boot.h"
+
 .type __entry, @function
 .global __entry
 
-.equ STACK_SIZE, 0x10000
-
 .section .data
 // error messages
-err_no_cpuid:   .string "HALTING: Your CPU is not supported (no CPUID)"
-err_no_long:    .string "HALTING: Your CPU is not supported (no long mode, are you on x64?)"
-err_no_msr:     .string "HALTING: Your CPU is not supported (no MSR)"
+err_no_cpuid: .string "HALTING: Your CPU is not supported (no CPUID)"
+err_no_long:  .string "HALTING: Your CPU is not supported (no long mode, are you on x64?)"
+err_no_msr:   .string "HALTING: Your CPU is not supported (no MSR)"
 
 .section .bss
 // simple stack
 .align 16
-.fill STACK_SIZE, 1, 0
+.fill BOOT_STACK_SIZE, 1, 0
 stack:
 
 .section .text
@@ -21,7 +21,7 @@ stack:
 // kernel loader entry point
 __entry:
   // load the stack
-  mov $(stack - STACK_SIZE), %esp
+  mov $stack, %esp
 
   /*
 
@@ -45,8 +45,12 @@ __entry:
   pop %eax
   mov %eax, %ecx
 
-  // https://en.wikipedia.org/wiki/FLAGS_register
-  // 21 (ID): Able to use CPUID instruction (Pentium+)
+  /*
+
+   * 21 (ID): Able to use CPUID instruction (Pentium+)
+   * https://en.wikipedia.org/wiki/FLAGS_register
+
+  */
   xor $(1 << 21), %eax
 
   push %eax
@@ -132,22 +136,19 @@ __entry:
   or $(1 << 31 | 1 << 0), %eax
   mov %eax, %cr0
 
-  // TEMPORARY
-  call __halt
-
   // setup GDT
   cli
   lgdt gdt_pointer
 
-  // long jump to 64 bit mode (there's no other way to change cs)
-  mov $gdt_desc_code_0_addr, %eax
-  mov $gdt_start_addr, %ebx
+  // load code segment offset to eax
+  movl $gdt_desc_kernel_code, %eax
+  movl $gdt_start, %ebx
   sub %ebx, %eax
+
+  // long jump to 64 bit mode (there's no other way to change cs)
   push %eax
-
-  push __entry64
-
-  // jmp 0x8:__entry64
+  push $__entry64_lower
+  // jmp 0x8:__entry64_lower
   retf
 
 .Lentry_fail_cpuid:
@@ -163,10 +164,9 @@ __entry:
   call __fail
 
 .code64
-__entry64:
-  // load the data segment offset
-  mov $gdt_desc_data_0_addr, %eax
-  mov $gdt_start_addr, %ebx
+__entry64_lower:
+  // load the data segment offset to eax
+  movl $gdt_desc_kernel_data, %eax
   sub %ebx, %eax
 
   // load the data segment
@@ -176,25 +176,35 @@ __entry64:
   mov %ax, %gs
   mov %ax, %ss
 
-  // load the video memory address + multiboot data address
-  pop %rsi
+  // jump to the higher half
+  movabs $(__entry64 + BOOT_KERNEL_ADDR), %rax
+  jmp *%rax
 
-  // clear the stack
-  mov $(stack - STACK_SIZE), %edi
-  xor %eax, %eax
-  mov $STACK_SIZE, %ecx
-  rep stosl
+__entry64:
+  // load the multiboot data address
+  pop %rdi
+  mov %edi, %edi // fix the 32 bit address
+
+  /*
+
+   * clear the stack, to do so we use the stos (store string) instruction
+   * which writes %al to %rdi %rcx times (incrementing %rdi by one byte each time)
+
+  */
+  mov $(stack - BOOT_STACK_SIZE), %rdi
+  mov $BOOT_STACK_SIZE, %rcx
+  xor %al, %al
+  rep stosb
 
   // reset stack
   xor %rbp, %rbp
-  mov $(stack + STACK_SIZE), %rsp
+  movabs $(stack + BOOT_KERNEL_ADDR), %rsp
 
-  // pass multiboot data address as the first argument
-  // and video memory address as the second
-  shrd $32, %rsi, %rdi
-  shr $32, %rsi
-  shr $32, %rdi
+  /*
 
-  // call kernel entry, should never return
+   * call kernel entry, should never return
+   * if we somehow do return, halt
+
+  */
   call entry
   call __halt
