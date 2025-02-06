@@ -34,13 +34,13 @@ __entry:
   push %ebx
   call __mb_check
 
-  // initalize video memory (pass the multiboot data as the first argument)
+  // initalize temporary framebuffer video driver (pass the multiboot data as the first argument)
   call __video_init
 
   // obtain the kernel binary end address
   call __end_get_addr
 
-  // detect if CPUID is available
+  // check if CPUID is available
   pushfl
   pop %eax
   mov %eax, %ecx
@@ -182,8 +182,8 @@ __entry64_lower:
 
 __entry64:
   // load the multiboot data address
-  pop %rdi
-  mov %edi, %edi // fix the 32 bit address
+  pop %rsi
+  mov %esi, %esi // fix the 32 bit address
 
   /*
 
@@ -199,6 +199,9 @@ __entry64:
   // reset stack
   xor %rbp, %rbp
   movabs $(stack + BOOT_KERNEL_ADDR), %rsp
+
+  // first argument for the entry is multiboot info address
+  mov %rsi, %rdi
 
   /*
 

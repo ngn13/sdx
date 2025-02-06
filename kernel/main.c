@@ -22,7 +22,6 @@
 
 // clang-format on
 
-#include "boot/gdt.h"
 #include "core/im.h"
 #include "core/pci.h"
 #include "core/pic.h"
@@ -32,8 +31,9 @@
 #include "sched/sched.h"
 #include "sched/task.h"
 
-#include "video.h"
+#include "boot/multiboot.h"
 #include "fs/vfs.h"
+#include "video.h"
 
 #include "util/panic.h"
 #include "util/printk.h"
@@ -42,20 +42,19 @@
 void entry(void *mb_addr) {
   int32_t err = 0;
 
-  /*
-
-   * here, we initialize video memory in the framebuffer mode
-   * framebuffer info is obtained from the multiboot data
-
-   * see boot/multiboot.S
-
-  */
-  if (!video_init(VIDEO_MODE_FRAMEBUFFER))
-    panic("Failed to initialize the framebuffer video mode");
-
   // initialize serial communication ports (UART)
   if ((err = serial_init()) != 0)
     pfail("Failed to initalize the serial communication: %s", strerror(err));
+
+  // load multiboot data
+  if ((err = mb_load(mb_addr)) != 0)
+    panic("Failed to load multiboot data: %s", strerror(err));
+
+  pinfo("mb_addr: %p", mb_addr);
+
+  // initialize framebuffer video driver
+  if ((err = video_init(VIDEO_MODE_FRAMEBUFFER)) != 0)
+    pfail("Failed to initialize the framebuffer video mode: %s", strerror(err));
 
   // temporary
   _hang();

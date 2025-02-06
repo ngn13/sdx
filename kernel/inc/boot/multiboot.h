@@ -286,11 +286,7 @@ struct multiboot_tag_load_base_addr {
   uint32_t load_base_addr;
 };
 
-// TODO: dont export these from boot/multiboot.S
-extern uint32_t mb_len;
-extern uint32_t mb_fb_addr;
-extern uint32_t mb_fb_width;
-extern uint32_t mb_fb_height;
-extern uint8_t  mb_fb_size;
+int32_t mb_load(void *data);   // load the multiboot data
+void   *mb_get(uint32_t type); // find and extract a tag from the multiboot data
 
 #endif

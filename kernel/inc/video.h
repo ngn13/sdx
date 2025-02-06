@@ -1,6 +1,10 @@
 #pragma once
 
+#include "util/printk.h"
 #include "types.h"
+
+#define video_fail(f, ...) pfail("Video: (%s) " f, NULL == video_current ? "none" : video_current->name, ##__VA_ARGS__)
+#define video_debg(f, ...) pdebg("Video: (%s) " f, NULL == video_current ? "none" : video_current->name, ##__VA_ARGS__)
 
 typedef enum video_mode {
   VIDEO_MODE_NONE        = 0,
@@ -21,7 +25,8 @@ typedef enum video_color {
 } video_color_t;
 
 typedef struct video_driver {
-  bool (*init)(); // initializes the video driver
+  const char *name;  // driver's name
+  int32_t (*init)(); // initializes the video driver
 
   void (*clear)();        // clears the current video graphics
   void (*write)(uint8_t); // writes a single char to the screen
@@ -31,16 +36,17 @@ typedef struct video_driver {
   void (*bg_set)(video_color_t); // set the background color
   uint8_t (*bg_get)();           // set the background color
 
-  bool (*cursor_show)();                            // shows the cursor
-  bool (*cursor_hide)();                            // hides the cursor
-  bool (*cursor_get_pos)(uint32_t *x, uint32_t *y); // get the cursor position
-  bool (*cursor_set_pos)(uint32_t x, uint32_t y);   // set the cursor position
+  int32_t (*cursor_show)();                            // shows the cursor
+  int32_t (*cursor_hide)();                            // hides the cursor
+  int32_t (*cursor_get_pos)(uint32_t *x, uint32_t *y); // get the cursor position
+  int32_t (*cursor_set_pos)(uint32_t x, uint32_t y);   // set the cursor position
 } video_driver_t;
 
-extern video_driver_t video_fb;
+extern video_driver_t *video_current; // current selected video driver
+extern video_driver_t  video_fb;      // framebuffer video driver
 
 // video functions
-bool         video_init(video_mode_t mode);
+int32_t      video_init(video_mode_t mode);
 video_mode_t video_mode(); // returns the current video mode
 
 void video_clear();
@@ -52,8 +58,8 @@ uint8_t video_fg_get();
 void    video_bg_set(video_color_t c);
 uint8_t video_bg_get();
 
-bool video_cursor_show();
-bool video_cursor_hide();
+int32_t video_cursor_show();
+int32_t video_cursor_hide();
 
-bool video_cursor_get_pos(uint32_t *x, uint32_t *y);
-bool video_cursor_set_pos(uint32_t x, uint32_t y);
+int32_t video_cursor_get_pos(uint32_t *x, uint32_t *y);
+int32_t video_cursor_set_pos(uint32_t x, uint32_t y);
