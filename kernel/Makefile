@@ -28,10 +28,7 @@ SFLAGS += -Werror # warnings = errors
 LFLAGS  = --nmagic
 INCLUDE = -I inc -I ../inc -I ../config
 
-all: $(DISTDIR) $(OUTDIRS) $(DISTDIR)/kernel
-
-$(DISTDIR):
-	mkdir -pv $@
+all: $(OUTDIRS) $(DISTDIR)/kernel
 
 $(OUTDIRS):
 	mkdir -pv $(OUTDIRS)

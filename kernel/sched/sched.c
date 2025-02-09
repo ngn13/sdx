@@ -5,17 +5,9 @@
 #include "core/im.h"
 #include "core/pic.h"
 
-#include "mm/vmm.h"
-#include "mm/pm.h"
-
-#include "boot/gdt.h"
-
-#include "util/printk.h"
-#include "util/string.h"
 #include "util/panic.h"
 #include "util/list.h"
 #include "util/lock.h"
-#include "util/mem.h"
 #include "util/asm.h"
 #include "util/bit.h"
 

@@ -1,4 +1,5 @@
 #include "boot/multiboot.h"
+#include "boot/boot.h"
 
 .global __mb_check
 .global __mb_get_tag
@@ -12,26 +13,46 @@
 
  * this section contains the multiboot header which is required by GRUB
  * this will be placed on top of the kernel ELF binary, see config/link.ld
+
  * to learn more about the multiboot2 specification see:
  * https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html
 
 */
+
 multiboot_start:
-  .int 0xe85250d6                       // magic number
-  .int 0                                // architecture (0 = i386)
+  .int MULTIBOOT2_HEADER_MAGIC          // magic number
+  .int MULTIBOOT_ARCHITECTURE_I386      // architecture (0 = i386)
   .int multiboot_end -  multiboot_start // multiboot header length
 
   // checksum
-  .int 0x100000000 - (0xe85250d6 + 0 + (multiboot_end - multiboot_start))
+  .int -(MULTIBOOT2_HEADER_MAGIC + MULTIBOOT_ARCHITECTURE_I386 + (multiboot_end - multiboot_start))
 
-  // the header tag
-  .long 0 // type
-  .long 0 // flags
-  .long 8 // size
+  // address tag
+  multiboot_address_tag_start:
+    .short MULTIBOOT_HEADER_TAG_ADDRESS
+    .short MULTIBOOT_HEADER_TAG_OPTIONAL
+    .int multiboot_address_tag_end - multiboot_address_tag_start
+
+    .int multiboot_start - BOOT_KERNEL_ADDR // header_addr
+    .int _start - BOOT_KERNEL_ADDR          // load_addr
+    .int _edata - BOOT_KERNEL_ADDR          // load_end_addr
+    .int _end - BOOT_KERNEL_ADDR            // bss_end_addr
+  multiboot_address_tag_end:
+
+  // entry address tag
+  multiboot_entry_tag_start:
+    .short MULTIBOOT_HEADER_TAG_ENTRY_ADDRESS
+    .short MULTIBOOT_HEADER_TAG_OPTIONAL
+    .int multiboot_entry_tag_end - multiboot_entry_tag_start
+
+    .int __entry - BOOT_KERNEL_ADDR // entry_addr
+  multiboot_entry_tag_end:
+
+  .short MULTIBOOT_HEADER_TAG_END
+  .short 0
 multiboot_end:
 
 .section .data
-
 // error messages
 err_no_magic: .string "HALTING: Magic number is not set (did you boot with GRUB multiboot2?)"
 err_bad_len:  .string "HALTING: Multiboot information size is invalid"
@@ -53,12 +74,12 @@ __mb_check:
   ret
 
   .Lmb_check_fail:
-    mov $err_no_magic, %eax
+    mov $(err_no_magic - BOOT_KERNEL_ADDR), %eax
     push %eax
     call __fail
 
   .Lmb_len_fail:
-    mov $err_bad_len, %eax
+    mov $(err_bad_len - BOOT_KERNEL_ADDR), %eax
     push %eax
     call __fail
 

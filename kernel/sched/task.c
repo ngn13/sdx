@@ -7,7 +7,7 @@
 #include "mm/vmm.h"
 #include "mm/pm.h"
 
-#include "boot/gdt.h"
+#include "boot/boot.h"
 
 #include "util/string.h"
 #include "util/list.h"

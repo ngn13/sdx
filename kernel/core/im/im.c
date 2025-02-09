@@ -1,4 +1,4 @@
-#include "boot/gdt.h"
+#include "boot/boot.h"
 #include "core/im.h"
 
 #include "mm/vmm.h"

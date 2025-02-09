@@ -1,8 +1,6 @@
-.type cpu_vendor,     @common
-.type __vendor_get,   @function
-.type __vendor_check, @function
+#include "boot/boot.h"
 
-.global cpu_vendor
+.type __vendor_check, @function
 .global __vendor_check
 
 .section .data
@@ -38,7 +36,7 @@ __vendor_get:
   xor %eax, %eax
   cpuid
 
-  mov $cpu_vendor, %eax
+  mov $(cpu_vendor - BOOT_KERNEL_ADDR), %eax
   movl %ebx, 0(%eax)
   movl %edx, 4(%eax)
   movl %ecx, 8(%eax)
@@ -58,7 +56,7 @@ __vendor_check:
   // first obtain the vendor name with CPUID
   call __vendor_get
 
-  mov $cpu_vendor_supported, %ebx
+  mov $(cpu_vendor_supported - BOOT_KERNEL_ADDR), %ebx
   xor %ecx, %ecx
 
   .Lvendor_check_next:
@@ -85,7 +83,7 @@ __vendor_check:
     test %dh, %dh
     jne .Lvendor_check_next
 
-  mov $err_bad_vendor, %eax
+  mov $(err_bad_vendor - BOOT_KERNEL_ADDR), %eax
   push %eax
   call __fail
 

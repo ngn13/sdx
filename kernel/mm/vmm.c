@@ -6,6 +6,9 @@
 #include "util/panic.h"
 #include "util/printk.h"
 
+#include "types.h"
+#include "errno.h"
+
 bool vmm_reg_check(vmm_reg_t r) {
   if (NULL == r)
     return false;
@@ -283,4 +286,57 @@ void *vmm_realloc(void *mem, uint64_t size) {
 
   vmm_free(mem);
   return new_mem;
+}
+
+#define vmm_fail(f, ...) pfail("VMM: " f, ##__VA_ARGS__)
+#define vmm_debg(f, ...) pdebg("VMM: " f, ##__VA_ARGS__)
+
+uint64_t *__vmm_get_pml4() {
+  uint64_t *cr3;
+
+  __asm__("mov %%cr3, %%rax\n"
+          "mov %%rax, %0\n"
+      : "=m"(cr3)::"%rax");
+
+  return cr3;
+}
+
+void __vmm_set_pml4(uint64_t *pml4) {
+  if (NULL == pml4)
+    panic("Attempt to switch to a NULL PML4");
+
+  __asm__("mov %0, %%rax\n"
+          "mov %%rax, %%cr3\n" ::"m"(pml4)
+      : "%rax");
+}
+
+void *vmm_new() {
+  // TODO: implement
+  return NULL;
+}
+
+int32_t vmm_switch(void *vmm) {
+  // TODO: implement
+  return -ENOSYS;
+}
+
+void vmm_unmap(void *vaddr, uint64_t num) {
+  // TODO: implement
+}
+
+void *vmm_map(uint64_t num, uint64_t flags) {
+  uint64_t *pml4 = __vmm_get_pml4();
+
+  // TODO: implement
+  return NULL;
+}
+
+void *vmm_map_with(uint64_t num, uint64_t align, vmm_vma_t vma, uint64_t flags) {
+  // TODO: implement
+  return NULL;
+}
+
+void *vmm_map_at(uint64_t vaddr, uint64_t num, uint64_t align, vmm_vma_t vma, uint64_t flags) {
+  // TODO: implement
+  return NULL;
 }

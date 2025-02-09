@@ -61,6 +61,8 @@ int32_t fb_init() {
   fb_data.height    = tag->framebuffer_height;
   fb_data.char_size = FB_SUPPORTED_CHAR_SIZE;
 
+  // TODO: map framebuffer_addr with VMM
+
   return 0;
 }
 

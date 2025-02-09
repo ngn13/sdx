@@ -19,6 +19,9 @@
 #define MULTIBOOT_SEARCH       32768
 #define MULTIBOOT_HEADER_ALIGN 8
 
+// The magic field should contain this
+#define MULTIBOOT2_HEADER_MAGIC 0xe85250d6
+
 // This should be in %eax
 #define MULTIBOOT2_BOOTLOADER_MAGIC 0x36d76289
 

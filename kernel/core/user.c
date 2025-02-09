@@ -4,7 +4,7 @@
 #include "sched/mem.h"
 
 #include "core/user.h"
-#include "boot/gdt.h"
+#include "boot/boot.h"
 
 #include "mm/vmm.h"
 #include "mm/pm.h"

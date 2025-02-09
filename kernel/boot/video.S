@@ -1,4 +1,5 @@
 #include "boot/multiboot.h"
+#include "boot/boot.h"
 
 .equ VIDEO_FB_CHAR_SIZE, 2 // bytes per char
 .equ VIDEO_FB_CHAR_SIZE_BITS, VIDEO_FB_CHAR_SIZE*8 // bytes per char
@@ -92,13 +93,13 @@ __video_init:
   test %ecx, %ecx
   jne .Lvideo_init_bad_addr
 
-  mov %ecx, video_fb_addr
+  mov %ebx, (video_fb_addr - BOOT_KERNEL_ADDR)
 
   mov 20(%eax), %ecx // ecx = framebuffer_width
-  mov %ecx, video_fb_width
+  mov %ecx, (video_fb_width - BOOT_KERNEL_ADDR)
 
   mov 24(%eax), %ecx // ecx = framebuffer_height
-  mov %ecx, video_fb_height
+  mov %ecx, (video_fb_height - BOOT_KERNEL_ADDR)
 
   /*
 
@@ -131,19 +132,19 @@ __video_init:
   ret
 
   .Lvideo_init_find_fail:
-    push $err_video_no_fb
+    push $(err_video_no_fb - BOOT_KERNEL_ADDR)
     call __fail
 
   .Lvideo_init_bad_addr:
-    push $err_video_bad_fb
+    push $(err_video_bad_fb - BOOT_KERNEL_ADDR)
     call __fail
 
   .Lvideo_init_bad_bpp:
-    push $err_video_bad_bpp
+    push $(err_video_bad_bpp - BOOT_KERNEL_ADDR)
     call __fail
 
   .Lvideo_init_bad_type:
-    push $err_video_bad_type
+    push $(err_video_bad_type - BOOT_KERNEL_ADDR)
     call __fail
 
 __video_write:
@@ -159,7 +160,7 @@ __video_write:
   mov  8(%ebp), %eax   // eax stores the message (first argument)
   mov 12(%ebp), %ebx   // ebx stores the color (second argument)
   xor %ecx, %ecx       // ecx stores the current char
-  mov video_fb_addr, %esi // esi stores the framebuffer address
+  mov (video_fb_addr - BOOT_KERNEL_ADDR), %esi // esi stores the framebuffer address
 
   mov %bl, %ch // ch = color
 

@@ -22,16 +22,21 @@
 
 // clang-format on
 
+#include "boot/multiboot.h"
+#include "boot/boot.h"
+
 #include "core/im.h"
 #include "core/pci.h"
 #include "core/pic.h"
 #include "core/serial.h"
 #include "core/user.h"
 
+#include "mm/pmm.h"
+#include "mm/vmm.h"
+
 #include "sched/sched.h"
 #include "sched/task.h"
 
-#include "boot/multiboot.h"
 #include "fs/vfs.h"
 #include "video.h"
 
@@ -39,7 +44,7 @@
 #include "util/printk.h"
 #include "util/asm.h"
 
-void entry(void *mb_addr) {
+void entry() {
   int32_t err = 0;
 
   // initialize serial communication ports (UART)
@@ -47,10 +52,11 @@ void entry(void *mb_addr) {
     pfail("Failed to initalize the serial communication: %s", strerror(err));
 
   // load multiboot data
-  if ((err = mb_load(mb_addr)) != 0)
+  if ((err = mb_load((void *)BOOT_MB_DATA_ADDR)) != 0)
     panic("Failed to load multiboot data: %s", strerror(err));
 
-  pinfo("mb_addr: %p", mb_addr);
+  if ((err = pmm_init()) != 0)
+    panic("Failed to initialize physical memory manager: %s", strerror(err));
 
   // initialize framebuffer video driver
   if ((err = video_init(VIDEO_MODE_FRAMEBUFFER)) != 0)

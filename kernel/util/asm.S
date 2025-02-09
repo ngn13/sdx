@@ -1,15 +1,8 @@
 #include "util/asm.h"
 #include "types.h"
 
-.type _get_cr0, @function
-.type _get_cr2, @function
-.type _get_cr3, @function
-.type _get_cr4, @function
-
-.type _msr_read, @function
-.type _msr_write, @function
-
-.type _hang, @function
+.global _get_end
+.global _get_start
 
 .global _get_cr0
 .global _get_cr2
@@ -21,8 +14,29 @@
 
 .global _hang
 
+.type _get_end,   @function
+.type _get_start, @function
+
+.type _get_cr0, @function
+.type _get_cr2, @function
+.type _get_cr3, @function
+.type _get_cr4, @function
+
+.type _msr_read,  @function
+.type _msr_write, @function
+
+.type _hang, @function
+
 .section .text
 .code64
+
+_get_end:
+  mov $_end, %rax
+  ret
+
+_get_start:
+  mov $_start, %rax
+  ret
 
 _get_cr0:
   mov %cr0, %rax

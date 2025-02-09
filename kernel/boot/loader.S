@@ -5,9 +5,9 @@
 
 .section .data
 // error messages
-err_no_cpuid: .string "HALTING: Your CPU is not supported (no CPUID)"
-err_no_long:  .string "HALTING: Your CPU is not supported (no long mode, are you on x64?)"
-err_no_msr:   .string "HALTING: Your CPU is not supported (no MSR)"
+err_no_cpuid:  .string "HALTING: Your CPU is not supported (no CPUID)"
+err_no_long:   .string "HALTING: Your CPU is not supported (no long mode, are you on x64?)"
+err_no_msr:    .string "HALTING: Your CPU is not supported (no MSR)"
 
 .section .bss
 // simple stack
@@ -21,7 +21,7 @@ stack:
 // kernel loader entry point
 __entry:
   // load the stack
-  mov $stack, %esp
+  mov $(stack - BOOT_KERNEL_ADDR), %esp
 
   /*
 
@@ -38,7 +38,7 @@ __entry:
   call __video_init
 
   // obtain the kernel binary end address
-  call __end_get_addr
+  //call __end_get_addr
 
   // check if CPUID is available
   pushfl
@@ -138,35 +138,35 @@ __entry:
 
   // setup GDT
   cli
-  lgdt gdt_pointer
+  lgdt (gdt_pointer - BOOT_KERNEL_ADDR)
 
   // load code segment offset to eax
-  movl $gdt_desc_kernel_code, %eax
-  movl $gdt_start, %ebx
+  movl $(gdt_desc_kernel_code - BOOT_KERNEL_ADDR), %eax
+  movl $(gdt_start - BOOT_KERNEL_ADDR), %ebx
   sub %ebx, %eax
 
   // long jump to 64 bit mode (there's no other way to change cs)
   push %eax
-  push $__entry64_lower
+  push $(__entry64_lower - BOOT_KERNEL_ADDR)
   // jmp 0x8:__entry64_lower
   retf
 
 .Lentry_fail_cpuid:
-  push $err_no_cpuid
+  push $(err_no_cpuid - BOOT_KERNEL_ADDR)
   call __fail
 
 .Lentry_fail_long:
-  push $err_no_long
+  push $(err_no_long - BOOT_KERNEL_ADDR)
   call __fail
 
 .Lentry_fail_msr:
-  push $err_no_msr
+  push $(err_no_msr - BOOT_KERNEL_ADDR)
   call __fail
 
 .code64
 __entry64_lower:
   // load the data segment offset to eax
-  movl $gdt_desc_kernel_data, %eax
+  movl $(gdt_desc_kernel_data - BOOT_KERNEL_ADDR), %eax
   sub %ebx, %eax
 
   // load the data segment
@@ -177,14 +177,10 @@ __entry64_lower:
   mov %ax, %ss
 
   // jump to the higher half
-  movabs $(__entry64 + BOOT_KERNEL_ADDR), %rax
+  movabs $__entry64, %rax
   jmp *%rax
 
 __entry64:
-  // load the multiboot data address
-  pop %rsi
-  mov %esi, %esi // fix the 32 bit address
-
   /*
 
    * clear the stack, to do so we use the stos (store string) instruction
@@ -198,16 +194,10 @@ __entry64:
 
   // reset stack
   xor %rbp, %rbp
-  movabs $(stack + BOOT_KERNEL_ADDR), %rsp
+  movabs $stack, %rsp
 
-  // first argument for the entry is multiboot info address
-  mov %rsi, %rdi
+  // remove lower half mappings
+  call __paging_clean
 
-  /*
-
-   * call kernel entry, should never return
-   * if we somehow do return, halt
-
-  */
+  // call kernel entry, should never return
   call entry
-  call __halt

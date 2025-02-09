@@ -170,10 +170,10 @@ gdt_end:
 
 gdt_pointer:
   .short gdt_end - gdt_start - 1
-  .int gdt_start
+  .int gdt_start - BOOT_KERNEL_ADDR
 
 .section .data
-gdt_desc_kernel_code_addr: .quad gdt_desc_kernel_code + BOOT_KERNEL_ADDR
+gdt_desc_kernel_code_addr: .quad gdt_desc_kernel_code
 gdt_desc_kernel_data_addr: .quad gdt_desc_kernel_data
 gdt_desc_user_code_addr:   .quad gdt_desc_user_code
 gdt_desc_user_data_addr:   .quad gdt_desc_user_data
