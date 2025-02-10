@@ -1,6 +1,12 @@
 #pragma once
 #include "types.h"
 
+// virtual memory areas
+#define VMM_VMA_KERNEL     (0xffff800000000000)
+#define VMM_VMA_KERNEL_END (0xffffffffffffffff)
+#define VMM_VMA_USER       (0x0000000000000000)
+#define VMM_VMA_USER_END   (0x00007fffffffffff)
+
 // paging stuff
 #define VMM_PAGE_SIZE         (4096)
 #define VMM_PAGING_LEVEL      (4)
@@ -58,18 +64,6 @@ void *vmm_alloc(uint64_t size);
 void *vmm_realloc(void *mem, uint64_t size);
 void  vmm_free(void *mem);
 
-/*
-
- * VMM virtual memory area (VMA) type
- * when user VMA is used operation is done in lower half
- * when kernel VMA is used operation is done in higher half
-
-*/
-typedef enum {
-  VMM_VMA_USER   = 0,
-  VMM_VMA_KERNEL = 1,
-} vmm_vma_t;
-
 void   *vmm_new();                            // create a new VMM
 int32_t vmm_switch(void *vmm);                // switch to a different VMM
 void    vmm_unmap(void *vaddr, uint64_t num); // unmap num amount of pages from the given virtual address
@@ -88,7 +82,7 @@ void *vmm_map(uint64_t num, uint64_t flags);
  * in the given VMA with the given flags
 
 */
-void *vmm_map_with(uint64_t num, uint64_t align, vmm_vma_t vma, uint64_t flags);
+void *vmm_map_with(uint64_t num, uint64_t align, uint64_t vma, uint64_t flags);
 
 /*
 
@@ -96,6 +90,6 @@ void *vmm_map_with(uint64_t num, uint64_t align, vmm_vma_t vma, uint64_t flags);
  * boundry, in the given VMA with given flags
 
 */
-void *vmm_map_at(uint64_t vaddr, uint64_t num, uint64_t align, vmm_vma_t vma, uint64_t flags);
+void *vmm_map_at(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t vma, uint64_t flags);
 
 #endif

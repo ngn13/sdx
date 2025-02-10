@@ -2,10 +2,12 @@
 #include "mm/vmm.h"
 
 .global paging_mb_data_offset
+.global paging_temp_tables_addr
 .global __paging_setup
 .global __paging_clean
 
-.type paging_mb_data_offset, @common
+.type paging_mb_data_offset,   @common
+.type paging_temp_tables_addr, @common
 .type __paging_setup, @function
 .type __paging_clean, @function
 
@@ -19,7 +21,7 @@ paging_temp_tables:
 err_paging_kernel_large:  .string "HALTING: Kernel is too large (larger than 4MiB)"
 err_paging_mb_data_large: .string "HALTING: Multiboot information is too large (larger than 2MiB)"
 paging_mb_data_offset:    .int 0
-paging_temp_tables_addr:  .long paging_temp_tables - BOOT_KERNEL_ADDR
+paging_temp_tables_addr:  .quad paging_temp_tables
 
 .section .text
 .code32
@@ -27,16 +29,22 @@ paging_temp_tables_addr:  .long paging_temp_tables - BOOT_KERNEL_ADDR
 /*
 
  * map first 2 MiBs of the lower half and the -2 GiB mark to kernel binary
- * then map next 4 KiBs to multiboot info
+ * then map next 4 KiBs to multiboot info and lasty map 510th entry of PML4 to itself
+ * for recursive paging
 
  * this means the kernel has to be <= 2MiBs and multiboot info has to be <= 4KiBs
  * we check both of these cases and call __fail if one fails
 
  * if successful, our virtual address space will look like this
- * 0x0000000000000000-0x0000000000200000 (2 MiB): kernel binary
- * 0x0000000000200000-0x0000000000201000 (4 KiB): multiboot info
- * 0xffffffff80000000-0xffffffff80200000 (2 MiB): kernel binary
- * 0xffffffff80200000-0xffffffff80201000 (4 KiB): multiboot info
+
+ * start address     | end address       | size    | desc
+ * ------------------|-------------------|---------|------------------------
+ * 0x0000000000000000-0x0000000000200000 |   2 MiB | kernel binary
+ * 0x0000000000200000-0x0000000000201000 |   4 KiB | multiboot info
+ * 0xffffff0000000000-0xffffff8000000000 | 512 GiB | PML4 (recursive paging)
+ * 0xffffffff80000000-0xffffffff80200000 |   2 MiB | kernel binary
+ * 0xffffffff80200000-0xffffffff80201000 |   4 KiB | multiboot info
+ * ------------------|-------------------|---------|------------------------
 
  * when we jump to higher half, we are gonna call __paging_clean, which
  * will remove the lower half mappings
@@ -111,10 +119,14 @@ __paging_setup:
 
    * setup PML4 (level 4 page table)
    * map first and last 512 GiBs
+   * also we have a resurcive mapping at 511th entry
 
   */
   mov %ebx, (%eax)
   or $VMM_FLAGS_DEFAULT, (%eax)
+
+  mov %eax, 510*8(%eax)
+  or $VMM_FLAGS_DEFAULT, 510*8(%eax)
 
   mov %ebx, 511*8(%eax)
   or $VMM_FLAGS_DEFAULT, 511*8(%eax)
@@ -183,11 +195,9 @@ __paging_setup:
 */
 __paging_clean:
   // remove PML4 lower half mapping
-  mov $paging_temp_tables, %rax // rax = PML4
-  mov $0, (%rax)
+  movq $0, paging_temp_tables
 
   // remove PDPT lower half mapping
-  add $(512*8), %rax // rax = PDPT
-  mov $0, (%rax)
+  movq $0, (paging_temp_tables + (512*8))
 
   ret

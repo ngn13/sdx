@@ -63,7 +63,7 @@ int32_t fb_init() {
 
   // TODO: map framebuffer_addr with VMM
 
-  return 0;
+  return -ENOSYS;
 }
 
 void fb_clear() {

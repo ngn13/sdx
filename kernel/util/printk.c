@@ -119,8 +119,6 @@ uint64_t vprintf(char *fmt, va_list args) {
       uint64_t section_val = 0;
       char     str[14];
 
-      // TODO: fix this!!
-
       // format: 00112233-0011-0011-1100-554433221100
 
       for (i = 0; i < 4; i++)

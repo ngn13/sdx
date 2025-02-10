@@ -1,8 +1,8 @@
 #include "util/asm.h"
 #include "types.h"
 
-.global _get_end
-.global _get_start
+.global _end_addr
+.global _start_addr
 
 .global _get_cr0
 .global _get_cr2
@@ -14,8 +14,8 @@
 
 .global _hang
 
-.type _get_end,   @function
-.type _get_start, @function
+.type _end_addr,   @common
+.type _start_addr, @common
 
 .type _get_cr0, @function
 .type _get_cr2, @function
@@ -27,16 +27,12 @@
 
 .type _hang, @function
 
+.section .data
+_start_addr: .quad _start
+_end_addr:   .quad _end
+
 .section .text
 .code64
-
-_get_end:
-  mov $_end, %rax
-  ret
-
-_get_start:
-  mov $_start, %rax
-  ret
 
 _get_cr0:
   mov %cr0, %rax

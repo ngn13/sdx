@@ -1,6 +1,9 @@
+#include "boot/boot.h"
 #include "boot/multiboot.h"
+
 #include "util/printk.h"
 #include "util/mem.h"
+#include "util/asm.h"
 
 #include "mm/pmm.h"
 #include "mm/vmm.h"
@@ -88,6 +91,8 @@ int32_t pmm_init() {
     if (MULTIBOOT_MEMORY_AVAILABLE != map->type)
       continue;
 
+    pmm_debg("available mmap entry 0x%p - 0x%p", map->addr, map->addr + map->len);
+
     if (map->addr < pmm_mem_start)
       pmm_mem_start = map->addr;
 
@@ -95,17 +100,29 @@ int32_t pmm_init() {
       pmm_mem_end = map->addr + map->len;
   }
 
+  // available memory start address should not point to kernel binary's memory
+  if (BOOT_KERNEL_END_PADDR > pmm_mem_start)
+    pmm_mem_start = BOOT_KERNEL_END_PADDR;
+
+  // align the addresses to page boundaries
   __pmm_align_to_page(pmm_mem_start, 1);
   __pmm_align_to_page(pmm_mem_end, -1);
-  pmm_mem_pos = pmm_mem_start;
+
+  // make sure end > start (otherwise we don't have memory)
+  if ((pmm_mem_pos = pmm_mem_start) >= pmm_mem_end) {
+    pmm_fail("No available physical memory");
+    return -ENOMEM;
+  }
 
   // calculate the bitmap size for pmm_mem_start to pmm_mem_end
   pmm_bitmap_size = __pmm_mem_size() / VMM_PAGE_SIZE / 8;
   __pmm_align_to_page(pmm_bitmap_size, 1);
 
+  pmm_debg("bitmapping 0x%p - 0x%p with %u bytes", pmm_mem_start, pmm_mem_end, pmm_bitmap_size);
+
   // allocate memory for the bitmap
   if ((pmm_bitmap = vmm_map(pmm_bitmap_size / VMM_PAGE_SIZE, VMM_FLAGS_DEFAULT)) == NULL) {
-    pmm_debg("failed to allocate the bitmap (size: %u)", pmm_bitmap_size);
+    pmm_fail("failed to allocate the bitmap (size: %u)", pmm_bitmap_size);
     return -EFAULT;
   }
 
@@ -115,25 +132,30 @@ int32_t pmm_init() {
 }
 
 void *__pmm_alloc_no_bitmap(uint64_t num, uint64_t align) {
-  while (pmm_mem_pos % align != 0)
+  while (align != 0 && pmm_mem_pos % align != 0)
     pmm_mem_pos++;
 
-  uint64_t cur = num, pos = pmm_mem_pos;
+  uint64_t pos = pmm_mem_pos, start = 0, cur = 0;
 
-  for (; cur > 0; cur--, pos += VMM_PAGE_SIZE) {
+  for (; num > cur; pos += VMM_PAGE_SIZE) {
     if (pos >= pmm_mem_end)
       break;
 
-    if (!__pmm_is_in_mb_mmap_entry(pos))
-      cur = num;
+    if (cur == 0)
+      start = pos;
+
+    if (__pmm_is_in_mb_mmap_entry(pos))
+      cur++;
+    else
+      cur = 0;
   }
 
-  if (cur != 0) {
-    pmm_fail("failed to allocate %u pages (no bitmap allocation)");
+  if (cur != num) {
+    pmm_fail("failed to allocate %u pages (no bitmap allocation)", num);
     return NULL;
   }
 
-  void *ret   = (void *)pmm_mem_pos;
+  void *ret   = (void *)start;
   pmm_mem_pos = pos;
 
   return ret;
@@ -148,6 +170,8 @@ void *pmm_alloc(uint64_t num, uint64_t align) {
   uint8_t          val = 0;
 
   __pmm_bitmap_pos_reset(&pos);
+
+  // TODO: finish implementation
 
   while ((val = __pmm_bitmap_pos_next(&pos)) >= 0) {
   }

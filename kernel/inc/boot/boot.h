@@ -8,10 +8,21 @@
 
 #ifndef __ASSEMBLY__
 
+#include "util/asm.h"
+
+#define BOOT_KERNEL_START_PADDR (_start_addr - BOOT_KERNEL_ADDR)
+#define BOOT_KERNEL_END_PADDR   (_end_addr - BOOT_KERNEL_ADDR)
+
+#define BOOT_KERNEL_START_VADDR (_start_addr)
+#define BOOT_KERNEL_END_VADDR   (_end_addr)
+
 // boot/paging.S
 extern uint32_t paging_mb_data_offset;
-extern uint64_t paging_temp_tables_addr;
 #define BOOT_MB_DATA_ADDR (0xffffffff80200000 + paging_mb_data_offset)
+
+extern uint64_t paging_temp_tables_addr;
+#define BOOT_TEMP_PML4_VADDR (paging_temp_tables_addr)
+#define BOOT_TEMP_PML4_PADDR (paging_temp_tables_addr - BOOT_KERNEL_ADDR)
 
 // boot/gdt.S
 extern uint64_t gdt_start_addr;
