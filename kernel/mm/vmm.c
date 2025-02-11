@@ -293,9 +293,12 @@ void *vmm_realloc(void *mem, uint64_t size) {
 }
 
 #define vmm_fail(f, ...) pfail("VMM: " f, ##__VA_ARGS__)
+#define vmm_warn(f, ...) pwarn("VMM: " f, ##__VA_ARGS__)
 #define vmm_debg(f, ...) pdebg("VMM: " f, ##__VA_ARGS__)
 
-#define vmm_is_valid_vma(vma) (VMM_VMA_KERNEL == vma || VMM_VMA_USER == vma)
+#define vmm_vma_is_valid(vma) (VMM_VMA_KERNEL == vma || VMM_VMA_USER == vma)
+#define vmm_vma_does_contain(addr)                                                                                     \
+  ((VMM_VMA_KERNEL_END > addr && addr >= VMM_VMA_KERNEL) || (VMM_VMA_USER_END > addr && addr >= VMM_VMA_USER))
 
 #define vmm_entry_to_addr(entry)                                                                                       \
   ((uint64_t *)(bit_get((uint64_t)entry & VMM_FLAGS_CLEAR, 47)                                                         \
@@ -361,51 +364,89 @@ bool __vmm_addr_is_mapped(uint64_t addr) {
   return vmm_pt_entry(addr) != 0;
 }
 
-void *__vmm_map_at_no_checks(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t vma, uint64_t flags) {
+void *__vmm_map_to_paddr_internal(uint64_t paddr, uint64_t vaddr, uint64_t num, uint64_t flags, uint64_t all_flags) {
   uint64_t *table = NULL, start = vaddr;
-  void     *paddr = NULL;
+
+  vmm_debg("mapping %u pages from 0x%p to 0x%p", num, paddr, vaddr);
+
+  for (; num > 0; num--, vaddr += VMM_PAGE_SIZE, paddr += VMM_PAGE_SIZE) {
+    // get (or create if not exists) PDPT
+    if (*(table = &vmm_pml4_entry(vaddr)) == 0) {
+      vmm_debg("allocated a new PDPT @ 0x%p for mapping 0x%p", *table = (uint64_t)pmm_alloc(1, 0), vaddr);
+      *table |= VMM_FLAGS_DEFAULT;
+      bzero(vmm_pdpt_addr(vaddr), VMM_PAGE_SIZE);
+    }
+
+    *table |= all_flags;
+
+    // get (or create if not exists) PD
+    if (*(table = &vmm_pdpt_entry(vaddr)) == 0) {
+      vmm_debg("allocated a new PD @ 0x%p for mapping 0x%p", *table = (uint64_t)pmm_alloc(1, 0), vaddr);
+      *table |= VMM_FLAGS_DEFAULT;
+      bzero(vmm_pd_addr(vaddr), VMM_PAGE_SIZE);
+    }
+
+    *table |= all_flags;
+
+    // get (or create if not exists) PT
+    if (*(table = &vmm_pd_entry(vaddr)) == 0) {
+      vmm_debg("allocated a new PT @ 0x%p for mapping 0x%p", *table = (uint64_t)pmm_alloc(1, 0), vaddr);
+      *table |= VMM_FLAGS_DEFAULT;
+      bzero(vmm_pt_addr(vaddr), VMM_PAGE_SIZE);
+    }
+
+    *table |= all_flags;
+
+    // add the page entry to PT
+    table  = &vmm_pt_entry(vaddr);
+    *table = (uint64_t)paddr | flags | all_flags;
+  }
+
+  return (void *)start;
+}
+
+void *__vmm_map_to_vaddr_internal(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t flags) {
+  uint64_t paddr = NULL;
 
   if (NULL == (paddr = pmm_alloc(num, align))) {
     vmm_debg("failed to allocate %u physical pages", num);
     return NULL;
   }
 
-  vmm_debg("mapping %p to %p (%u pages, %u alignment)", paddr, vaddr, num, align);
+  return __vmm_map_to_paddr_internal(
+      paddr, vaddr, num, flags, VMM_VMA_USER >= vaddr && vaddr > VMM_VMA_USER_END ? VMM_FLAG_US : 0);
+}
 
-  for (; num > 0; num--, vaddr += VMM_PAGE_SIZE, paddr += VMM_PAGE_SIZE) {
-    // get (or create if not exists) PDPT
-    if (*(table = &vmm_pml4_entry(vaddr)) == 0) {
-      *table = (uint64_t)pmm_alloc(1, 0) | VMM_FLAGS_DEFAULT;
-      bzero(vmm_pdpt_addr(vaddr), VMM_PAGE_SIZE);
-    }
+uint64_t __vmm_find_contiguous(uint64_t num, uint64_t vma) {
+  uint64_t pos = vma, start = 0, cur = 0;
 
-    if (VMM_VMA_USER == vma)
-      *table |= VMM_FLAG_US;
+  for (; num > cur; pos += VMM_PAGE_SIZE) {
+    // first page, so our first allocation will be the start address
+    if (cur == 0)
+      start = pos;
 
-    // get (or create if not exists) PD
-    if (*(table = &vmm_pdpt_entry(vaddr)) == 0) {
-      *table = (uint64_t)pmm_alloc(1, 0) | VMM_FLAGS_DEFAULT;
-      bzero(vmm_pd_addr(vaddr), VMM_PAGE_SIZE);
-    }
+    // make sure the virutal address is in one of the VMAs
+    if (!vmm_vma_does_contain(pos))
+      break;
 
-    if (VMM_VMA_USER == vma)
-      *table |= VMM_FLAG_US;
+    /*
 
-    // get (or create if not exists) PT
-    if (*(table = &vmm_pd_entry(vaddr)) == 0) {
-      *table = (uint64_t)pmm_alloc(1, 0) | VMM_FLAGS_DEFAULT;
-      bzero(vmm_pt_addr(vaddr), VMM_PAGE_SIZE);
-    }
+     * if the address is mapped allocation is no longer contiguous
+     * and we should find a new start address, so reset cur
 
-    if (VMM_VMA_USER == vma)
-      *table |= VMM_FLAG_US;
-
-    // add the page entry to PT
-    table  = &vmm_pt_entry(vaddr);
-    *table = (uint64_t)paddr | flags | (VMM_VMA_USER == vma ? VMM_FLAG_US : 0);
+    */
+    if (__vmm_addr_is_mapped(pos))
+      cur = 0;
+    else
+      cur++;
   }
 
-  return (void *)start;
+  if (cur != num) {
+    vmm_debg("not enough memory in VMA 0x%p for %u contiguous pages", vma, num);
+    return 0;
+  }
+
+  return start;
 }
 
 void *vmm_map(uint64_t num, uint64_t flags) {
@@ -413,52 +454,52 @@ void *vmm_map(uint64_t num, uint64_t flags) {
 }
 
 void *vmm_map_with(uint64_t num, uint64_t align, uint64_t vma, uint64_t flags) {
-  if (!vmm_is_valid_vma(vma)) {
+  if (!vmm_vma_is_valid(vma)) {
     vmm_debg("map request with an invalid VMA (0x%p)", vma);
     return NULL;
   }
 
-  uint64_t vaddr = vma, vaddr_start = 0, cur = 0;
+  uint64_t vaddr = 0;
 
-  for (; num > cur; vaddr += VMM_PAGE_SIZE) {
-    if (cur == 0)
-      vaddr_start = vaddr;
-
-    if (VMM_VMA_USER == vma && vaddr >= VMM_VMA_USER_END)
-      break;
-
-    if (VMM_VMA_KERNEL == vma && vaddr >= VMM_VMA_KERNEL_END)
-      break;
-
-    if (__vmm_addr_is_mapped(vaddr))
-      cur = 0;
-    else
-      cur++;
-  }
-
-  if (cur != num) {
-    vmm_fail("not enough VMA in 0x%p to map %u pages", vma, num);
+  if ((vaddr = __vmm_find_contiguous(num, vma)) == 0)
     return NULL;
-  }
 
-  return __vmm_map_at_no_checks(vaddr_start, num, align, vma, flags);
+  return __vmm_map_to_vaddr_internal(vaddr, num, align, flags);
 }
 
-void *vmm_map_at(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t vma, uint64_t flags) {
-  if (!vmm_is_valid_vma(vma)) {
+void *vmm_map_to_paddr(uint64_t paddr, uint64_t num, uint64_t vma, uint64_t flags) {
+  if (!vmm_vma_is_valid(vma)) {
     vmm_debg("map request with an invalid VMA (0x%p)", vma);
     return NULL;
   }
 
+  uint64_t vaddr = 0, pos = 0;
+
+  if ((vaddr = __vmm_find_contiguous(num, vma)) == 0)
+    return NULL;
+
+  if (paddr % VMM_PAGE_SIZE != 0) {
+    vmm_debg("attempt to map %u pages to an invalid physical address (0x%p)", num, paddr);
+    return NULL;
+  }
+
+  for (pos = paddr; pos < paddr + num * VMM_PAGE_SIZE; pos += VMM_PAGE_SIZE) {
+    if (pmm_is_allocated(pos))
+      vmm_warn("mapping 0x%p, which is not a free page", pos);
+  }
+
+  return __vmm_map_to_paddr_internal(paddr, vaddr, num, flags, 0);
+}
+
+void *vmm_map_to_vaddr(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t flags) {
   uint64_t vaddr_pos = vaddr, cur = 0;
 
   for (; num > cur; cur++, vaddr_pos += VMM_PAGE_SIZE) {
-    if (VMM_VMA_USER == vma && vaddr_pos >= VMM_VMA_USER_END)
+    // make sure the virutal address is in one of the VMAs
+    if (!vmm_vma_does_contain(vaddr_pos))
       break;
 
-    if (VMM_VMA_KERNEL == vma && vaddr_pos >= VMM_VMA_KERNEL_END)
-      break;
-
+    // we cannot map to a virutal address that is already mapped
     if (!__vmm_addr_is_mapped(vaddr_pos))
       break;
   }
@@ -468,5 +509,5 @@ void *vmm_map_at(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t vma, uin
     return NULL;
   }
 
-  return __vmm_map_at_no_checks(vaddr, num, align, vma, flags);
+  return __vmm_map_to_vaddr_internal(vaddr, num, align, flags);
 }

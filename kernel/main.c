@@ -55,6 +55,7 @@ void entry() {
   if ((err = mb_load((void *)BOOT_MB_DATA_ADDR)) != 0)
     panic("Failed to load multiboot data: %s", strerror(err));
 
+  // initialize physical memory manager (so we can start mapping & allocating memory)
   if ((err = pmm_init()) != 0)
     panic("Failed to initialize physical memory manager: %s", strerror(err));
 

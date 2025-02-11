@@ -86,10 +86,18 @@ void *vmm_map_with(uint64_t num, uint64_t align, uint64_t vma, uint64_t flags);
 
 /*
 
- * map num amount of pages to the given virtual address, physically aligned to given
- * boundry, in the given VMA with given flags
+ * map num amount of pages starting from the given physical address to an available
+ * virtual address in the given VMA with the given flags
 
 */
-void *vmm_map_at(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t vma, uint64_t flags);
+void *vmm_map_to_paddr(uint64_t paddr, uint64_t num, uint64_t vma, uint64_t flags);
+
+/*
+
+ * map num amount of pages to the given virtual address, physically aligned to given
+ * boundry, with the given flags
+
+*/
+void *vmm_map_to_vaddr(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t flags);
 
 #endif

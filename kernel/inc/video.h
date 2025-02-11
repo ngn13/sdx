@@ -4,6 +4,7 @@
 #include "types.h"
 
 #define video_fail(f, ...) pfail("Video: (%s) " f, NULL == video_current ? "none" : video_current->name, ##__VA_ARGS__)
+#define video_info(f, ...) pinfo("Video: (%s) " f, NULL == video_current ? "none" : video_current->name, ##__VA_ARGS__)
 #define video_debg(f, ...) pdebg("Video: (%s) " f, NULL == video_current ? "none" : video_current->name, ##__VA_ARGS__)
 
 typedef enum video_mode {

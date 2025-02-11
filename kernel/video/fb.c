@@ -1,5 +1,6 @@
 #include "boot/multiboot.h"
 
+#include "mm/vmm.h"
 #include "util/io.h"
 #include "util/mem.h"
 
@@ -61,9 +62,20 @@ int32_t fb_init() {
   fb_data.height    = tag->framebuffer_height;
   fb_data.char_size = FB_SUPPORTED_CHAR_SIZE;
 
-  // TODO: map framebuffer_addr with VMM
+  video_info("framebuffer located at 0x%x (%ux%u)", fb_data.addr, fb_data.width, fb_data.height);
 
-  return -ENOSYS;
+  uint64_t fb_page_count = fb_data.width * fb_data.height / VMM_PAGE_SIZE;
+
+  if (fb_page_count == 0)
+    fb_page_count++;
+
+  if ((fb_data.addr = (uint64_t)vmm_map_to_paddr(
+           fb_data.addr, fb_page_count, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT | VMM_FLAG_PCD)) == 0) {
+    video_fail("failed to map %u pages for the framebuffer to kernel VMA", fb_page_count);
+    return -EFAULT;
+  }
+
+  return 0;
 }
 
 void fb_clear() {
