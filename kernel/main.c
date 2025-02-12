@@ -66,8 +66,6 @@ void entry() {
   // temporary
   _hang();
 
-  // TODO: setup PMM, paging, VMM and heap
-
   /*
 
    * initialize the interrupt manager (IM)

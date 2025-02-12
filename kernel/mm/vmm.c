@@ -330,15 +330,6 @@ void *vmm_realloc(void *mem, uint64_t size) {
 #define vmm_pt_index(vaddr) ((vaddr >> 12) & 0x1FF)
 #define vmm_pt_entry(vaddr) (vmm_pt_vaddr(vaddr)[vmm_pt_index(vaddr)])
 
-void __vmm_set_pml4(uint64_t *pml4) {
-  if (NULL == pml4)
-    panic("Attempt to switch to a NULL PML4");
-
-  __asm__("mov %0, %%rax\n"
-          "mov %%rax, %%cr3\n" ::"m"(pml4)
-      : "%rax");
-}
-
 uint64_t *__vmm_entry_from_vaddr(uint64_t vaddr) {
   uint64_t pd_entry = 0;
 
@@ -362,13 +353,46 @@ bool __vmm_is_table_free(uint64_t *table_vaddr) {
 }
 
 void *vmm_new() {
-  // TODO: implement
-  return NULL;
+  uint64_t pml4_paddr, *pml4_vaddr = NULL;
+
+  // allocate a new PML4
+  if ((pml4_paddr = pmm_alloc(1, 0)) == 0) {
+    vmm_warn("failed to allocate a new PML4");
+    return NULL;
+  }
+
+  // temporarily map it
+  if ((pml4_vaddr = vmm_map_to_paddr(pml4_paddr, 1, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT)) == NULL) {
+    vmm_warn("failed to map the new PML4 @ 0x%p", pml4_paddr);
+    pmm_free(pml4_paddr, 1);
+    return NULL;
+  }
+
+  // copy the current PMl4's kernel VMA contents
+  memcpy(pml4_vaddr + vmm_pml4_index(VMM_VMA_KERNEL),
+      vmm_pml4_vaddr() + vmm_pml4_index(VMM_VMA_KERNEL),
+      (VMM_TABLE_ENTRY_COUNT - vmm_pml4_index(VMM_VMA_KERNEL)) * VMM_TABLE_ENTRY_SIZE);
+
+  // change the recursive paging entry so it point's to the new PML4
+  pml4_vaddr[510] = (uint64_t)pml4_paddr | VMM_FLAGS_DEFAULT;
+
+  // unmap it
+  vmm_unmap(pml4_vaddr, 1);
+
+  return (void *)pml4_paddr;
 }
 
 int32_t vmm_switch(void *vmm) {
-  // TODO: implement
-  return -ENOSYS;
+  if (NULL == vmm)
+    return -EINVAL;
+
+  vmm_debg("switching to the PML4 @ 0x%p", vmm);
+
+  __asm__("mov %0, %%rax\n"
+          "mov %%rax, %%cr3\n" ::"m"(vmm)
+      : "%rax");
+
+  return 0;
 }
 
 int32_t vmm_unmap(void *_vaddr, uint64_t num) {
