@@ -10,29 +10,28 @@
 #include "errno.h"
 
 #define pmm_fail(f, ...) pfail("PMM: " f, ##__VA_ARGS__)
+#define pmm_warn(f, ...) pwarn("PMM: " f, ##__VA_ARGS__)
 #define pmm_debg(f, ...) pdebg("PMM: " f, ##__VA_ARGS__)
 
 // describes a posion in the bitmap
 typedef struct {
   uint8_t  bit;
   uint64_t index;
-} pmm_bitmap_pos_t;
+} pmm_bm_pos_t;
 
 // describes a memory region/area
 struct pmm_reg {
   uint64_t start, end, pos;
 };
 
-struct multiboot_tag_mmap *pmm_mmap_tag = NULL; // mmap multiboot tag
-
-struct pmm_reg pmm_reg_free; // stores the free memory region
-struct pmm_reg pmm_reg_known[] = {
-    {0xA0000, 0xBFFFF}, // VGA, https://wiki.osdev.org/VGA_Hardware
-    {0,       0      }
-};
-
-uint64_t *pmm_bitmap      = NULL; // bitmap that is used to store free and used pages
-uint64_t  pmm_bitmap_size = 0;    // size of the bitmap
+struct multiboot_tag_mmap *pmm_mmap_tag = NULL;            // mmap multiboot tag
+uint64_t                  *pmm_bm = NULL, pmm_bm_size = 0; // used to store the bitmap address and size
+struct pmm_reg             pmm_reg_known[] =
+    {
+        {0xA0000, 0xBFFFF}, // VGA, https://wiki.osdev.org/VGA_Hardware
+        {0,       0      }
+},
+               pmm_reg_free; // stores the free memory region
 
 #define __pmm_align_to_page(num, inc)                                                                                  \
   do {                                                                                                                 \
@@ -57,42 +56,46 @@ uint64_t  pmm_bitmap_size = 0;    // size of the bitmap
     __pmm_align_to_page((reg)->end, -1);                                                                               \
   } while (0);
 
-#define PMM_BITMAP_ENTRY_BIT_SIZE    (sizeof(uint64_t) * 8)
-#define __pmm_bitmap_get_max_index() (pmm_bitmap_size / 8)
-#define __pmm_bitmap_pos_reset(pos)  bzero(pos, sizeof(pmm_bitmap_pos_t));
-#define __pmm_bitmap_pos_to_addr(pos)                                                                                  \
-  (pmm_reg_free.start + ((pos)->bit + (pos)->index * PMM_BITMAP_ENTRY_BIT_SIZE) * VMM_PAGE_SIZE)
-#define __pmm_bitmap_pos_set(pos, val) (pmm_bitmap[(pos)->index] |= val << (pos)->bit)
-#define __pmm_bitmap_pos_get(pos)      ((pmm_bitmap[(pos)->index] >> (pos)->bit) & 1)
-#define __pmm_bitmap_pos_is_valid(pos) (__pmm_bitmap_get_max_index() > (pos)->index)
+#define PMM_BM_ENTRY_BIT_SIZE    (sizeof(uint64_t) * 8)
+#define __pmm_bm_is_ready()      (pmm_bm != NULL && pmm_bm_size != 0)
+#define __pmm_bm_get_max_index() (pmm_bm_size / 8)
+#define __pmm_bm_pos_reset(pos)  bzero(pos, sizeof(pmm_bm_pos_t));
+#define __pmm_bm_pos_to_addr(pos)                                                                                      \
+  (pmm_reg_free.start + ((pos)->bit + (pos)->index * PMM_BM_ENTRY_BIT_SIZE) * VMM_PAGE_SIZE)
+#define __pmm_bm_pos_set(pos)      (pmm_bm[(pos)->index] |= 1 << (pos)->bit)
+#define __pmm_bm_pos_clear(pos)    (pmm_bm[(pos)->index] &= ~(1 << (pos)->bit))
+#define __pmm_bm_pos_get(pos)      ((pmm_bm[(pos)->index] >> (pos)->bit) & 1)
+#define __pmm_bm_pos_is_valid(pos) (__pmm_bm_get_max_index() > (pos)->index)
 
-void __pmm_bitmap_pos_from_addr(pmm_bitmap_pos_t *pos, uint64_t addr) {
-  if (NULL == pos)
-    return;
+bool __pmm_bm_pos_from_addr(pmm_bm_pos_t *pos, uint64_t addr) {
+  if (NULL == pos || !__pmm_bm_is_ready())
+    return false;
 
   addr -= pmm_reg_free.start;
   addr /= VMM_PAGE_SIZE;
 
-  pos->index = addr / PMM_BITMAP_ENTRY_BIT_SIZE;
-  pos->bit   = addr % PMM_BITMAP_ENTRY_BIT_SIZE;
+  pos->index = addr / PMM_BM_ENTRY_BIT_SIZE;
+  pos->bit   = addr % PMM_BM_ENTRY_BIT_SIZE;
+
+  return __pmm_bm_pos_is_valid(pos);
 }
 
-int32_t __pmm_bitmap_pos_next(pmm_bitmap_pos_t *pos) {
-  if (NULL == pmm_bitmap)
+int32_t __pmm_bm_pos_next(pmm_bm_pos_t *pos) {
+  if (!__pmm_bm_is_ready())
     return -EFAULT;
 
   // if we reached the end of the current uint64_t, move onto next one
-  if (++pos->bit >= PMM_BITMAP_ENTRY_BIT_SIZE) {
+  if (++pos->bit >= PMM_BM_ENTRY_BIT_SIZE) {
     pos->bit = 0;
     pos->index++;
   }
 
   // check we reached the end
-  if (pos->index >= __pmm_bitmap_get_max_index())
+  if (pos->index >= __pmm_bm_get_max_index())
     return -ERANGE;
 
   // return the value stored in the new position
-  return __pmm_bitmap_pos_get(pos);
+  return __pmm_bm_pos_get(pos);
 }
 
 bool __pmm_is_free_memory(uint64_t addr) {
@@ -157,19 +160,19 @@ int32_t pmm_init() {
   }
 
   // calculate the bitmap size for pmm_mem_start to pmm_mem_end
-  pmm_bitmap_size = __pmm_reg_size(&pmm_reg_free) / VMM_PAGE_SIZE / 8;
-  __pmm_align_to_page(pmm_bitmap_size, 1);
+  pmm_bm_size = __pmm_reg_size(&pmm_reg_free) / VMM_PAGE_SIZE / 8;
+  __pmm_align_to_page(pmm_bm_size, 1);
 
-  pmm_debg("bitmapping 0x%p - 0x%p with %u bytes", pmm_reg_free.start, pmm_reg_free.end, pmm_bitmap_size);
+  pmm_debg("bitmapping 0x%p - 0x%p with %u bytes", pmm_reg_free.start, pmm_reg_free.end, pmm_bm_size);
 
   // allocate memory for the bitmap
-  if ((pmm_bitmap = vmm_map(pmm_bitmap_size / VMM_PAGE_SIZE, VMM_FLAGS_DEFAULT)) == NULL) {
-    pmm_fail("failed to allocate the bitmap (size: %u)", pmm_bitmap_size);
+  if ((pmm_bm = vmm_map(pmm_bm_size / VMM_PAGE_SIZE, VMM_FLAGS_DEFAULT)) == NULL) {
+    pmm_fail("failed to allocate the bitmap (size: %u)", pmm_bm_size);
     return -EFAULT;
   }
 
   // clear out the bitmap
-  bzero(pmm_bitmap, pmm_bitmap_size);
+  bzero(pmm_bm, pmm_bm_size);
 
   /*
 
@@ -179,16 +182,16 @@ int32_t pmm_init() {
    * not available (1) so they won't be allocated again and we'll be able to free them
 
   */
-  pmm_bitmap_pos_t pos;
-  __pmm_bitmap_pos_reset(&pos);
+  pmm_bm_pos_t pos;
+  __pmm_bm_pos_reset(&pos);
 
-  for (; pmm_reg_free.pos > __pmm_bitmap_pos_to_addr(&pos); __pmm_bitmap_pos_next(&pos))
-    __pmm_bitmap_pos_set(&pos, 1);
+  for (; pmm_reg_free.pos > __pmm_bm_pos_to_addr(&pos); __pmm_bm_pos_next(&pos))
+    __pmm_bm_pos_set(&pos);
 
   return 0;
 }
 
-uint64_t __pmm_alloc_no_bitmap(uint64_t num, uint64_t align) {
+uint64_t __pmm_alloc_no_bm(uint64_t num, uint64_t align) {
   uint64_t pos = pmm_reg_free.pos, start = 0, cur = 0;
 
   for (; num > cur; pos += VMM_PAGE_SIZE) {
@@ -220,25 +223,25 @@ uint64_t pmm_alloc(uint64_t num, uint64_t align) {
     return NULL;
   }
 
-  if (NULL == pmm_bitmap)
-    return __pmm_alloc_no_bitmap(num, align);
+  if (!__pmm_bm_is_ready())
+    return __pmm_alloc_no_bm(num, align);
 
-  uint64_t         start = 0, cur = 0;
-  int32_t          val = 0;
-  pmm_bitmap_pos_t pos;
+  uint64_t     start = 0, cur = 0;
+  int32_t      val = 0;
+  pmm_bm_pos_t pos;
 
-  __pmm_bitmap_pos_reset(&pos);
+  __pmm_bm_pos_reset(&pos);
 
-  for (val = __pmm_bitmap_pos_get(&pos); num > cur; val = __pmm_bitmap_pos_next(&pos)) {
+  for (val = __pmm_bm_pos_get(&pos); num > cur; val = __pmm_bm_pos_next(&pos)) {
     // check if we were able to get the next entry in the bitmap
     if (val < 0)
       break;
 
-    if (cur == 0 && (start = __pmm_bitmap_pos_to_addr(&pos)) % (align ? align : 1) != 0)
+    if (cur == 0 && (start = __pmm_bm_pos_to_addr(&pos)) % (align ? align : 1) != 0)
       continue;
 
     // if the next entry is used reset the cur counter
-    if (val || !__pmm_is_free_memory(__pmm_bitmap_pos_to_addr(&pos)))
+    if (val || !__pmm_is_free_memory(__pmm_bm_pos_to_addr(&pos)))
       cur = 0;
     else
       cur++;
@@ -250,23 +253,48 @@ uint64_t pmm_alloc(uint64_t num, uint64_t align) {
   }
 
   // make sure the pages we are allocating are set as not available (1) in the bitmap
-  for (__pmm_bitmap_pos_from_addr(&pos, start), cur = 0; num > cur; cur++, __pmm_bitmap_pos_next(&pos))
-    __pmm_bitmap_pos_set(&pos, 1);
+  for (__pmm_bm_pos_from_addr(&pos, start), cur = 0; num > cur; cur++, __pmm_bm_pos_next(&pos))
+    __pmm_bm_pos_set(&pos);
 
   return start;
 }
 
 bool pmm_is_allocated(uint64_t paddr) {
-  pmm_bitmap_pos_t pos;
-  __pmm_bitmap_pos_from_addr(&pos, paddr);
+  pmm_bm_pos_t pos;
 
-  if (!__pmm_bitmap_pos_is_valid(&pos))
+  // try to obtain the bitmap position from the given address
+  if (!__pmm_bm_pos_from_addr(&pos, paddr))
     return false;
 
-  return __pmm_bitmap_pos_get(&pos);
+  // return the value stored in that position (1 = allocted, 0 = free)
+  return __pmm_bm_pos_get(&pos);
 }
 
 int32_t pmm_free(uint64_t paddr, uint64_t num) {
-  // TODO: implement
-  return -ENOSYS;
+  pmm_bm_pos_t pos;
+  int32_t      val = 0;
+
+  // try to obtain the bitmap position from the given address
+  if (!__pmm_bm_pos_from_addr(&pos, paddr))
+    return -EFAULT;
+
+  // loop through "num" pages and mark them as free in the bitmap
+  for (val = __pmm_bm_pos_get(&pos); num > 0; num--, val = __pmm_bm_pos_next(&pos)) {
+    // if we reach the end of the bitmap, fail with a warning
+    if (val < 0) {
+      pmm_warn("attempted to free a page that is not in the bitmap");
+      return -ERANGE;
+    }
+
+    // if the page is already marked as free, also fail with a warning
+    if (!val) {
+      pmm_warn("attempted double free (0x%p)", __pmm_bm_pos_to_addr(&pos));
+      return -EFAULT;
+    }
+
+    // otherwise mark the page as free (0) in the bitmap
+    __pmm_bm_pos_clear(&pos);
+  }
+
+  return 0;
 }

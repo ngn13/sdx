@@ -66,7 +66,7 @@ void  vmm_free(void *mem);
 
 void   *vmm_new();                            // create a new VMM
 int32_t vmm_switch(void *vmm);                // switch to a different VMM
-void    vmm_unmap(void *vaddr, uint64_t num); // unmap num amount of pages from the given virtual address
+int32_t vmm_unmap(void *vaddr, uint64_t num); // unmap num amount of pages from the given virtual address
 
 /*
 

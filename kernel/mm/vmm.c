@@ -9,6 +9,7 @@
 #include "util/panic.h"
 #include "util/printk.h"
 #include "util/bit.h"
+#include "util/string.h"
 
 #include "types.h"
 #include "errno.h"
@@ -301,30 +302,33 @@ void *vmm_realloc(void *mem, uint64_t size) {
   ((VMM_VMA_KERNEL_END > addr && addr >= VMM_VMA_KERNEL) || (VMM_VMA_USER_END > addr && addr >= VMM_VMA_USER))
 
 #define vmm_entry_to_addr(entry)                                                                                       \
-  ((uint64_t *)(bit_get((uint64_t)entry & VMM_FLAGS_CLEAR, 47)                                                         \
-                    ? ((uint64_t)entry & VMM_FLAGS_CLEAR) | ((uint64_t)0xffff << 48)                                   \
-                    : ((uint64_t)entry & VMM_FLAGS_CLEAR) & ~((uint64_t)0xffff << 48)))
+  ((uint64_t)(bit_get((uint64_t)(entry) & VMM_FLAGS_CLEAR, 47)                                                         \
+                  ? ((uint64_t)(entry) & VMM_FLAGS_CLEAR) | ((uint64_t)0xffff << 48)                                   \
+                  : ((uint64_t)(entry) & VMM_FLAGS_CLEAR) & ~((uint64_t)0xffff << 48)))
 
 #define vmm_indexes_to_addr(pml4_index, pdpt_index, pd_index, pt_index)                                                \
   ((uint64_t)pml4_index << 39 | (uint64_t)pdpt_index << 30 | (uint64_t)pd_index << 21 | (uint64_t)pt_index << 12 |     \
       (((((uint64_t)pml4_index << 39) >> 47) & 1) ? 0xffffL << 48 : 0))
 
-#define vmm_pml4_addr()       ((uint64_t *)vmm_indexes_to_addr(510, 510, 510, 510))
+#define vmm_pml4_vaddr()      ((uint64_t *)vmm_indexes_to_addr(510, 510, 510, 510))
 #define vmm_pml4_index(vaddr) ((vaddr >> 39) & 0x1FF)
-#define vmm_pml4_entry(vaddr) (vmm_pml4_addr()[vmm_pml4_index(vaddr)])
+#define vmm_pml4_entry(vaddr) (vmm_pml4_vaddr()[vmm_pml4_index(vaddr)])
 
-#define vmm_pdpt_addr(vaddr)  ((uint64_t *)vmm_indexes_to_addr(510, 510, 510, vmm_pml4_index(vaddr)))
+#define vmm_pdpt_vaddr(vaddr) ((uint64_t *)vmm_indexes_to_addr(510, 510, 510, vmm_pml4_index(vaddr)))
+#define vmm_pdpt_paddr(vaddr) (vmm_entry_to_addr(vmm_pml4_entry(vaddr)))
 #define vmm_pdpt_index(vaddr) ((vaddr >> 30) & 0x1FF)
-#define vmm_pdpt_entry(vaddr) (vmm_pdpt_addr(vaddr)[vmm_pdpt_index(vaddr)])
+#define vmm_pdpt_entry(vaddr) (vmm_pdpt_vaddr(vaddr)[vmm_pdpt_index(vaddr)])
 
-#define vmm_pd_addr(vaddr)  ((uint64_t *)vmm_indexes_to_addr(510, 510, vmm_pml4_index(vaddr), vmm_pdpt_index(vaddr)))
+#define vmm_pd_vaddr(vaddr) ((uint64_t *)vmm_indexes_to_addr(510, 510, vmm_pml4_index(vaddr), vmm_pdpt_index(vaddr)))
+#define vmm_pd_paddr(vaddr) (vmm_entry_to_addr(vmm_pdpt_entry(vaddr)))
 #define vmm_pd_index(vaddr) ((vaddr >> 21) & 0x1FF)
-#define vmm_pd_entry(vaddr) (vmm_pd_addr(vaddr)[vmm_pd_index(vaddr)])
+#define vmm_pd_entry(vaddr) (vmm_pd_vaddr(vaddr)[vmm_pd_index(vaddr)])
 
-#define vmm_pt_addr(vaddr)                                                                                             \
+#define vmm_pt_vaddr(vaddr)                                                                                            \
   ((uint64_t *)vmm_indexes_to_addr(510, vmm_pml4_index(vaddr), vmm_pdpt_index(vaddr), vmm_pd_index(vaddr)))
+#define vmm_pt_paddr(vaddr) (vmm_entry_to_addr(vmm_pd_entry(vaddr)))
 #define vmm_pt_index(vaddr) ((vaddr >> 12) & 0x1FF)
-#define vmm_pt_entry(vaddr) (vmm_pt_addr(vaddr)[vmm_pt_index(vaddr)])
+#define vmm_pt_entry(vaddr) (vmm_pt_vaddr(vaddr)[vmm_pt_index(vaddr)])
 
 void __vmm_set_pml4(uint64_t *pml4) {
   if (NULL == pml4)
@@ -333,6 +337,28 @@ void __vmm_set_pml4(uint64_t *pml4) {
   __asm__("mov %0, %%rax\n"
           "mov %%rax, %%cr3\n" ::"m"(pml4)
       : "%rax");
+}
+
+uint64_t *__vmm_entry_from_vaddr(uint64_t vaddr) {
+  uint64_t pd_entry = 0;
+
+  // check PML4, PDPT & PD entries
+  if (vmm_pml4_entry(vaddr) == 0 || vmm_pdpt_entry(vaddr) == 0 || (pd_entry = vmm_pd_entry(vaddr)) == 0)
+    return NULL;
+
+  // check if the PD entry is 2 MiB page entry
+  if (pd_entry & VMM_FLAG_PS)
+    return &vmm_pd_entry(vaddr);
+
+  // check the PT entry
+  return vmm_pt_entry(vaddr) == 0 ? NULL : &vmm_pt_entry(vaddr);
+}
+
+bool __vmm_is_table_free(uint64_t *table_vaddr) {
+  for (uint16_t i = 0; i < VMM_TABLE_ENTRY_COUNT; i++)
+    if (table_vaddr[i] != 0)
+      return false;
+  return true;
 }
 
 void *vmm_new() {
@@ -345,23 +371,49 @@ int32_t vmm_switch(void *vmm) {
   return -ENOSYS;
 }
 
-void vmm_unmap(void *vaddr, uint64_t num) {
-  // TODO: implement
-}
+int32_t vmm_unmap(void *_vaddr, uint64_t num) {
+  uint64_t vaddr = (uint64_t)_vaddr, *entry = NULL;
+  int32_t  err = 0;
 
-bool __vmm_addr_is_mapped(uint64_t addr) {
-  uint64_t pd_entry = 0;
+  vmm_debg("unmapping %u pages from 0x%p", num, vaddr);
 
-  // check PML4, PDPT & PD entries
-  if (vmm_pml4_entry(addr) == 0 || vmm_pdpt_entry(addr) == 0 || (pd_entry = vmm_pd_entry(addr)) == 0)
-    return false;
+  for (; num > 0; num--, vaddr += VMM_PAGE_SIZE) {
+    if (NULL == (entry = __vmm_entry_from_vaddr(vaddr))) {
+      vmm_warn("attempt to unmap an already unmapped page (0x%p)", vaddr);
+      return -EFAULT;
+    }
 
-  // check if the PD entry is 2 MiB page entry
-  if (pd_entry & VMM_FLAG_PS)
-    return true;
+    if ((err = pmm_free(vmm_entry_to_addr(*entry), 1)) != 0) {
+      vmm_warn("failed to free the physical page @ 0x%p", vmm_entry_to_addr(*entry));
+      return err;
+    }
 
-  // check the PT entry
-  return vmm_pt_entry(addr) != 0;
+    // unmap the page from PT
+    *entry = 0;
+
+    // free & unmap the PT if it's empty
+    if (__vmm_is_table_free(vmm_pt_vaddr(vaddr))) {
+      if ((err = pmm_free(vmm_pt_paddr(vaddr), 1)) != 0)
+        vmm_warn("failed to free PT @ 0x%p: %s", vmm_pt_paddr(vaddr), strerror(err));
+      *(&vmm_pd_entry(vaddr)) = 0;
+    }
+
+    // free & unmap the PD if it's empty
+    if (__vmm_is_table_free(vmm_pd_vaddr(vaddr))) {
+      if ((err = pmm_free(vmm_pd_paddr(vaddr), 1)) != 0)
+        vmm_warn("failed to free PD @ 0x%p: %s", vmm_pd_paddr(vaddr), strerror(err));
+      *(&vmm_pdpt_entry(vaddr)) = 0;
+    }
+
+    // free & unmap the PDPT if it's empty
+    if (__vmm_is_table_free(vmm_pdpt_vaddr(vaddr))) {
+      if ((err = pmm_free(vmm_pdpt_paddr(vaddr), 1)) != 0)
+        vmm_warn("failed to free PDPT @ 0x%p: %s", vmm_pdpt_paddr(vaddr), strerror(err));
+      *(&vmm_pml4_entry(vaddr)) = 0;
+    }
+  }
+
+  return 0;
 }
 
 void *__vmm_map_to_paddr_internal(uint64_t paddr, uint64_t vaddr, uint64_t num, uint64_t flags, uint64_t all_flags) {
@@ -374,7 +426,7 @@ void *__vmm_map_to_paddr_internal(uint64_t paddr, uint64_t vaddr, uint64_t num, 
     if (*(table = &vmm_pml4_entry(vaddr)) == 0) {
       vmm_debg("allocated a new PDPT @ 0x%p for mapping 0x%p", *table = (uint64_t)pmm_alloc(1, 0), vaddr);
       *table |= VMM_FLAGS_DEFAULT;
-      bzero(vmm_pdpt_addr(vaddr), VMM_PAGE_SIZE);
+      bzero(vmm_pdpt_vaddr(vaddr), VMM_PAGE_SIZE);
     }
 
     *table |= all_flags;
@@ -383,7 +435,7 @@ void *__vmm_map_to_paddr_internal(uint64_t paddr, uint64_t vaddr, uint64_t num, 
     if (*(table = &vmm_pdpt_entry(vaddr)) == 0) {
       vmm_debg("allocated a new PD @ 0x%p for mapping 0x%p", *table = (uint64_t)pmm_alloc(1, 0), vaddr);
       *table |= VMM_FLAGS_DEFAULT;
-      bzero(vmm_pd_addr(vaddr), VMM_PAGE_SIZE);
+      bzero(vmm_pd_vaddr(vaddr), VMM_PAGE_SIZE);
     }
 
     *table |= all_flags;
@@ -392,7 +444,7 @@ void *__vmm_map_to_paddr_internal(uint64_t paddr, uint64_t vaddr, uint64_t num, 
     if (*(table = &vmm_pd_entry(vaddr)) == 0) {
       vmm_debg("allocated a new PT @ 0x%p for mapping 0x%p", *table = (uint64_t)pmm_alloc(1, 0), vaddr);
       *table |= VMM_FLAGS_DEFAULT;
-      bzero(vmm_pt_addr(vaddr), VMM_PAGE_SIZE);
+      bzero(vmm_pt_vaddr(vaddr), VMM_PAGE_SIZE);
     }
 
     *table |= all_flags;
@@ -435,7 +487,7 @@ uint64_t __vmm_find_contiguous(uint64_t num, uint64_t vma) {
      * and we should find a new start address, so reset cur
 
     */
-    if (__vmm_addr_is_mapped(pos))
+    if (__vmm_entry_from_vaddr(pos) != NULL)
       cur = 0;
     else
       cur++;
@@ -500,7 +552,7 @@ void *vmm_map_to_vaddr(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t fl
       break;
 
     // we cannot map to a virutal address that is already mapped
-    if (!__vmm_addr_is_mapped(vaddr_pos))
+    if (__vmm_entry_from_vaddr(vaddr_pos) != NULL)
       break;
   }
 
