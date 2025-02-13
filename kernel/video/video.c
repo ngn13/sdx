@@ -36,6 +36,7 @@ int32_t video_init(video_mode_t mode) {
   video_bg_set(VIDEO_COLOR_BLACK);
   video_fg_set(VIDEO_COLOR_WHITE);
 
+  video_info("initialized video mode");
   return 0;
 }
 

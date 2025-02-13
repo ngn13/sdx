@@ -3,7 +3,7 @@
 /*
 
  * sdx | simple and dirty UNIX
- * written by ngn (https://ngn.tf) (2024)
+ * written by ngn (https://ngn.tf) (2025)
 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,12 +32,13 @@
 #include "core/user.h"
 
 #include "mm/pmm.h"
-#include "mm/vmm.h"
+#include "mm/heap.h"
 
 #include "sched/sched.h"
 #include "sched/task.h"
 
 #include "fs/vfs.h"
+#include "util/io.h"
 #include "video.h"
 
 #include "util/panic.h"
@@ -62,6 +63,9 @@ void entry() {
   // initialize framebuffer video driver
   if ((err = video_init(VIDEO_MODE_FRAMEBUFFER)) != 0)
     pfail("Failed to initialize the framebuffer video mode: %s", strerror(err));
+
+  // enable the cursor
+  video_cursor_show();
 
   // temporary
   _hang();
