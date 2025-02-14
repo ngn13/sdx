@@ -181,6 +181,13 @@ __entry64_lower:
   jmp *%rax
 
 __entry64:
+  // update GDT pointer's address
+  movabs $gdt_start, %rax
+  movabs %rax, (gdt_pointer+2)
+
+  // reload GDT
+  lgdt gdt_pointer
+
   /*
 
    * clear the stack, to do so we use the stos (store string) instruction

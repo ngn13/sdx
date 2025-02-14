@@ -38,11 +38,11 @@
 #include "sched/task.h"
 
 #include "fs/vfs.h"
-#include "util/io.h"
 #include "video.h"
 
 #include "util/panic.h"
 #include "util/printk.h"
+#include "util/mem.h"
 #include "util/asm.h"
 
 void entry() {
@@ -66,9 +66,6 @@ void entry() {
 
   // enable the cursor
   video_cursor_show();
-
-  // temporary
-  _hang();
 
   /*
 
@@ -97,6 +94,9 @@ void entry() {
 
   // enable the interrupts
   im_enable();
+
+  // temporary
+  _hang();
 
   // initialize the scheduler
   if ((err = sched_init()) != 0)

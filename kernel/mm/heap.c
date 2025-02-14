@@ -77,12 +77,9 @@ int32_t __heap_extend() {
 
   for (uint8_t i = 0; i < HEAP_CHUNK_PER_PAGE; i++, cur++) {
     __heap_chunk_data_clear(cur);
-
     if (i != 0)
       __heap_chunk_meta_prev_set(cur, cur - 1);
-
-    if (i != HEAP_CHUNK_PER_PAGE - 1)
-      __heap_chunk_meta_next_set(cur, cur + 1);
+    __heap_chunk_meta_next_set(cur, cur + 1);
   }
 
   __heap_chunk_meta_next_set((heap_chunk_last = cur - 1), NULL);
@@ -137,18 +134,33 @@ void *heap_alloc(uint64_t size) {
     return NULL;
   }
 
+  /*
+
+   * this removes the previous chunk's reference to start chunk
+   * so this is basically: start->prev->next = end->next
+
+  */
   if ((cur = __heap_chunk_meta_prev(start)) != NULL)
     __heap_chunk_meta_next_set(cur, __heap_chunk_meta_next(end));
 
+  /*
+
+   * this removes the next chunk's reference to end chunk
+   * so this is basically: end->next->prev = start->prev
+
+  */
   if ((cur = __heap_chunk_meta_next(end)) != NULL)
     __heap_chunk_meta_prev_set(cur, __heap_chunk_meta_prev(start));
 
+  // if start is the first chunk, set first chunk to end->next
   if (heap_chunk_first == start)
     heap_chunk_first = __heap_chunk_meta_next(end);
 
+  // if end is the last chunk, set last chunk to start->prev
   if (heap_chunk_last == end)
     heap_chunk_last = __heap_chunk_meta_prev(start);
 
+  // setup start chunk's metadata
   start->meta[0] = HEAP_CHUNK_MAGIC;
   start->meta[1] = total_size;
 
@@ -156,24 +168,97 @@ void *heap_alloc(uint64_t size) {
 }
 
 void *heap_realloc(void *mem, uint64_t size) {
-  // TODO: implement
-  return NULL;
+  struct heap_chunk *start = NULL, *cur = NULL, *end = NULL;
+  uint64_t           total_size = 0;
+
+  start = mem - HEAP_CHUNK_META_SIZE;
+  end   = mem + __heap_chunk_meta_size(start) - sizeof(struct heap_chunk);
+
+  if (HEAP_CHUNK_META_SIZE > (uint64_t)mem || !__heap_chunk_is_magical(start)) {
+    panic("Attempt to reallocate an invalid chunk");
+    return NULL;
+  }
+
+  if ((total_size = __heap_chunk_meta_size(start)) >= size)
+    return mem;
+
+  start = NULL;
+
+  // attempt to extend the memory buffer by moving the end chunk
+  for (cur = heap_chunk_first; size > total_size && cur != NULL; cur = __heap_chunk_meta_next(cur)) {
+    /*
+
+     * check if the current chunk is contiguous with the end chunk
+     * if so move end chunk to current chunk and extend the size of
+     * the memory buffer by a single chunk
+
+    */
+
+    if (end + 1 != cur)
+      continue;
+
+    end = cur;
+    total_size += sizeof(struct heap_chunk);
+
+    if (NULL == start)
+      start = end;
+  }
+
+  /*
+
+   * if we fail to extend the buffer by moving the end chunk then we'll
+   * allocate a new buffer with the new size and copy old buffer's content
+   * to the new buffer, then heap_free() the old buffer
+
+  */
+  if (size > total_size) {
+    start = mem - HEAP_CHUNK_META_SIZE;
+    cur   = heap_alloc(size);
+
+    memcpy(cur, mem, __heap_chunk_meta_size(start));
+    heap_free(mem);
+
+    return cur;
+  }
+
+  /*
+
+   * this part is similar to heap_alloc(), we just remove references
+   * to the new chunks we allocated
+
+  */
+  if ((cur = __heap_chunk_meta_prev(end)) != NULL)
+    __heap_chunk_meta_next_set(cur, __heap_chunk_meta_next(end));
+
+  if ((cur = __heap_chunk_meta_next(end)) != NULL)
+    __heap_chunk_meta_prev_set(cur, __heap_chunk_meta_prev(end));
+
+  if (heap_chunk_first == end)
+    heap_chunk_first = __heap_chunk_meta_next(end);
+
+  if (heap_chunk_last == end)
+    heap_chunk_last = __heap_chunk_meta_prev(end);
+
+  return mem;
 }
 
 void heap_free(void *mem) {
-  struct heap_chunk *start = NULL, *cur = NULL, *end = NULL;
+  struct heap_chunk *start = NULL, *end = NULL, *cur = NULL;
 
-  if (HEAP_CHUNK_META_SIZE > (uint64_t)mem || !__heap_chunk_is_magical((start = mem - HEAP_CHUNK_META_SIZE)))
+  start = mem - HEAP_CHUNK_META_SIZE;
+  end   = mem + __heap_chunk_meta_size(start) - sizeof(struct heap_chunk);
+
+  if (HEAP_CHUNK_META_SIZE > (uint64_t)mem || !__heap_chunk_is_magical(start))
     return panic("Attempt to free an invalid chunk");
 
-  start->meta[1] += HEAP_CHUNK_META_SIZE;
-
-  for (cur = start; start->meta[1] > 0;
-      start->meta[1] -= sizeof(struct heap_chunk), end = cur, cur = __heap_chunk_meta_next(cur)) {
+  for (cur = start; cur <= end; cur++) {
     if (cur != start)
       __heap_chunk_meta_prev_set(cur, cur - 1);
     __heap_chunk_meta_next_set(cur, cur + 1);
   }
+
+  __heap_chunk_meta_prev_set(start, NULL);
+  __heap_chunk_meta_next_set(end, NULL);
 
   for (cur = heap_chunk_first; cur != NULL; cur = __heap_chunk_meta_next(cur)) {
     if (start > cur)

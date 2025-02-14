@@ -2,7 +2,7 @@
 #include "core/im.h"
 
 #include "mm/vmm.h"
-#include "mm/pm.h"
+#include "mm/heap.h"
 
 #include "util/printk.h"
 #include "util/panic.h"
@@ -131,7 +131,7 @@ void im_add_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t ha
   }
 
   // create a new entry
-  struct im_handler_entry *entry = vmm_alloc(sizeof(struct im_handler_entry));
+  struct im_handler_entry *entry = heap_alloc(sizeof(struct im_handler_entry));
   entry->next                    = NULL;
   entry->vector                  = vector;
   entry->func                    = handler;
@@ -170,7 +170,7 @@ void im_del_handler(uint8_t vector, im_handler_func_t handler) {
   dlist_del(&im_handler.head, &im_handler.tail, entry, struct im_handler_entry);
   im_handler.count--;
 
-  vmm_free(entry);
+  heap_free(entry);
 }
 
 void im_disable_handler(uint8_t vector, im_handler_func_t handler) {
@@ -203,9 +203,9 @@ void im_init() {
     d = &im_idt[i];
 
     // setup all the address bits
-    d->address_low  = (wrapper_addr + (wrapper_size * i)) & 0xffff;
-    d->address_mid  = ((wrapper_addr + (wrapper_size * i)) >> 16) & 0xffff;
-    d->address_high = ((wrapper_addr + (wrapper_size * i)) >> 32) & 0xffff;
+    d->address_low  = (wrapper_addr + (wrapper_size * i)) & UINT16_MAX;
+    d->address_mid  = ((wrapper_addr + (wrapper_size * i)) >> 16) & UINT16_MAX;
+    d->address_high = ((wrapper_addr + (wrapper_size * i)) >> 32) & UINT32_MAX;
 
     // set the default entry flags
     im_set_entry(i, 0);
@@ -217,10 +217,10 @@ void im_init() {
   // setup the TSS
   bzero(&im_tss, sizeof(struct tss));
 
-  if ((im_tss.rsp0 = (uint64_t)pm_alloc(1)) == NULL)
+  if ((im_tss.rsp0 = (uint64_t)vmm_map(1, VMM_FLAGS_DEFAULT)) == NULL)
     panic("Failed to allocate memory for the TSS");
 
-  im_tss.rsp0 += PM_PAGE_SIZE;
+  im_tss.rsp0 += VMM_PAGE_SIZE;
   pdebg("IM: Created TSS stack at 0x%x", im_tss.rsp0);
 
   gdt_tss_set(&im_tss, (sizeof(struct tss) - 1));
