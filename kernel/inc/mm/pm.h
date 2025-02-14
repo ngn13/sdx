@@ -27,14 +27,14 @@
 
 #ifndef __ASSEMBLY__
 
-#include "boot/multiboot.h"
 #include "util/math.h"
 #include "types.h"
 
 // see boot/paging.S
-#define pm_start ((uint64_t)mb_mem_avail_addr) // address for the first paging table (where the page tables start)
-extern uint64_t pm_mapped;                     // last address that has been mapped
-extern uint32_t pm_end;                        // address for the last paging table (where the page tables end)
+// #define pm_start ((uint64_t)mb_mem_avail_addr) // address for the first paging table (where the page tables start)
+#define pm_start ((uint64_t)0) // address for the first paging table (where the page tables start)
+extern uint64_t pm_mapped;     // last address that has been mapped
+extern uint32_t pm_end;        // address for the last paging table (where the page tables end)
 
 typedef struct pm_page {
   uint64_t *pointer;

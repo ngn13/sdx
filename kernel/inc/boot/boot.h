@@ -1,19 +1,38 @@
 #pragma once
 
-// see boot/gdt.s
-
-#ifndef __ASSEMBLY__
 #include "types.h"
 #include "limits.h"
 
-extern uint32_t gdt_start_addr;
-extern uint32_t gdt_end_addr;
+#define BOOT_KERNEL_ADDR 0xffffffff80000000
+#define BOOT_STACK_SIZE  0x10000
 
-extern uint32_t gdt_desc_code_0_addr;
-extern uint32_t gdt_desc_data_0_addr;
-extern uint32_t gdt_desc_code_3_addr;
-extern uint32_t gdt_desc_data_3_addr;
-extern uint32_t gdt_desc_tss_addr;
+#ifndef __ASSEMBLY__
+
+#include "util/asm.h"
+
+#define BOOT_KERNEL_START_PADDR (_start_addr - BOOT_KERNEL_ADDR)
+#define BOOT_KERNEL_END_PADDR   (_end_addr - BOOT_KERNEL_ADDR)
+
+#define BOOT_KERNEL_START_VADDR (_start_addr)
+#define BOOT_KERNEL_END_VADDR   (_end_addr)
+
+// boot/paging.S
+extern uint32_t paging_mb_data_offset;
+#define BOOT_MB_DATA_ADDR (0xffffffff80200000 + paging_mb_data_offset)
+
+extern uint64_t paging_temp_tables_addr;
+#define BOOT_TEMP_PML4_VADDR (paging_temp_tables_addr)
+#define BOOT_TEMP_PML4_PADDR (paging_temp_tables_addr - BOOT_KERNEL_ADDR)
+
+// boot/gdt.S
+extern uint64_t gdt_start_addr;
+extern uint64_t gdt_end_addr;
+
+extern uint64_t gdt_desc_kernel_code_addr;
+extern uint64_t gdt_desc_kernel_data_addr;
+extern uint64_t gdt_desc_user_code_addr;
+extern uint64_t gdt_desc_user_data_addr;
+extern uint64_t gdt_desc_tss_addr;
 
 #define gdt_offset(a) (((uint64_t)a) - ((uint64_t)gdt_start_addr))
 

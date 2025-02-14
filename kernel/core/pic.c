@@ -13,23 +13,22 @@
  * https://wiki.osdev.org/8259_PIC
  * https://en.wikipedia.org/wiki/Intel_8259
 
- * basically the original 8259 offered a PIC with 8 IRQ ports
- * but it also had this cascade mode where you can plug in other PIC(s) into IRQ ports
- * so you could get 64 IRQs (8 IRQ ports, 8 PICs, 8*8 = 64)
+ * basically the original 8259 offered a PIC with 8 IRQ ports but it also had this
+ * cascade mode where you can plug in other PIC(s) into IRQ ports so you could get
+ * 64 IRQs (8 IRQ ports, 8 PICs, 8*8 = 64)
 
- * the PIC that you plug the other PIC(s) into is called the master
- * and the PIC(s) you plug into the master is called slaves
+ * the PIC that you plug the other PIC(s) into is called the master and the PIC(s)
+ * ou plug into the master is called slaves
 
  * IBM PC AT took advantage of this cascade mode by connecting a single slave to
  * master PIC's third IRQ port, and for some reason this two-chip architecture is
  * still used and available in modern systems, and hasn't changed
 
- * as the time went on, PICs got embedded into motherboard's southboard
- * also intel dropped APIC which is advanced PIC, and it is basically available on
- * any multiproccessor system, however it's more complicated and shit
+ * as the time went on, PICs got embedded into motherboard's southboard also intel
+ * dropped APIC which is advanced PIC, and it is basically available on any
+ * multiproccessor system, however it's more complicated and shit
 
  * so i'll go with the basic PIC and who the actual fuck is gonna use all the IRQs anyway
- * i literally only need one which is the keybord - at least for now
 
 */
 

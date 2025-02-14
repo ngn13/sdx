@@ -14,8 +14,8 @@ OBJS += $(patsubst %.S,$(DISTDIR)/%.S.o,$(SSRCS))
 SRCDIRS = $(shell find . -type d -not -path './dist/*')
 OUTDIRS = $(patsubst %,$(DISTDIR)/%,$(SRCDIRS))
 
-# C compiler flags 
-CFLAGS  = -g -nostdlib -nostartfiles -ffreestanding -mcmodel=large -mno-red-zone -mno-mmx -mno-sse -mno-sse2
+# C compiler flags
+CFLAGS  = -g -nostdlib -nostartfiles -ffreestanding -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2
 CFLAGS += -Wno-packed-bitfield-compat # disable useless ABI change warning
 CFLAGS += -Werror # warnings = errors
 
@@ -28,10 +28,7 @@ SFLAGS += -Werror # warnings = errors
 LFLAGS  = --nmagic
 INCLUDE = -I inc -I ../inc -I ../config
 
-all: $(DISTDIR) $(OUTDIRS) $(DISTDIR)/kernel
-
-$(DISTDIR):
-	mkdir -pv $@
+all: $(OUTDIRS) $(DISTDIR)/kernel
 
 $(OUTDIRS):
 	mkdir -pv $(OUTDIRS)

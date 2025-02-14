@@ -1,0 +1,3 @@
+define hook-stop
+x/10si $rip
+end

@@ -71,7 +71,7 @@ _user_handler:
     mov %r11, %rsi
     mov %r10, %rdx
 
-    call %r13
+    call *%r13
 
   .Luser_handler_ret:
     pop %rsp // switch back to the old stack
