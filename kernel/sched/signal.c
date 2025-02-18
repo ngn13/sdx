@@ -1,32 +1,49 @@
 #include "sched/signal.h"
 #include "sched/sched.h"
+#include "sched/task.h"
 
-#include "mm/vmm.h"
+#include "mm/heap.h"
 
-#include "util/mem.h"
-#include "util/printk.h"
 #include "util/panic.h"
 #include "util/list.h"
+#include "util/mem.h"
 
 #include "errno.h"
 #include "types.h"
 
-#define SIG_EXIT_CODE 128
+#define SIG_EXIT_CODE              128
+#define __sigset_free(ss)          heap_free(ss)
+#define __signal_can_ignore(sig)   (sig != SIGKILL)
+#define __signal_call_default(sig) sigdfl[sig - 1](sig)
 
-sighand_t sigdfl[SIG_MAX];
+task_sighand_t sigdfl[SIG_MAX];
 
-void sighand_term(int32_t sig) {
+void __sighand_term(int32_t sig) {
   sched_exit(SIG_EXIT_CODE + sig);
 }
 
-void sighand_dump(int32_t sig) {
-  core_dump(&current->regs);
+void __sighand_dump(int32_t sig) {
+  core_dump(&task_current->regs);
   sched_exit(SIG_EXIT_CODE + sig);
+}
+
+int32_t task_signal_setup() {
+  sigdfl[SIGHUP - 1]  = __sighand_term;
+  sigdfl[SIGINT - 1]  = __sighand_term;
+  sigdfl[SIGILL - 1]  = __sighand_dump;
+  sigdfl[SIGKILL - 1] = __sighand_term;
+  sigdfl[SIGSEGV - 1] = __sighand_dump;
+  return 0;
+}
+
+int32_t task_signal_clear(task_t *task) {
+  slist_clear(&task->signal, __sigset_free, task_sigset_t);
+  return 0;
 }
 
 int32_t task_signal_pop(task_t *task) {
-  sigset_t *cur    = task->signal;
-  int32_t   signal = -1;
+  task_sigset_t *cur    = task->signal;
+  int32_t        signal = -1;
 
   if (NULL != cur) {
     signal = cur->value;
@@ -61,7 +78,7 @@ void task_signal_call(task_t *task, int32_t sig) {
   }
 }
 
-int32_t task_signal(task_t *task, int32_t sig, sighand_t hand) {
+int32_t task_signal(task_t *task, int32_t sig, task_sighand_t hand) {
   if (NULL == task || sig > SIG_MAX || sig < 0)
     return -EINVAL;
 
@@ -76,10 +93,10 @@ int32_t task_kill(task_t *task, int32_t sig) {
   if (NULL == task || sig > SIG_MAX || sig < SIG_MIN)
     return -EINVAL;
 
-  sigset_t *signal = vmm_alloc(sizeof(sigset_t));
-  bzero(signal, sizeof(sigset_t));
+  task_sigset_t *signal = heap_alloc(sizeof(task_sigset_t));
+  bzero(signal, sizeof(task_sigset_t));
   signal->value = sig;
 
-  slist_add(&task->signal, signal, sigset_t);
+  slist_add(&task->signal, signal, task_sigset_t);
   return 0;
 }

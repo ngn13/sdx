@@ -1,65 +1,53 @@
-#include "sched/sched.h"
 #include "sched/task.h"
 #include "sched/signal.h"
 #include "sched/stack.h"
 #include "sched/mem.h"
 
-#include "mm/vmm.h"
-#include "mm/pm.h"
-
-#include "boot/boot.h"
-
 #include "util/string.h"
 #include "util/list.h"
 #include "util/mem.h"
 
+#include "mm/vmm.h"
+#include "mm/heap.h"
+
 #include "types.h"
 #include "errno.h"
 
-task_t *task_alloc() {
-  task_t *new = vmm_alloc(sizeof(task_t));
-  bzero(new, sizeof(task_t));
-  return new;
-}
+task_t *task_create(task_t *task) {
+  task_t *task_new = heap_alloc(sizeof(task_t));
+  bzero(task_new, sizeof(task_t));
 
-int32_t task_free(task_t *task) {
-  if (NULL == task)
-    return -EINVAL;
-
-  task_mem_clear(task);    // free the task's memory regions
-  task_signal_clear(task); // free the task's signal queue
-  task_stack_free(task);   // free the task's stack
-
-  // free the task structure
-  vmm_free(task);
-
-  return 0;
-}
-
-int32_t task_update(task_t *task, const char *name, uint8_t ring, void *entry) {
-  if (NULL == task || NULL == name || !__task_is_valid_ring(ring))
-    return -EINVAL;
-
-  task_stack_alloc(task);  // allocate a user & kernel stack
-  task_signal_clear(task); // free the task's signal queue
-  task_mem_clear(task);    // free the task's memory regions
-
-  // set the required values
-  strncpy(task->name, name, NAME_MAX + 1);
-  task->state     = TASK_STATE_BUSY;
-  task->prio      = TASK_PRIO_DEFAULT;
-  task->min_ticks = TASK_TICKS_DEFAULT;
-  task->ring      = ring;
-
-  // update the registers
-  bzero(&task->regs, sizeof(task_regs_t));
+  // create a new VMM for the task
+  task_new->vmm = vmm_new();
 
   /*
 
-   * bit 1 = reserved, 9 = interrupt enable
-   * https://en.wikipedia.org/wiki/FLAGS_register
+   * if we are copying from an other process copy it's
+   * memory regions, otherwise clear all the regions
+   * and allocate a new memory region for the stack
 
   */
+  if (NULL != task)
+    task_mem_copy(task_new, task);
+
+  else {
+    task_mem_clear(task_new);
+    task_stack_alloc(task_new);
+  }
+
+  // setup new task's signal queue
+  task_signal_clear(task_new);
+
+  // set the required values
+  task_new->state = TASK_STATE_READY;
+  task_new->prio  = TASK_PRIO_LOW;
+
+  // copy registers
+  if (NULL != task)
+    memcpy(&task_new->regs, &task->regs, sizeof(task_regs_t));
+
+  /*
+
   task->regs.rflags = ((1 << 1) | (1 << 9));
   task->regs.rip    = (uint64_t)entry; // set the instruction pointer to the given entry address
 
@@ -75,22 +63,34 @@ int32_t task_update(task_t *task, const char *name, uint8_t ring, void *entry) {
     task->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
     task->regs.rsp = (uint64_t)task->stack.user + pm_size(TASK_STACK_PAGE_COUNT);
 
-    /*
-
      * ORed with 3 to set the RPL to 3
      * see https://wiki.osdev.org/Segment_Selector
 
-    */
     task->regs.cs |= 3;
     task->regs.ss |= 3;
 
     break;
-  }
+  }*/
 
+  return task_new;
+}
+
+int32_t task_rename(task_t *task, const char *name) {
+  if (NULL == task || NULL == name)
+    return -EINVAL;
+
+  strncpy(task->name, name, NAME_MAX + 1);
   return 0;
 }
 
-task_t *task_copy(task_t *task) {
-  // TODO: implement
-  return NULL;
+int32_t task_free(task_t *task) {
+  if (NULL == task)
+    return -EINVAL;
+
+  task_mem_clear(task);    // free the task's memory regions
+  task_signal_clear(task); // free the task's signal queue
+
+  // free the task structure
+  heap_free(task);
+  return 0;
 }

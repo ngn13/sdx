@@ -1,7 +1,5 @@
 #include "fs/fmt.h"
-#include "mm/pm.h"
-
-#include "util/mem.h"
+#include "mm/vmm.h"
 #include "errno.h"
 
 #define fmt_info(f, ...) pinfo("Format: (0x%x) " f, node, ##__VA_ARGS__)
@@ -31,7 +29,7 @@ int32_t fmt_load(vfs_node_t *node, void **entry, void **addr, uint64_t *count) {
     }
 
     if (NULL != *addr && *count != 0)
-      pm_free(*addr, *count);
+      vmm_unmap(*addr, *count);
 
     *addr  = NULL;
     *entry = NULL;

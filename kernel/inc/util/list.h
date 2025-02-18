@@ -15,7 +15,7 @@
         ;                                                                                                              \
       cur->next = entry;                                                                                               \
     }                                                                                                                  \
-  } while (0);
+  } while (0)
 
 #define slist_del(head, entry, type)                                                                                   \
   do {                                                                                                                 \
@@ -29,7 +29,7 @@
         break;                                                                                                         \
       }                                                                                                                \
     }                                                                                                                  \
-  } while (0);
+  } while (0)
 
 #define slist_clear(head, free, type)                                                                                  \
   do {                                                                                                                 \
@@ -45,41 +45,41 @@
 // doubly-linked list macros
 
 #define dlist_foreach(head, type) for (type *cur = *head; NULL != cur; cur = cur->next)
-#define dlist_reveach(tail, type) for (type *cur = *tail; NULL != cur; cur = cur->pre)
-#define dlist_is_start()          (cur->pre == NULL)
+#define dlist_reveach(tail, type) for (type *cur = *tail; NULL != cur; cur = cur->prev)
+#define dlist_is_start()          (cur->prev == NULL)
 #define dlist_is_end()            (cur->next == NULL)
 
 #define dlist_add(head, tail, entry)                                                                                   \
   do {                                                                                                                 \
     if (NULL == *tail) {                                                                                               \
       *tail = *head = entry;                                                                                           \
-      entry->next = entry->pre = NULL;                                                                                 \
+      entry->next = entry->prev = NULL;                                                                                \
     } else {                                                                                                           \
-      (entry)->pre = *tail;                                                                                            \
+      (entry)->prev = *tail;                                                                                           \
       *tail = *tail->next = entry;                                                                                     \
     }                                                                                                                  \
-  } while (0);
+  } while (0)
 
 #define dlist_del(head, tail, entry, type)                                                                             \
   do {                                                                                                                 \
     if (entry == *head) {                                                                                              \
-      *head      = (*head)->next;                                                                                      \
-      *head->pre = NULL;                                                                                               \
+      *head       = (*head)->next;                                                                                     \
+      *head->prev = NULL;                                                                                              \
     }                                                                                                                  \
     if (entry == *tail) {                                                                                              \
-      *tail       = (*tail)->pre;                                                                                      \
+      *tail       = (*tail)->prev;                                                                                     \
       *tail->next = NULL;                                                                                              \
     } else if (NULL != *head) {                                                                                        \
       dlist_foreach(head, type) {                                                                                      \
         if (entry != cur->next)                                                                                        \
           continue;                                                                                                    \
         if (NULL != cur->next->next)                                                                                   \
-          cur->next->next->pre = cur->pre;                                                                             \
+          cur->next->next->prev = cur->prev;                                                                           \
         cur->next = cur->next->next;                                                                                   \
         break;                                                                                                         \
       }                                                                                                                \
     }                                                                                                                  \
-  } while (0);
+  } while (0)
 
 #define dlist_clear(head, tail, free, type)                                                                            \
   do {                                                                                                                 \

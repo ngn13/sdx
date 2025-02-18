@@ -42,9 +42,23 @@ void *vmm_alloc(uint64_t size);
 void *vmm_realloc(void *mem, uint64_t size);
 void  vmm_free(void *mem);
 
-void   *vmm_new();                            // create a new VMM
-int32_t vmm_switch(void *vmm);                // switch to a different VMM
-int32_t vmm_unmap(void *vaddr, uint64_t num); // unmap num amount of pages from the given virtual address
+void   *vmm_new();             // create a new VMM
+void   *vmm_get();             // get the current VMM
+int32_t vmm_sync(void *vmm);   // sync an old VMM with the current one
+int32_t vmm_switch(void *vmm); // switch to a different VMM
+
+#define vmm_save() void *_saved_vmm = vmm_get() // save the current VMM
+#define vmm_restore()                                                                                                  \
+  do {                                                                                                                 \
+    vmm_sync(_saved_vmm);                                                                                              \
+    vmm_switch(_saved_vmm);                                                                                            \
+  } while (0) // sync the saved VMM with the current one and switch back to it
+
+int32_t vmm_set(void *vaddr, uint64_t num, uint64_t flags);   // set the specified flags for the vaddr entry
+int32_t vmm_clear(void *vaddr, uint64_t num, uint64_t flags); // clear the specified flags for the vaddr entry
+#define vmm_calc(size) (div_ceil(size, VMM_PAGE_SIZE))
+uint64_t vmm_resolve(void *vaddr);             // resolve a virtual address to a physical address
+int32_t  vmm_unmap(void *vaddr, uint64_t num); // unmap num amount of pages from the given virtual address
 
 /*
 

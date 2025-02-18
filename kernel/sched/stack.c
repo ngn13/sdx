@@ -1,38 +1,43 @@
 #include "sched/stack.h"
-#include "mm/pm.h"
+#include "sched/task.h"
+#include "sched/mem.h"
 
+#include "util/list.h"
 #include "util/string.h"
 #include "util/mem.h"
+
+#include "mm/vmm.h"
 
 #include "errno.h"
 #include "types.h"
 
 int32_t task_stack_alloc(task_t *task) {
+  vmm_save();
+  task_vmm_switch(task);
+
   /*
 
    * we have two stacks, one for ring 3 (userland) and one for ring 0 (kernel)
    * we switch between them while switching between rings (syscalls)
 
+   * this function allocates both of these stacks and adds them to the memory
+   * region list of the task
+
   */
+  void *kernel_stack = vmm_map_with(TASK_STACK_PAGE_COUNT, 0, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT | VMM_FLAG_XD);
+  void *user_stack   = vmm_map_with(TASK_STACK_PAGE_COUNT, 0, VMM_VMA_USER, VMM_FLAGS_DEFAULT | VMM_FLAG_XD);
 
-  // allocate new kernel & user stack if not already allocated
-  if (NULL == task->stack.kernel && (task->stack.kernel = pm_alloc(TASK_STACK_PAGE_COUNT)) == NULL)
+  if (NULL == kernel_stack || NULL == user_stack)
     return -ENOMEM;
 
-  if (NULL == task->stack.user && (task->stack.user = pm_alloc(TASK_STACK_PAGE_COUNT)) == NULL)
-    return -ENOMEM;
+  task_mem_add(task, TASK_MEM_TYPE_STACK, kernel_stack, vmm_resolve(kernel_stack), TASK_STACK_PAGE_COUNT);
+  task_mem_add(task, TASK_MEM_TYPE_STACK, user_stack, vmm_resolve(user_stack), TASK_STACK_PAGE_COUNT);
 
-  // disable execution for the stack pages
-  pm_set((uint64_t)task->stack.kernel, TASK_STACK_PAGE_COUNT, PM_ENTRY_FLAG_XD);
-  pm_set((uint64_t)task->stack.user, TASK_STACK_PAGE_COUNT, PM_ENTRY_FLAG_XD);
-
-  // allow userland access to user stack
-  pm_set_all((uint64_t)task->stack.user, TASK_STACK_PAGE_COUNT, PM_ENTRY_FLAG_US);
-
+  vmm_restore();
   return 0;
 }
 
-uint64_t task_stack_copy(task_t *task, void *val, uint64_t size) {
+uint64_t __task_stack_add_internal(task_t *task, void *val, uint64_t size) {
   // copy the value to the stack
   task->regs.rsp -= size;
   memcpy((void *)task->regs.rsp, val, size);
@@ -44,7 +49,18 @@ uint64_t task_stack_copy(task_t *task, void *val, uint64_t size) {
   return size;
 }
 
-int32_t task_stack_copy_list(task_t *task, char *list[], uint64_t limit, void **stack) {
+uint64_t task_stack_add(task_t *task, void *val, uint64_t size) {
+  vmm_save();
+  task_vmm_switch(task);
+
+  uint64_t ret = __task_stack_add_internal(task, val, size);
+
+  // restore the old VMM
+  vmm_restore();
+  return ret;
+}
+
+int32_t task_stack_add_list(task_t *task, char *list[], uint64_t limit, void **stack) {
   /*
 
    * this function is used to copy the argv and envp to the
@@ -65,6 +81,9 @@ int32_t task_stack_copy_list(task_t *task, char *list[], uint64_t limit, void **
 
   */
 
+  vmm_save();
+  task_vmm_switch(task);
+
   uint64_t len = 0, total = 0, i = 0;
   char   **cur = NULL;
 
@@ -83,32 +102,29 @@ int32_t task_stack_copy_list(task_t *task, char *list[], uint64_t limit, void **
     if ((total += len = strlen(list[i]) + 1) > limit)
       return -E2BIG;
 
-    task_stack_copy(task, list[i], len);
+    __task_stack_add_internal(task, list[i], len);
 
     *cur = (void *)task->regs.rsp;
     cur++;
   }
 
+  // end pointer list with a NULL pointer
   *cur = NULL;
+
+  vmm_restore();
   return 0;
 }
 
-void task_stack_free(task_t *task) {
-  // free the task's stacks
-  pm_free(task->stack.kernel, TASK_STACK_PAGE_COUNT);
-  pm_free(task->stack.user, TASK_STACK_PAGE_COUNT);
-}
+uint64_t task_stack_get(task_t *task, uint64_t vma) {
+  slist_foreach(&task->mem, task_mem_t) {
+    if (cur->type != TASK_MEM_TYPE_STACK)
+      continue;
 
-uint64_t task_stack_get(task_t *task, uint8_t ring) {
-  if (NULL == task)
-    return 0;
+    if (vma == VMM_VMA_USER && cur->vaddr < (void *)VMM_VMA_USER_END)
+      return (uint64_t)cur->vaddr + TASK_STACK_PAGE_COUNT * VMM_PAGE_SIZE;
 
-  switch (ring) {
-  case TASK_RING_KERNEL:
-    return (uint64_t)task->stack.kernel;
-
-  case TASK_RING_USER:
-    return (uint64_t)task->stack.user;
+    if (vma == VMM_VMA_KERNEL && cur->vaddr > (void *)VMM_VMA_USER_END)
+      return (uint64_t)cur->vaddr + TASK_STACK_PAGE_COUNT * VMM_PAGE_SIZE;
   }
 
   return 0;

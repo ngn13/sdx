@@ -181,13 +181,6 @@ __entry64_lower:
   jmp *%rax
 
 __entry64:
-  // update GDT pointer's address
-  movabs $gdt_start, %rax
-  movabs %rax, (gdt_pointer+2)
-
-  // reload GDT
-  lgdt gdt_pointer
-
   /*
 
    * clear the stack, to do so we use the stos (store string) instruction
@@ -205,6 +198,12 @@ __entry64:
 
   // remove lower half mappings
   call __paging_clean
+
+  // update the GDT pointer
+  call __gdt_update_pointer
+
+  // reload GDT
+  lgdt gdt_pointer
 
   // call kernel entry, should never return
   call entry

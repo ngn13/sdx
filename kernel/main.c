@@ -42,7 +42,6 @@
 
 #include "util/panic.h"
 #include "util/printk.h"
-#include "util/mem.h"
 #include "util/asm.h"
 
 void entry() {
@@ -95,15 +94,15 @@ void entry() {
   // enable the interrupts
   im_enable();
 
-  // temporary
-  _hang();
-
   // initialize the scheduler
   if ((err = sched_init()) != 0)
     panic("Failed to start the scheduler: %s", strerror(err));
 
   // make current task (us) critikal
-  task_level(current, TASK_LEVEL_CRITIKAL);
+  sched_prio(TASK_PRIO_CR1TIKAL);
+
+  // temporary
+  _hang();
 
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
