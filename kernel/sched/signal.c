@@ -42,30 +42,29 @@ int32_t task_signal_clear(task_t *task) {
 }
 
 int32_t task_signal_pop(task_t *task) {
-  task_sigset_t *cur    = task->signal;
-  int32_t        signal = -1;
+  task_sigset_t *cur     = NULL;
+  uint64_t       handler = 0;
+  int32_t        signal  = -1;
 
-  if (NULL != cur) {
-    signal = cur->value;
+  if (NULL == task)
+    return -EINVAL;
 
-    // more efficient then slist_del
-    task->signal = cur->next;
-    __sigset_free(cur);
-  }
+  if (NULL == (cur = task->signal))
+    return 0;
 
-  return signal;
-}
+  signal       = cur->value;
+  task->signal = cur->next;
+  __sigset_free(cur);
 
-void task_signal_call(task_t *task, int32_t sig) {
-  if (NULL == task || sig > SIG_MAX || sig < SIG_MIN)
-    return;
+  if (signal > SIG_MAX || signal < SIG_MIN)
+    return -EINVAL;
 
-  uint64_t handler = (uint64_t)task->sighand[sig];
+  handler = (uint64_t)task->sighand[signal];
 
   switch (handler) {
   case (uint64_t)SIG_DFL:
     // call the default handler
-    __signal_call_default(sig);
+    __signal_call_default(signal);
     break;
 
   case (uint64_t)SIG_IGN:
@@ -76,6 +75,8 @@ void task_signal_call(task_t *task, int32_t sig) {
     // TODO: call the actual task handler
     break;
   }
+
+  return signal;
 }
 
 int32_t task_signal(task_t *task, int32_t sig, task_sighand_t hand) {

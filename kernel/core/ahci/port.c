@@ -1,9 +1,14 @@
 #include "core/ahci.h"
-#include "mm/pm.h"
+
+#include "mm/vmm.h"
+#include "mm/pmm.h"
 
 #include "util/bit.h"
 #include "util/mem.h"
 #include "util/printk.h"
+
+#include "types.h"
+#include "errno.h"
 
 enum ahci_port_cmd_bits {
   AHCI_PxCMD_ST  = 0, // start
@@ -41,12 +46,12 @@ struct ahci_received_fis {
   uint8_t padding0[4];
 
   // PIO setup FIS
-  sata_fis_pio_setup_t psfis;
-  uint8_t              padding1[12];
+  struct sata_fis_pio_setup psfis;
+  uint8_t                   padding1[12];
 
   // D2H register FIS
-  sata_fis_d2h_t rfis;
-  uint8_t        padding2[4];
+  struct sata_fis_d2h rfis;
+  uint8_t             padding2[4];
 
   // set device bits FIS
   uint8_t sdbfis[8];
@@ -56,9 +61,6 @@ struct ahci_received_fis {
 
   uint8_t reserved[96];
 };
-
-#define ahci_port_is_busy(port)                                                                                        \
-  (bit_get(port->tfd, AHCI_PxTFD_STS_BSY) == 1 || bit_get(port->tfd, AHCI_PxTFD_STS_DRQ) == 1)
 
 /*
 
@@ -82,12 +84,7 @@ bool ahci_port_stop(ahci_port_t *port) {
   return true;
 }
 
-/*
-
- * starts the stoppen HBA back again
- * used after when the configuration of the device is completed
-
-*/
+// starts the stoppen HBA back again
 bool ahci_port_start(ahci_port_t *port) {
   while (bit_get(port->cmd, AHCI_PxCMD_CR) == 1)
     continue;
@@ -119,13 +116,11 @@ bool ahci_port_reset(ahci_port_t *port) {
 
 /*
 
- * checks the DET, IPM and the signature to the port is connected to a supported device
-
- * on the specified port, if there's, then the function returns true
- * if not, then returns false
+ * checks the DET, IPM and the signature of the port to see if it is connected to a
+ * supported device, if it's then returns true, if not returns false
 
 */
-bool ahci_port_check(ahci_port_t *port) {
+bool ahci_port_is_connected(ahci_port_t *port) {
   uint8_t det = port->ssts & 0x0F;       // device detection (bits 0-3)
   uint8_t ipm = (port->ssts >> 8) & 0xF; // interface power managment (bits 8-11)
 
@@ -146,26 +141,31 @@ bool ahci_port_check(ahci_port_t *port) {
   return port->sig == AHCI_SIGNATURE_SATA || port->sig == AHCI_SIGNATURE_ATAPI;
 }
 
-// finds an available command slot (command header)
-int8_t ahci_port_find_slot(ahci_port_t *port) {
-  for (uint8_t i = 0; i < AHCI_PORT_CMD_LIST_COUNT; i++) {
-    if (bit_get(port->sact, i) == 0 && bit_get(port->ci, i) == 0)
-      return i;
-  }
-  return -1;
-}
+/*
 
-bool ahci_port_init(ahci_port_t *port) {
+ * allocates and sets up command list and recevied FIS structure which are
+ * pointed by PxCLB and PxFB, respectively
+
+ * for more info see "Figure 5: Port System Memory Structures"
+
+ * returns the virtual address of PxCLB which is the base address that will
+ * be used to calculate other data structures virtual addresses (yes all the
+ * data structures store only the physical addresses)
+
+*/
+void *ahci_port_setup(ahci_port_t *port) {
   // stop sending SATA commands to the device
   if (!ahci_port_stop(port)) {
-    printk(KERN_DEBG, "AHCI: (port 0x%x) failed to stop during initialization\n", port);
-    return false;
+    ahci_fail("(0x%x) failed to stop port for initialization", port);
+    return NULL;
   }
+
+  // virtual address for the command list base address
+  void *clb_vaddr = 0;
 
   // calculate the size required for the command list and the 256 byte aligned received FIS
   uint64_t command_table_offset[AHCI_PORT_CMD_LIST_COUNT] = {0};
   uint64_t received_fis_offset                            = 0;
-  uint8_t  i                                              = 0;
 
   // command list size (command header size * command header count)
   uint64_t size       = ahci_port_cmd_list_size();
@@ -180,7 +180,7 @@ bool ahci_port_init(ahci_port_t *port) {
   size += sizeof(struct ahci_received_fis);
 
   // command table size * command header count
-  for (i = 0; i < AHCI_PORT_CMD_LIST_COUNT; i++) {
+  for (uint8_t i = 0; i < AHCI_PORT_CMD_LIST_COUNT; i++) {
     // offset to make sure the command table is 128 byte aligned
     while (size % 128 != 0)
       size++;
@@ -188,20 +188,21 @@ bool ahci_port_init(ahci_port_t *port) {
     size += sizeof(struct ahci_cmd_table);
   }
 
-  page_count = pm_calc(size);
+  page_count = vmm_calc(size);
 
   /*
 
    * each port has a CLB (Command List Base Address) which points to a command list
    * and the command list is basically a list of 32 ahci_cmd_headers
 
-   * the intereseting thing about the command list is that it needs to be a 1024 byte aligned address
-   * as the lower 10 bits of the address is reserved for some fucking reason
+   * the intereseting thing about the command list is that it needs to be a 1024 byte
+   * aligned address as the lower 10 bits of the address is reserved for some fucking
+   * reason
 
   */
-  port->clb = (uint64_t)pm_alloc(page_count);
-  pm_set(port->clb, page_count, PM_ENTRY_FLAGS_DEFAULT | PM_ENTRY_FLAG_PCD);
-  bzero((void *)port->clb, size);
+  clb_vaddr = vmm_map_with(page_count, 1024, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT | VMM_FLAG_PCD);
+  port->clb = vmm_resolve(clb_vaddr);
+  bzero(clb_vaddr, size);
 
   /*
 
@@ -218,9 +219,9 @@ bool ahci_port_init(ahci_port_t *port) {
    * are 128 byte aligned (as the lower 7 bits are reserved for another random fucking reason)
 
   */
-  struct ahci_cmd_header *header = (void *)port->clb;
+  struct ahci_cmd_header *header = (void *)clb_vaddr;
 
-  for (i = 0; i < AHCI_PORT_CMD_LIST_COUNT; i++) {
+  for (uint8_t i = 0; i < AHCI_PORT_CMD_LIST_COUNT; i++) {
     header[i].prdtl = AHCI_PRDTL_MAX;
     header[i].ctba  = port->clb + command_table_offset[i];
   }
@@ -230,106 +231,29 @@ bool ahci_port_init(ahci_port_t *port) {
   port->ie = 1;
 
   if (!ahci_port_start(port)) {
-    printk(KERN_DEBG, "AHCI: (port 0x%x) failed to start during initialization\n", port);
-    return false;
+    ahci_fail("(0x%x) failed to start port after initialization", port);
+    return NULL;
   }
 
-  return true;
+  return clb_vaddr;
 }
 
-/*
-
- * sets command header and related table with the given sector count and the buffer
- * and it returns the table used for data blocks
-
-*/
-struct ahci_cmd_table *ahci_port_setup_header(
-    struct ahci_cmd_header *header, uint64_t cmd_fis_size, bool write_to_device, uint64_t size, uint8_t *buf) {
-  // check the header (make sure it points to valid memory)
-  if (NULL == header)
-    return NULL;
-
-  // check the FIS size (FISes are parted into different dwords)
-  if (cmd_fis_size % sizeof(uint32_t) != 0)
-    return NULL;
-
-  struct ahci_cmd_table *table = NULL;
-  uint16_t               i     = 0;
-
-  /*
-
-   * now we can setup the header:
-   * - cfl: size of the command (in dwords)
-   * - write: 1 = write from host to device, 0 = write from device to host
-   * - prdtl: PRD count calculated from the given sector count
-
-  */
-  header->cfl   = cmd_fis_size / sizeof(uint32_t);
-  header->write = write_to_device ? 1 : 0;
-  header->prdtl = ahci_prdtl_from_size(size);
-
-  // obtain and clear the command table
-  table = (void *)header->ctba;
-  bzero(table, sizeof(struct ahci_cmd_table));
-
-  // setup all the PRDs
-  for (; i < header->prdtl; i++) {
-    table->prdt[i].dba = (uint64_t)buf; // set the data block base address
-    // set the data block size (1 means 2, so we subtract one)
-    if (i == header->prdtl - 1)
-      // last PRD's data block size is calculated from left over sector count
-      table->prdt[i].dbc = size - 1;
-    else
-      // other PRD's just use the data block with the max size
-      table->prdt[i].dbc = AHCI_PRD_DATA_MAX - 1;
-    table->prdt[i].interrupt = 0; // don't send an interrupt when the data block transfer is completed
-
-    buf += AHCI_PRD_DATA_MAX;  // the next buffer address
-    size -= AHCI_PRD_DATA_MAX; // left over size
-  }
-
-  return table;
-}
-
-// check if TFD register contains an error, if so log the error
-bool ahci_port_check_tfd(ahci_port_t *port, int64_t slot) {
+// check if TFD register contains an error, if so return false
+bool ahci_port_check_error(ahci_port_t *port, int64_t slot) {
   if (bit_get(port->tfd, AHCI_PxTFD_STS_ERR) == 1) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) transfer error (TFD_STS_ERR)\n", port, slot);
+    ahci_debg("(0x%x) transfer error (TFD_STST_ERR)", port);
     return false;
   }
 
   if (((port->tfd >> AHCI_PxTFD_ERR) & 0xFF) == 1) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) port error (TFD_ERR)\n", port, slot);
+    ahci_debg("(0x%x) port error (TFD_ERR)", port);
     return false;
   }
 
   return true;
 }
 
-// issues a command and waits for it to complete
-bool ahci_port_issue_cmd(ahci_port_t *port, int8_t slot) {
-  // check if the port is busy, if so wait till it's not
-  while (ahci_port_is_busy(port))
-    continue;
-
-  /*
-
-   * this is the commands issued regitser, each bit represents a slot, we set the slot we using to 1
-
-   * this tells the HBA that the command has been built and is ready to be sent to device
-   * then we wait until it's set to 0 again, which indicates the HBA received the FIS for this command
-
-  */
-  bit_set(port->ci, slot, 1);
-
-  // wait until the command is completed (and also check task file data for errors)
-  while (bit_get(port->ci, slot) != 0) {
-    if (!ahci_port_check_tfd(port, slot))
-      return false;
-  }
-
-  if (!ahci_port_check_tfd(port, slot))
-    return false;
-
-  return true;
+// check if the port is busy by checking the TFD register
+bool ahci_port_is_busy(ahci_port_t *port) {
+  return bit_get(port->tfd, AHCI_PxTFD_STS_BSY) || bit_get(port->tfd, AHCI_PxTFD_STS_DRQ);
 }

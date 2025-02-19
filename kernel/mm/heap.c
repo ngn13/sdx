@@ -168,11 +168,12 @@ void *heap_alloc(uint64_t size) {
 }
 
 void *heap_realloc(void *mem, uint64_t size) {
-  struct heap_chunk *start = NULL, *cur = NULL, *end = NULL;
+  struct heap_chunk *realloc_start = NULL, *realloc_end = NULL;
+  struct heap_chunk *start = NULL, *cur = NULL;
   uint64_t           total_size = 0;
 
-  start = mem - HEAP_CHUNK_META_SIZE;
-  end   = mem + __heap_chunk_meta_size(start) - sizeof(struct heap_chunk);
+  start       = mem - HEAP_CHUNK_META_SIZE;
+  realloc_end = mem + __heap_chunk_meta_size(start) - sizeof(struct heap_chunk);
 
   if (HEAP_CHUNK_META_SIZE > (uint64_t)mem || !__heap_chunk_is_magical(start)) {
     panic("Attempt to reallocate an invalid chunk");
@@ -181,8 +182,6 @@ void *heap_realloc(void *mem, uint64_t size) {
 
   if ((total_size = __heap_chunk_meta_size(start)) >= size)
     return mem;
-
-  start = NULL;
 
   // attempt to extend the memory buffer by moving the end chunk
   for (cur = heap_chunk_first; size > total_size && cur != NULL; cur = __heap_chunk_meta_next(cur)) {
@@ -194,14 +193,14 @@ void *heap_realloc(void *mem, uint64_t size) {
 
     */
 
-    if (end + 1 != cur)
+    if (realloc_end + 1 != cur)
       continue;
 
-    end = cur;
+    realloc_end = cur;
     total_size += sizeof(struct heap_chunk);
 
-    if (NULL == start)
-      start = end;
+    if (NULL == realloc_start)
+      realloc_start = realloc_end;
   }
 
   /*
@@ -212,12 +211,9 @@ void *heap_realloc(void *mem, uint64_t size) {
 
   */
   if (size > total_size) {
-    start = mem - HEAP_CHUNK_META_SIZE;
-    cur   = heap_alloc(size);
-
+    cur = heap_alloc(size);
     memcpy(cur, mem, __heap_chunk_meta_size(start));
     heap_free(mem);
-
     return cur;
   }
 
@@ -227,18 +223,20 @@ void *heap_realloc(void *mem, uint64_t size) {
    * to the new chunks we allocated
 
   */
-  if ((cur = __heap_chunk_meta_prev(end)) != NULL)
-    __heap_chunk_meta_next_set(cur, __heap_chunk_meta_next(end));
+  if ((cur = __heap_chunk_meta_prev(realloc_start)) != NULL)
+    __heap_chunk_meta_next_set(cur, __heap_chunk_meta_next(realloc_end));
 
-  if ((cur = __heap_chunk_meta_next(end)) != NULL)
-    __heap_chunk_meta_prev_set(cur, __heap_chunk_meta_prev(end));
+  if ((cur = __heap_chunk_meta_next(realloc_end)) != NULL)
+    __heap_chunk_meta_prev_set(cur, __heap_chunk_meta_prev(realloc_start));
 
-  if (heap_chunk_first == end)
-    heap_chunk_first = __heap_chunk_meta_next(end);
+  if (heap_chunk_first == realloc_end)
+    heap_chunk_first = __heap_chunk_meta_next(realloc_end);
 
-  if (heap_chunk_last == end)
-    heap_chunk_last = __heap_chunk_meta_prev(end);
+  if (heap_chunk_last == realloc_start)
+    heap_chunk_last = __heap_chunk_meta_prev(realloc_start);
 
+  // update the size of the chunk
+  __heap_chunk_meta_size(start) = total_size;
   return mem;
 }
 

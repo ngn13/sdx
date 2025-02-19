@@ -1,35 +1,46 @@
 #include "core/disk.h"
+#include "core/ahci.h"
 #include "core/mbr.h"
-#include "fs/vfs.h"
 
+#include "util/panic.h"
 #include "util/list.h"
 #include "util/math.h"
 #include "util/mem.h"
-#include "util/panic.h"
 
-#include "core/ahci.h"
-#include "mm/vmm.h"
+#include "fs/vfs.h"
+#include "mm/heap.h"
 
 #include "config.h"
 
 #define DISK_DEFAULT_SECTOR_SIZE 512
 disk_t *disk_first = NULL;
 
+const char *__disk_get_controller_name(disk_controller_t controller) {
+  switch (controller) {
+  case DISK_CONTROLLER_AHCI:
+    return "AHCI";
+  }
+
+  return "Unknown";
+}
+
 disk_t *disk_add(disk_controller_t controller, void *data) {
   if (NULL == data)
     return false;
 
-  disk_t *new = vmm_alloc(sizeof(disk_t));
-  bzero(new, sizeof(disk_t));
+  disk_t *disk = heap_alloc(sizeof(disk_t));
+  bzero(disk, sizeof(disk_t));
 
-  new->controller  = controller;
-  new->data        = data;
-  new->sector_size = DISK_DEFAULT_SECTOR_SIZE;
+  disk->data        = data;
+  disk->controller  = controller;
+  disk->sector_size = DISK_DEFAULT_SECTOR_SIZE;
+  slist_add(&disk_first, disk, disk_t);
 
-  slist_add(&disk_first, new, disk_t);
-  pdebg("Disk: Added a new disk device (Address: 0x%x Controller: %d)", new, new->controller);
+  disk_info("Added a new disk device");
+  pinfo("      |- Data: 0x%p", disk->data);
+  pinfo("      `- Controller: %u (%s)", disk->controller, __disk_get_controller_name(disk->controller));
 
-  return new;
+  return disk;
 }
 
 void disk_remove(disk_t *disk) {
@@ -37,19 +48,18 @@ void disk_remove(disk_t *disk) {
     return;
 
   slist_del(&disk_first, disk, disk_t);
-  vmm_free(disk);
+  heap_free(disk);
 
   return;
 }
 
 bool disk_do(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
-  typedef bool port_do_t(void *, disk_op_t, uint64_t, uint64_t, uint8_t *);
-
-  port_do_t *port_do = NULL;
+  typedef int32_t port_do_t(void *, disk_op_t, uint64_t, uint64_t, uint8_t *);
+  port_do_t      *port_do = NULL;
 
   switch (disk->controller) {
   case DISK_CONTROLLER_AHCI:
-    port_do = (void *)ahci_port_do;
+    port_do = (void *)ahci_do;
     break;
 
   default:
@@ -58,7 +68,7 @@ bool disk_do(disk_t *disk, disk_op_t op, uint64_t lba, uint64_t sector_count, ui
     return false;
   }
 
-  return port_do(disk->data, op, lba, sector_count, buf);
+  return port_do(disk->data, op, lba, sector_count, buf) == 0 ? true : false;
 }
 
 bool disk_read_lba(disk_t *disk, uint64_t lba, uint64_t size, uint8_t *buf) {

@@ -14,7 +14,7 @@ typedef enum disk_type {
 } disk_type_t;
 
 typedef enum disk_controller {
-  DISK_CONTROLLER_AHCI = 0,
+  DISK_CONTROLLER_AHCI,
 } disk_controller_t;
 
 typedef enum disk_op {

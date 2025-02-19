@@ -1,15 +1,16 @@
 #include "core/ahci.h"
 #include "core/disk.h"
-#include "core/im.h"
 #include "core/pci.h"
 
-#include "mm/pm.h"
-#include "mm/vmm.h"
-
 #include "util/bit.h"
-#include "util/math.h"
 #include "util/mem.h"
 #include "util/printk.h"
+
+#include "mm/heap.h"
+#include "mm/vmm.h"
+
+#include "types.h"
+#include "errno.h"
 
 // clang-format off
 
@@ -54,7 +55,7 @@ enum ahci_bohc_bits {
   // ...
 };
 
-typedef bool ahci_op_func_t(ahci_port_data_t *, uint64_t, uint64_t, uint8_t *);
+typedef int32_t ahci_op_func_t(ahci_port_data_t *, uint64_t, uint64_t, uint8_t *);
 
 struct ahci_protocol_func {
   disk_op_t       op;
@@ -70,12 +71,12 @@ struct ahci_protocol_func ahci_protocol_funcs[] = {
      .op           = DISK_OP_READ,
      .func         = ahci_sata_port_read,
      .name         = "SATA read",
-     .needs_buffer = true },
+     .needs_buffer = true},
     {.protocol        = AHCI_PROTOCOL_SATA,
      .op           = DISK_OP_WRITE,
      .func         = ahci_sata_port_write,
      .name         = "SATA write",
-     .needs_buffer = true },
+     .needs_buffer = true},
     {.protocol        = AHCI_PROTOCOL_SATA,
      .op           = DISK_OP_INFO,
      .func         = ahci_sata_port_info,
@@ -87,17 +88,19 @@ struct ahci_protocol_func ahci_protocol_funcs[] = {
      .op           = DISK_OP_READ,
      .func         = ahci_atapi_port_read,
      .name         = "ATAPI read",
-     .needs_buffer = true },
+     .needs_buffer = true},
     {.protocol        = AHCI_PROTOCOL_ATAPI,
      .op           = DISK_OP_WRITE,
      .func         = ahci_atapi_port_write,
      .name         = "ATAPI write",
-     .needs_buffer = true },
+     .needs_buffer = true},
     {.protocol        = AHCI_PROTOCOL_ATAPI,
      .op           = DISK_OP_INFO,
      .func         = ahci_atapi_port_info,
      .name         = "ATAPI info",
      .needs_buffer = false},
+
+    {.func = NULL},
 };
 
 char *__ahci_port_protocol(ahci_port_data_t *data) {
@@ -111,47 +114,38 @@ char *__ahci_port_protocol(ahci_port_data_t *data) {
   return "unknown";
 }
 
-bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buffer) {
+int32_t ahci_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buffer) {
   if (NULL == data)
-    return false;
+    return -EINVAL;
 
   struct ahci_protocol_func *pf = NULL;
 
-  for (uint8_t i = 0; i < sizeof(ahci_protocol_funcs) / sizeof(struct ahci_protocol_func); i++) {
-    if (NULL == (pf = &ahci_protocol_funcs[i]))
-      continue;
-
-    if (pf->op != op)
-      continue;
-
-    if (pf->protocol != data->protocol)
+  for (pf = &ahci_protocol_funcs[0]; pf->func != NULL; pf++) {
+    if (pf->op != op || pf->protocol != data->protocol)
       continue;
 
     if (pf->needs_buffer && (NULL == buffer || sector_count <= 0)) {
-      pfail("AHCI: (0x%x) %s operation failed, required buffer arguments not provided", data->port, pf->name);
-      return false;
+      ahci_fail("(0x%x) %s operation failed, required buffer arguments not provided", data->port, pf->name);
+      return -EINVAL;
     }
 
-    pdebg("AHCI: (0x%x) performing %s operation", data->port, pf->name);
+    ahci_debg("(0x%x) performing %s operation", data->port, pf->name);
     return pf->func(data, lba, sector_count, buffer);
   }
 
-  pfail("AHCI: (0x%x) unknown operation %d (Protocol: %s, %d)",
-      data->port,
-      op,
-      __ahci_port_protocol(data),
-      data->protocol);
-  return false;
+  ahci_fail("(0x%x) unknown %s operation: %d", data->port, __ahci_port_protocol(data), op);
+  return -EINVAL;
 }
 
-bool ahci_init(pci_device_t *dev) {
-  uint32_t abar = pci_device_read32(dev, 0x24);
-  // lower 13 bits are not part of the base address (page 18 in da spec)
-  ahci_mem_t *base = (ahci_mem_t *)(uint64_t)(abar & 0xfffffff0);
+int32_t ahci_init(pci_device_t *dev) {
+  uint64_t abar = pci_device_read32(dev, 0x24);
 
-  // make sure the base address is mapped
-  pm_extend((uint64_t)base + sizeof(ahci_mem_t));
-  pm_set((uint64_t)base, div_ceil(sizeof(ahci_mem_t), PM_PAGE_SIZE), PM_ENTRY_FLAGS_DEFAULT | PM_ENTRY_FLAG_PCD);
+  // lower 13 bits are not part of the base address (page 18 in da spec)
+  ahci_mem_t *base = (void *)(abar & 0xfffffff0);
+
+  // map the base address after calculating max page count we'll need
+  uint64_t base_page_count = vmm_calc(sizeof(ahci_mem_t));
+  base = vmm_map_to_paddr((uint64_t)base, base_page_count, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT | VMM_FLAG_PCD);
 
   // if BOHC is implemented and the BOHC indicates that the HBA is not OS owned, we'll own it
   if (bit_get(base->cap2, AHCI_CAP2_BOH) == 1 && bit_get(base->bohc, AHCI_BOHC_OOS) != 1) {
@@ -174,28 +168,30 @@ bool ahci_init(pci_device_t *dev) {
   bit_set(base->ghc, 1, 0);
   base->is = UINT32_MAX;
 
-  pinfo(
-      "AHCI: (0x%x) HBA supports version %d.%d, enumerating ports", base, (base->vs >> 16) & 0xFFFF, base->vs & 0xFFFF);
+  ahci_info("(0x%x) HBA supports version %d.%d", base, (base->vs >> 16) & 0xFFFF, base->vs & 0xFFFF);
+  ahci_info("(0x%x) enumerating %u ports", base, sizeof(base->ports) / sizeof(base->ports[0]));
 
-  ahci_port_data_t *port_data = NULL;
+  ahci_port_data_t *port_data  = NULL;
+  void             *port_vaddr = NULL;
 
   for (uint8_t i = 0; i < sizeof(base->pi) * 8; i++) {
     if (((base->pi >> i) & 1) != 1)
       continue;
 
-    if (!ahci_port_check(&base->ports[i]))
+    if (!ahci_port_is_connected(&base->ports[i]))
       continue;
 
-    if (!ahci_port_init(&base->ports[i]))
+    if ((port_vaddr = ahci_port_setup(&base->ports[i])) == NULL)
       continue;
 
     // allocate space for the new port data
-    port_data = vmm_alloc(sizeof(struct ahci_port_data));
-    bzero(port_data, sizeof(struct ahci_port_data));
+    port_data = heap_alloc(sizeof(ahci_port_data_t));
+    bzero(port_data, sizeof(ahci_port_data_t));
 
     // save the port data
-    port_data->base  = base;
     port_data->port  = &base->ports[i];
+    port_data->hba   = base;
+    port_data->vaddr = port_vaddr;
     port_data->index = i;
 
     // setup port functions
@@ -209,12 +205,10 @@ bool ahci_init(pci_device_t *dev) {
       break;
     }
 
-    pinfo("AHCI: (0x%x:%d) Address: 0x%x Signature: 0x%x (%s)",
-        base,
-        port_data->index,
-        port_data->port,
-        port_data->port->sig,
-        __ahci_port_protocol(port_data));
+    ahci_info("(0x%x) found an available port at index %u", base, port_data->index);
+    pinfo("      |- Signature: 0x%x (%s)", port_data->port->sig, __ahci_port_protocol(port_data));
+    pinfo("      |- Address: 0x%p", port_data);
+    pinfo("      `- Vaddr: 0x%p", port_data->vaddr);
 
     // add the disk and load the partitions
     port_data->disk = disk_add(DISK_CONTROLLER_AHCI, port_data);
@@ -227,5 +221,5 @@ bool ahci_init(pci_device_t *dev) {
   // enable interrupts
   // bit_set(base->ghc, 1, 1);
 
-  return true;
+  return 0;
 }

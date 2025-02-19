@@ -179,6 +179,10 @@ void __sched_timer_handler(im_stack_t *stack) {
     return;
   }
 
+  // if we received a signal, handle it
+  if (!task_sigset_empty(task_current))
+    task_signal_pop(task_current);
+
   /*
 
    * decrement the remaining ticks of the current task
@@ -186,9 +190,6 @@ void __sched_timer_handler(im_stack_t *stack) {
 
   */
   task_current->ticks--;
-
-  // TODO: handle the next signal in the task sigset
-
   return;
 }
 

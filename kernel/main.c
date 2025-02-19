@@ -32,7 +32,6 @@
 #include "core/user.h"
 
 #include "mm/pmm.h"
-#include "mm/heap.h"
 
 #include "sched/sched.h"
 #include "sched/task.h"
@@ -52,7 +51,7 @@ void entry() {
     pfail("Failed to initalize the serial communication: %s", strerror(err));
 
   // load multiboot data
-  if ((err = mb_load((void *)BOOT_MB_DATA_ADDR)) != 0)
+  if ((err = mb_load((void *)BOOT_MB_INFO_VADDR)) != 0)
     panic("Failed to load multiboot data: %s", strerror(err));
 
   // initialize physical memory manager (so we can start mapping & allocating memory)
@@ -101,11 +100,11 @@ void entry() {
   // make current task (us) critikal
   sched_prio(TASK_PRIO_CR1TIKAL);
 
-  // temporary
-  _hang();
-
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
+
+  // temporary
+  _hang();
 
   /*
 

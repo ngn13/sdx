@@ -155,6 +155,7 @@ int32_t task_free(task_t *task);                     // free a given task
 #define task_ticks(task)               (task->prio * TASK_TICKS_DEFAULT)
 #define task_update_regs(task, stack)  __stack_to_regs((&task->regs), stack) // update task registers from the im_stack_t
 #define task_update_stack(task, stack) __regs_to_stack((&task->regs), stack) // update im_stack_t from task registers
+#define task_sigset_empty(task)        (NULL == task->signal)
 #define task_vmm_switch(task)                                                                                          \
   do {                                                                                                                 \
     vmm_sync(task->vmm);                                                                                               \

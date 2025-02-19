@@ -7,6 +7,8 @@
 #include "util/printk.h"
 
 #define gpt_debg(f, ...) pdebg("GPT: (0x%x) " f, disk, ##__VA_ARGS__)
+#define gpt_info(f, ...) pinfo("GPT: (0x%x) " f, disk, ##__VA_ARGS__)
+#define gpt_fail(f, ...) pfail("GPT: (0x%x) " f, disk, ##__VA_ARGS__)
 
 #define GPT_SIGNATURE  0x5452415020494645 // signature for the partition table header
 #define GPT_PROTECTIVE 0xee               // PMBR OS type
@@ -50,18 +52,18 @@ void __gpt_load_entry(disk_t *disk, struct gpt_part_entry *part, uint64_t indx) 
   if (bit_get(part->attr, 1))
     return;
 
-  gpt_debg("loading partition %d", indx);
-  gpt_debg("|- Type: %g", type);
-  gpt_debg("|- GUID: %g", guid);
-  gpt_debg("|- Start LBA: %l", part->start_lba);
-  gpt_debg("|- End LBA: %l", part->end_lba);
-  gpt_debg("`- Attributes: 0x%p", part->attr);
+  gpt_debg("loaded the GPT partition %u", indx);
+  pdebg("     |- Type: %g", type);
+  pdebg("     |- GUID: %g", guid);
+  pdebg("     |- Start LBA: %u", part->start_lba);
+  pdebg("     |- End LBA: %u", part->end_lba);
+  pdebg("     `- Attributes: 0x%p", part->attr);
 
   disk_part_t *dp = NULL;
 
   // add the new disk partition
   if (NULL == (dp = disk_part_add(disk, part->start_lba, (part->end_lba + 1) - part->start_lba))) {
-    gpt_debg("failed to add a partition");
+    gpt_fail("failed to add the partition %u", indx);
     return;
   }
 
@@ -72,7 +74,7 @@ void __gpt_load_entry(disk_t *disk, struct gpt_part_entry *part, uint64_t indx) 
 
 bool gpt_load(disk_t *disk) {
   struct gpt_table_header header;
-  uint64_t                i = 0, e = 0, part_start = 0;
+  uint64_t                i = 0, e = 0, part_start = 0, guid[2];
 
   bzero(&header, sizeof(header));
 
@@ -86,10 +88,11 @@ bool gpt_load(disk_t *disk) {
     return false;
   }
 
-  gpt_debg("GUID: 0x%p%p", ((uint64_t *)header.guid)[0], ((uint64_t *)header.guid)[1]);
-  gpt_debg("array LBA: %l", header.lba_array);
-  gpt_debg("array entry count: %d", header.entry_count);
-  gpt_debg("array entry size: %d", header.entry_size);
+  guid[0] = ((uint64_t *)header.guid)[0];
+  guid[1] = ((uint64_t *)header.guid)[1];
+
+  gpt_info("loaded the GPT header from the disk", guid);
+  gpt_info("GUID: %g", guid);
 
   if (disk->sector_size % header.entry_size) {
     gpt_debg("sector size (%l) is not aligned by entry size (%l)", disk->sector_size, header.entry_size);

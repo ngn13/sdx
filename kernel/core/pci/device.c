@@ -1,9 +1,12 @@
 #include "core/pci.h"
+#include "core/ahci.h"
+
 #include "util/mem.h"
 #include "util/printk.h"
+#include "util/string.h"
 
-// driver headers
-#include "core/ahci.h"
+#include "types.h"
+#include "errno.h"
 
 // driver list
 pci_driver_t *pci_drivers[] = {
@@ -41,53 +44,46 @@ void pci_device_load(pci_device_t *d, uint8_t bus, uint8_t slot, uint8_t func) {
   d->func = func;
 }
 
-bool pci_device_init(pci_device_t *d) {
+int32_t pci_device_init(pci_device_t *d) {
   pci_driver_t *cur = NULL;
+  int32_t       err = 0;
 
-  for (uint8_t i = 0; i < PCI_DRIVER_COUNT; i++) {
+  for (uint8_t i = 0; i < PCI_DRIVER_COUNT; i++, cur = NULL) {
     if ((cur = __pci_get_driver(i)) == NULL)
       continue;
 
-    if (cur->vendor_id != PCI_VENDOR_ANY && cur->vendor_id != d->vendor_id) {
-      cur = NULL;
+    if (cur->vendor_id != PCI_VENDOR_ANY && cur->vendor_id != d->vendor_id)
       continue;
-    }
 
-    if (cur->device_id != PCI_DEVICE_ANY && cur->device_id != d->device_id) {
-      cur = NULL;
+    if (cur->device_id != PCI_DEVICE_ANY && cur->device_id != d->device_id)
       continue;
-    }
 
-    if (cur->type != PCI_TYPE_ANY && cur->class != d->class) {
-      cur = NULL;
+    if (cur->type != PCI_TYPE_ANY && cur->class != d->class)
       continue;
-    }
 
-    if (cur->class != PCI_CLASS_ANY && cur->class != d->class) {
-      cur = NULL;
+    if (cur->class != PCI_CLASS_ANY && cur->class != d->class)
       continue;
-    }
 
-    if (cur->subclass != PCI_SUBCLASS_ANY && cur->subclass != d->subclass) {
-      cur = NULL;
+    if (cur->subclass != PCI_SUBCLASS_ANY && cur->subclass != d->subclass)
       continue;
-    }
 
     break;
   }
 
   // device does not have a driver
   if (NULL == cur)
-    return false;
+    return -ENOSYS;
 
-  printk(KERN_INFO,
-      "PCI: loading %s for 0x%x:0x%x (Bus: %d Slot: %d Function: %d)\n",
-      cur->name,
-      d->vendor_id,
-      d->device_id,
-      d->bus,
-      d->slot,
-      d->func);
+  // device does not have an initialization function
+  if (NULL == cur->init)
+    return 0;
 
-  return cur->init != NULL ? cur->init(d) : true;
+  // try to initialize the device
+  if ((err = cur->init(d)) != 0) {
+    pfail("PCI: failed to load %s driver for 0x%x:0x%x: %s", d->vendor_id, d->device_id, strerror(err));
+    return err;
+  }
+
+  pinfo("PCI: loaded %s driver for 0x%x:0x%x\n", cur->name, d->vendor_id, d->device_id);
+  return 0;
 }

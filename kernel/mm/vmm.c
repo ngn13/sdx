@@ -29,6 +29,17 @@ void vmm_free(void *mem) {
 #define vmm_warn(f, ...) pwarn("VMM: " f, ##__VA_ARGS__)
 #define vmm_debg(f, ...) pdebg("VMM: " f, ##__VA_ARGS__)
 
+/*
+
+ * not an actual entry flag, bit 9 of the entry is free for use
+ * so i use to keep track of pages that are allocated from the PMM
+
+*/
+#define VMM_FLAG_PADDR_ALLOC (1 << 9)
+#define VMM_FLAGS_CLEAR                                                                                                \
+  (~(VMM_FLAG_P | VMM_FLAG_RW | VMM_FLAG_US | VMM_FLAG_PWT | VMM_FLAG_PCD | VMM_FLAG_A | VMM_FLAG_D | VMM_FLAG_PAT |   \
+      VMM_FLAG_G | VMM_FLAG_XD | VMM_FLAG_PADDR_ALLOC))
+
 #define vmm_vma_is_valid(vma) (VMM_VMA_KERNEL == vma || VMM_VMA_USER == vma)
 #define vmm_vma_does_contain(addr)                                                                                     \
   ((VMM_VMA_KERNEL_END > addr && addr >= VMM_VMA_KERNEL) || (VMM_VMA_USER_END > addr && addr >= VMM_VMA_USER))
@@ -61,14 +72,6 @@ void vmm_free(void *mem) {
 #define vmm_pt_paddr(vaddr) (vmm_entry_to_addr(vmm_pd_entry(vaddr)))
 #define vmm_pt_index(vaddr) ((vaddr >> 12) & 0x1FF)
 #define vmm_pt_entry(vaddr) (vmm_pt_vaddr(vaddr)[vmm_pt_index(vaddr)])
-
-/*
-
- * not an actual entry flag, bit 9 of the entry is free for use
- * so i use to keep track of pages that are allocated from the PMM
-
-*/
-#define VMM_FLAG_PADDR_ALLOC (1 << 9)
 
 uint64_t *__vmm_entry_from_vaddr(uint64_t vaddr) {
   uint64_t pd_entry = 0;
@@ -183,7 +186,10 @@ uint64_t vmm_resolve(void *vaddr) {
 
   if (NULL == (entry = __vmm_entry_from_vaddr((uint64_t)vaddr)))
     return 0;
-  return vmm_entry_to_addr(entry);
+
+  if (*entry & VMM_FLAG_PS)
+    return vmm_entry_to_addr(*entry) | ((uint64_t)vaddr & 0x1fffff);
+  return vmm_entry_to_addr(*entry) | ((uint64_t)vaddr & 0xfff);
 }
 
 int32_t vmm_unmap(void *_vaddr, uint64_t num) {
@@ -295,17 +301,19 @@ void *__vmm_map_to_vaddr_internal(uint64_t vaddr, uint64_t num, uint64_t align, 
       paddr, vaddr, num, flags, VMM_VMA_USER >= vaddr && vaddr > VMM_VMA_USER_END ? VMM_FLAG_US : 0, true);
 }
 
-uint64_t __vmm_find_contiguous(uint64_t num, uint64_t vma) {
+uint64_t __vmm_find_contiguous(uint64_t num, uint64_t align, uint64_t vma) {
   uint64_t pos = vma, start = 0, cur = 0;
 
-  for (; num > cur; pos += VMM_PAGE_SIZE) {
+  for (; num > cur && vmm_vma_does_contain(pos); pos += VMM_PAGE_SIZE) {
     // first page, so our first allocation will be the start address
-    if (cur == 0)
-      start = pos;
+    if (cur == 0) {
+      // make sure the start address is aligned
+      if (align != 0 && pos % align != 0)
+        continue;
 
-    // make sure the virutal address is in one of the VMAs
-    if (!vmm_vma_does_contain(pos))
-      break;
+      // set the start address
+      start = pos;
+    }
 
     /*
 
@@ -339,7 +347,7 @@ void *vmm_map_with(uint64_t num, uint64_t align, uint64_t vma, uint64_t flags) {
 
   uint64_t vaddr = 0;
 
-  if ((vaddr = __vmm_find_contiguous(num, vma)) == 0)
+  if ((vaddr = __vmm_find_contiguous(num, align, vma)) == 0)
     return NULL;
 
   return __vmm_map_to_vaddr_internal(vaddr, num, align, flags);
@@ -353,7 +361,7 @@ void *vmm_map_to_paddr(uint64_t paddr, uint64_t num, uint64_t vma, uint64_t flag
 
   uint64_t vaddr = 0, pos = 0;
 
-  if ((vaddr = __vmm_find_contiguous(num, vma)) == 0)
+  if ((vaddr = __vmm_find_contiguous(num, 0, vma)) == 0)
     return NULL;
 
   if (paddr % VMM_PAGE_SIZE != 0) {
