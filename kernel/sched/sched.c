@@ -1,14 +1,19 @@
 #include "sched/signal.h"
 #include "sched/sched.h"
 #include "sched/task.h"
+#include "sched/stack.h"
 
 #include "util/string.h"
 #include "util/panic.h"
 #include "util/list.h"
+#include "util/mem.h"
 #include "util/bit.h"
 
 #include "core/im.h"
 #include "core/pic.h"
+
+#include "boot/boot.h"
+#include "mm/vmm.h"
 
 #include "errno.h"
 #include "types.h"
@@ -123,7 +128,13 @@ void __sched_timer_handler(im_stack_t *stack) {
     break;
 
   case TASK_STATE_SAVE:
-    // registers should be saved, don't update them
+    /*
+
+     * registers should be saved, don't update them
+     * update the interrupt stack instead
+
+    */
+    task_update_stack(task_current, stack);
     break;
 
   case TASK_STATE_WAIT:
@@ -173,8 +184,8 @@ void __sched_timer_handler(im_stack_t *stack) {
     task_current->ticks = task_ticks(task_current);
     task_current->state = TASK_STATE_READY;
     task_update_stack(task_current, stack);
+    task_vmm_switch(task_current);
 
-    // jump to the task
     task_current->ticks--;
     return;
   }
@@ -217,7 +228,7 @@ void __sched_exception_handler(im_stack_t *stack) {
 
   case IM_INT_PAGE_FAULT:
     sched_fail("#PF fault at 0x%x", stack->rip);
-    printf("      P=%u W=%u U=%u R=%u I=%u PK=%u SS=%u SGX=%u\n",
+    printf("            P=%u W=%u U=%u R=%u I=%u PK=%u SS=%u SGX=%u\n",
         bit_get(stack->error, 0),
         bit_get(stack->error, 1),
         bit_get(stack->error, 2),
@@ -236,7 +247,7 @@ void __sched_exception_handler(im_stack_t *stack) {
   }
 
   if (NULL == task_current)
-    panic("exception during scheduler initialization");
+    panic("Exception during scheduler initialization");
 }
 
 int32_t sched_init() {
@@ -266,7 +277,7 @@ int32_t sched_init() {
 
   // setup the current and the first task (pid 0)
   if ((task_main = sched_fork()) == NULL) {
-    sched_debg("failed to setup the maint task");
+    sched_debg("failed to setup the main task");
     return -EFAULT;
   }
 
@@ -294,8 +305,10 @@ task_t *sched_fork() {
     return NULL;
   }
 
-  // obtain a new PID
+  // set the required values
   __sched_pid(task_new);
+  task_new->state = TASK_STATE_READY;
+  task_new->prio  = TASK_PRIO_LOW;
 
   // set the parent PID
   if (NULL != task_current)
@@ -303,7 +316,6 @@ task_t *sched_fork() {
 
   // add new task to the task list
   __sched_queue_add(task_new);
-
   return task_new;
 }
 

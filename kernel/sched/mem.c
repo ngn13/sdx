@@ -1,4 +1,5 @@
 #include "sched/mem.h"
+#include "sched/sched.h"
 #include "sched/task.h"
 
 #include "util/list.h"
@@ -72,8 +73,8 @@ int32_t task_mem_del(task_t *task, task_mem_type_t type, void *vaddr) {
     vmm_save();
     task_vmm_switch(task);
 
-    __task_mem_free(cur);
     slist_del(&task->mem, cur, task_mem_t);
+    __task_mem_free(cur);
 
     vmm_restore();
     return 0;

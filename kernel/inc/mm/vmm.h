@@ -3,18 +3,18 @@
 #include "util/math.h"
 #include "types.h"
 
-// virtual memory areas
-#define VMM_VMA_USER     (0x0000000000000000)
-#define VMM_VMA_USER_END (0x00007fffffffffff)
-
-#define VMM_VMA_KERNEL     (0xffff800000000000)
-#define VMM_VMA_KERNEL_END (BOOT_KERNEL_START_VADDR)
-
 // paging stuff
 #define VMM_PAGE_SIZE         (4096)
 #define VMM_PAGING_LEVEL      (4)
 #define VMM_TABLE_ENTRY_COUNT (512)
 #define VMM_TABLE_ENTRY_SIZE  (8)
+
+// virtual memory areas
+#define VMM_VMA_USER     (0x0000000000000000 + VMM_PAGE_SIZE) // 0x0 can be interpreted with NULL
+#define VMM_VMA_USER_END (0x00007fffffffffff)
+
+#define VMM_VMA_KERNEL     (0xffff800000000000)
+#define VMM_VMA_KERNEL_END (BOOT_KERNEL_START_VADDR)
 
 // paging entry flags (https://wiki.osdev.org/Paging#Page_Directory)
 #define VMM_FLAG_P        (1)         // present
@@ -32,13 +32,7 @@
 
 #ifndef __ASSEMBLY__
 
-// initializes the virtual memory manager with default max/min addresses
-bool vmm_init();
-
-// allocation functions
-void *vmm_alloc(uint64_t size);
-void *vmm_realloc(void *mem, uint64_t size);
-void  vmm_free(void *mem);
+int32_t vmm_init(); // setup all the required stuff for the VMM
 
 void   *vmm_new();             // create a new VMM
 void   *vmm_get();             // get the current VMM
@@ -48,15 +42,19 @@ int32_t vmm_switch(void *vmm); // switch to a different VMM
 #define vmm_save() void *_saved_vmm = vmm_get() // save the current VMM
 #define vmm_restore()                                                                                                  \
   do {                                                                                                                 \
+    if (vmm_get() == _saved_vmm)                                                                                       \
+      break;                                                                                                           \
     vmm_sync(_saved_vmm);                                                                                              \
     vmm_switch(_saved_vmm);                                                                                            \
   } while (0) // sync the saved VMM with the current one and switch back to it
 
+uint64_t vmm_resolve(void *vaddr); // resolve a virtual address to a physical address
+uint64_t vmm_vma(void *vaddr);     // get the VMA that contains the given virtual address
+
 int32_t vmm_set(void *vaddr, uint64_t num, uint64_t flags);   // set the specified flags for the vaddr entry
 int32_t vmm_clear(void *vaddr, uint64_t num, uint64_t flags); // clear the specified flags for the vaddr entry
 #define vmm_calc(size) (div_ceil(size, VMM_PAGE_SIZE))
-uint64_t vmm_resolve(void *vaddr);             // resolve a virtual address to a physical address
-int32_t  vmm_unmap(void *vaddr, uint64_t num); // unmap num amount of pages from the given virtual address
+int32_t vmm_unmap(void *vaddr, uint64_t num); // unmap num amount of pages from the given virtual address
 
 /*
 

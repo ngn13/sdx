@@ -100,7 +100,7 @@ typedef struct task {
   struct task *prev; // previous task in the task queue
 } task_t;
 
-task_t *task_create(task_t *task);                   // create a new task, if a task is provided copy it
+task_t *task_create(task_t *copy);                   // create a new task, if a task is provided copy it
 int32_t task_rename(task_t *task, const char *name); // rename the task
 int32_t task_free(task_t *task);                     // free a given task
 
@@ -158,6 +158,8 @@ int32_t task_free(task_t *task);                     // free a given task
 #define task_sigset_empty(task)        (NULL == task->signal)
 #define task_vmm_switch(task)                                                                                          \
   do {                                                                                                                 \
+    if (vmm_get() == task->vmm)                                                                                        \
+      break;                                                                                                           \
     vmm_sync(task->vmm);                                                                                               \
     vmm_switch(task->vmm);                                                                                             \
   } while (0)

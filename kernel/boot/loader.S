@@ -207,3 +207,6 @@ __entry64:
 
   // call kernel entry, should never return
   call entry
+
+  // if we somehow do return, just halt
+  jmp __halt

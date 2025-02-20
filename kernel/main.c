@@ -54,6 +54,10 @@ void entry() {
   if ((err = mb_load((void *)BOOT_MB_INFO_VADDR)) != 0)
     panic("Failed to load multiboot data: %s", strerror(err));
 
+  // initialize virtual memory manager
+  if ((err = vmm_init()) != 0)
+    panic("Failed to initialize virtual memory manager: %s", strerror(err));
+
   // initialize physical memory manager (so we can start mapping & allocating memory)
   if ((err = pmm_init()) != 0)
     panic("Failed to initialize physical memory manager: %s", strerror(err));
@@ -142,9 +146,6 @@ void entry() {
 
   if ((err = vfs_mount("/", rootfs)) != 0)
     panic("Failed to mount the root filesystem: %s", strerror(err));
-
-  // temporary
-  _hang();
 
   /*
 

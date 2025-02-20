@@ -3,6 +3,7 @@
 #include "sched/mem.h"
 
 #include "util/list.h"
+#include "util/printk.h"
 #include "util/string.h"
 #include "util/mem.h"
 
@@ -25,10 +26,19 @@ int32_t task_stack_alloc(task_t *task) {
 
   */
   void *kernel_stack = vmm_map_with(TASK_STACK_PAGE_COUNT, 0, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT | VMM_FLAG_XD);
-  void *user_stack   = vmm_map_with(TASK_STACK_PAGE_COUNT, 0, VMM_VMA_USER, VMM_FLAGS_DEFAULT | VMM_FLAG_XD);
 
-  if (NULL == kernel_stack || NULL == user_stack)
+  if (NULL == kernel_stack) {
+    pfail("Task: failed to allocate kernel stack for 0x%p", task);
     return -ENOMEM;
+  }
+
+  void *user_stack = vmm_map_with(TASK_STACK_PAGE_COUNT, 0, VMM_VMA_USER, VMM_FLAGS_DEFAULT | VMM_FLAG_XD);
+
+  if (NULL == user_stack) {
+    pfail("Task: failed to allocate user stack for 0x%p", task);
+    vmm_unmap(kernel_stack, TASK_STACK_PAGE_COUNT);
+    return -ENOMEM;
+  }
 
   task_mem_add(task, TASK_MEM_TYPE_STACK, kernel_stack, vmm_resolve(kernel_stack), TASK_STACK_PAGE_COUNT);
   task_mem_add(task, TASK_MEM_TYPE_STACK, user_stack, vmm_resolve(user_stack), TASK_STACK_PAGE_COUNT);
@@ -123,7 +133,7 @@ uint64_t task_stack_get(task_t *task, uint64_t vma) {
     if (vma == VMM_VMA_USER && cur->vaddr < (void *)VMM_VMA_USER_END)
       return (uint64_t)cur->vaddr + TASK_STACK_PAGE_COUNT * VMM_PAGE_SIZE;
 
-    if (vma == VMM_VMA_KERNEL && cur->vaddr > (void *)VMM_VMA_USER_END)
+    if (vma == VMM_VMA_KERNEL && cur->vaddr >= (void *)VMM_VMA_KERNEL)
       return (uint64_t)cur->vaddr + TASK_STACK_PAGE_COUNT * VMM_PAGE_SIZE;
   }
 

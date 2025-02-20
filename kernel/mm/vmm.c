@@ -4,26 +4,11 @@
 #include "util/mem.h"
 #include "util/printk.h"
 #include "util/bit.h"
+#include "util/asm.h"
 #include "util/string.h"
 
 #include "types.h"
 #include "errno.h"
-
-bool vmm_init() {
-  return false;
-}
-
-void *vmm_alloc(uint64_t size) {
-  return NULL;
-}
-
-void *vmm_realloc(void *mem, uint64_t size) {
-  return NULL;
-}
-
-void vmm_free(void *mem) {
-  return;
-}
 
 #define vmm_fail(f, ...) pfail("VMM: " f, ##__VA_ARGS__)
 #define vmm_warn(f, ...) pwarn("VMM: " f, ##__VA_ARGS__)
@@ -93,6 +78,22 @@ bool __vmm_is_table_free(uint64_t *table_vaddr) {
     if (table_vaddr[i] != 0)
       return false;
   return true;
+}
+
+int32_t vmm_init() {
+  /*
+
+   * enable the XD page flag (bit 11 on EFER)
+
+   * for more information see:
+   * https://wiki.osdev.org/Paging#Page_Map_Table_Entries
+   * https://wiki.osdev.org/CPU_Registers_x86-64#IA32_EFER
+
+  */
+  uint64_t efer = _msr_read(MSR_EFER);
+  _msr_write(MSR_EFER, efer | (1 << 11));
+
+  return 0;
 }
 
 int32_t vmm_sync(void *vmm) {
@@ -179,6 +180,12 @@ int32_t vmm_clear(void *vaddr, uint64_t num, uint64_t flags) {
 
   *entry |= flags;
   return 0;
+}
+
+uint64_t vmm_vma(void *vaddr) {
+  if ((uint64_t)vaddr >= VMM_VMA_KERNEL && (uint64_t)vaddr < VMM_VMA_KERNEL_END)
+    return VMM_VMA_KERNEL;
+  return VMM_VMA_USER;
 }
 
 uint64_t vmm_resolve(void *vaddr) {

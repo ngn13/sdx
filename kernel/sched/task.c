@@ -3,6 +3,7 @@
 #include "sched/stack.h"
 #include "sched/mem.h"
 
+#include "util/printk.h"
 #include "util/string.h"
 #include "util/list.h"
 #include "util/mem.h"
@@ -13,12 +14,21 @@
 #include "types.h"
 #include "errno.h"
 
-task_t *task_create(task_t *task) {
+task_t *task_create(task_t *copy) {
+
+  // TODO: maybe rename this function to task_new() and use current instead of copy?
+
   task_t *task_new = heap_alloc(sizeof(task_t));
+  int32_t err      = 0;
+
+  // clear the stack structure
   bzero(task_new, sizeof(task_t));
 
   // create a new VMM for the task
-  task_new->vmm = vmm_new();
+  if (NULL != copy)
+    task_new->vmm = vmm_new();
+  else
+    task_new->vmm = vmm_get();
 
   /*
 
@@ -27,24 +37,24 @@ task_t *task_create(task_t *task) {
    * and allocate a new memory region for the stack
 
   */
-  if (NULL != task)
-    task_mem_copy(task_new, task);
+  if (NULL != copy)
+    err = task_mem_copy(task_new, copy);
 
   else {
     task_mem_clear(task_new);
-    task_stack_alloc(task_new);
+    err = task_stack_alloc(task_new);
   }
+
+  // check for errors
+  if (err != 0)
+    return NULL;
 
   // setup new task's signal queue
   task_signal_clear(task_new);
 
-  // set the required values
-  task_new->state = TASK_STATE_READY;
-  task_new->prio  = TASK_PRIO_LOW;
-
   // copy registers
-  if (NULL != task)
-    memcpy(&task_new->regs, &task->regs, sizeof(task_regs_t));
+  if (NULL != copy)
+    memcpy(&task_new->regs, &copy->regs, sizeof(task_regs_t));
 
   /*
 

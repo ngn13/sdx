@@ -40,7 +40,7 @@ error(){
 }
 
 desc() {
-  echo -e "      ${FG_BOLD}${1}${FG_RESET}"
+  echo -e "     ${FG_BOLD}${1}${FG_RESET}"
 }
 
 # checks if the previous command failed

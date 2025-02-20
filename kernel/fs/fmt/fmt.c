@@ -15,6 +15,8 @@ struct fmt fmt_table[] = {
     {.name = NULL,  .load = NULL    },
 };
 
+// TODO: find a better way to handle format info
+
 int32_t fmt_load(vfs_node_t *node, void **entry, void **addr, uint64_t *count) {
   if (NULL == node || NULL == entry || NULL == addr || NULL == count)
     return -EINVAL;

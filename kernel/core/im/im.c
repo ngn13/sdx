@@ -175,19 +175,15 @@ void im_del_handler(uint8_t vector, im_handler_func_t handler) {
 
 void im_disable_handler(uint8_t vector, im_handler_func_t handler) {
   dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler) {
+    if (cur->vector == vector && cur->func == handler)
       cur->is_enabled = false;
-      break;
-    }
   }
 }
 
 void im_enable_handler(uint8_t vector, im_handler_func_t handler) {
   dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler) {
+    if (cur->vector == vector && cur->func == handler)
       cur->is_enabled = true;
-      break;
-    }
   }
 }
 

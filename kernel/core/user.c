@@ -6,14 +6,14 @@
 #include "core/user.h"
 #include "boot/boot.h"
 
-#include "mm/vmm.h"
-#include "mm/pm.h"
-
 #include "fs/fmt.h"
 #include "fs/vfs.h"
 
 #include "util/asm.h"
+#include "util/mem.h"
 #include "util/panic.h"
+
+#include "mm/vmm.h"
 
 #include "types.h"
 #include "errno.h"
@@ -21,11 +21,6 @@
 #define user_debg(f, ...) pdebg("User: (%s:%d:%s) " f, current->name, current->pid, __func__, ##__VA_ARGS__)
 #define user_info(f, ...) pinfo("User: (%s:%d:%s) " f, current->name, current->pid, __func__, ##__VA_ARGS__)
 #define user_fail(f, ...) pfail("User: (%s:%d:%s) " f, current->name, current->pid, __func__, ##__VA_ARGS__)
-
-#define MSR_EFER  0xC0000080 // EFER (Extended Feature Enables) MSR
-#define MSR_STAR  0xC0000081 // STAR (System Call Target Address) MSR
-#define MSR_LSTAR 0xC0000082 // LSTAR (IA-32e Mode System Call Target Address) MSR
-#define MSR_FMASK 0xC0000084 // FMASK (System Call Flag Mask) MSR
 
 struct user_call user_calls[] = {
     {.code = 0, .func = user_exit},
@@ -40,8 +35,8 @@ int32_t user_setup() {
    * see Table 2-2. IA-32 Architectural MSRs (Contd.) and
    * see SDM Vol 3, 6.8.8 Fast System Calls in 64-Bit Mode
 
-   * to enable SYSCALL/SYSRET, first thing we need to set bit 0 (SCE)
-   * in the EFER MSR, then to get them to actually work, we need to set some other MSRs
+   * to enable SYSCALL/SYSRET, first thing we need to set bit 0 (SCE) in the EFER MSR,
+   * then to get them to actually work, we need to set some other MSRs
 
    * STAR[47:32] = code segment (CS) for kernel (used for syscall)
    * stack segment (SS) is calculated by STAR[47:32] + 8
@@ -124,27 +119,66 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   task_mem_del(current, TASK_MEM_TYPE_CODE, NULL);
   task_mem_add(current, TASK_MEM_TYPE_CODE, fmt_addr, vmm_resolve(fmt_addr), fmt_count);
 
+  // update the registers
+  bzero(&current->regs, sizeof(task_regs_t));
+
+  /*
+
+   * bit 1 = reserved, 9 = interrupt enable
+   * https://en.wikipedia.org/wiki/FLAGS_register
+
+  */
+  current->regs.rflags = ((1 << 1) | (1 << 9));
+  current->regs.rip    = (uint64_t)fmt_entry;
+
+  switch (vmm_vma(fmt_entry)) {
+  case VMM_VMA_KERNEL:
+    task_current->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
+    task_current->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
+    task_current->regs.rsp = task_stack_get(task_current, VMM_VMA_KERNEL);
+    break;
+
+  case VMM_VMA_USER:
+    task_current->regs.cs  = gdt_offset(gdt_desc_user_code_addr);
+    task_current->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
+    task_current->regs.rsp = task_stack_get(task_current, VMM_VMA_USER);
+
+    /*
+
+     * ORed with 3 to set the RPL to 3
+     * see https://wiki.osdev.org/Segment_Selector
+
+    */
+    task_current->regs.cs |= 3;
+    task_current->regs.ss |= 3;
+    break;
+
+  default:
+    sched_fail("attempt to execute memory in an invalid VMA (0x%p)", fmt_entry);
+    err = -EINVAL;
+    break;
+  }
+
   // copy the environment variables to the stack
-  if ((err = task_stack_add_list(current, envp, ENV_MAX, &stack_envp)) < 0)
+  if ((err = task_stack_add_list(current, envp, ENV_MAX, &stack_envp)) != 0)
     panic("Exec: failed to copy arguments to new task stack for %s", path);
 
   // copy the arguments to the stack
-  if ((err = task_stack_add_list(current, argv, ARG_MAX, &stack_argv)) < 0)
+  if ((err = task_stack_add_list(current, argv, ARG_MAX, &stack_argv)) != 0)
     panic("Exec: failed to copy arguments to new task stack for %s", path);
 
   // add pointers for the argv and envp to the stack
   task_stack_add(current, &stack_envp, sizeof(void *));
   task_stack_add(current, &stack_argv, sizeof(void *));
 
-  // make sure the registers won't be updated next time scheduler is called
-  sched_state(TASK_STATE_SAVE);
-
-  user_info("new executable is ready");
+  sched_state(TASK_STATE_SAVE); // save the registers
+  sched_prio(TASK_PRIO_LOW);    // reset the priority
 
   // our modifications are complete, we can unlock (enable) the scheduler
   sched_unlock();
 
   // call the scheduler to run as the new task
+  user_info("new executable is ready");
   sched();
 
   // will never return
