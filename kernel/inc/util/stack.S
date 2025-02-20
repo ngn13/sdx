@@ -45,10 +45,11 @@
 /*
 
  * push_all/pop_all pushes/pops all the general purpose,
- * index and 64 bit registers, except for rax, so we can preserve the return value
+ * index and 64 bit registers, except for rax, so we can
+ * preserve the return value
 
 */
-.macro push_all2
+.macro push_all_save_ret
   pushq %rbx
   pushq %rcx
   pushq %rdx
@@ -65,7 +66,7 @@
   pushq %r15
 .endm
 
-.macro pop_all2
+.macro pop_all_save_ret
   popq %r15
   popq %r14
   popq %r13

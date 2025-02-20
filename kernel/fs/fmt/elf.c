@@ -1,16 +1,14 @@
 #include "fs/fmt.h"
 #include "fs/vfs.h"
-#include "mm/pm.h"
 
 #include "util/printk.h"
+#include "util/math.h"
 #include "util/mem.h"
+
+#include "mm/vmm.h"
 
 #include "errno.h"
 #include "types.h"
-
-#define elf_info(f, ...) pinfo("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
-#define elf_fail(f, ...) pfail("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
-#define elf_debg(f, ...) pdebg("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
 
 /*
 
@@ -22,6 +20,10 @@
  * - https://wiki.osdev.org/ELF_Tutorial (this uses ELF32)
 
 */
+
+#define elf_info(f, ...) pinfo("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
+#define elf_fail(f, ...) pfail("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
+#define elf_debg(f, ...) pdebg("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
 
 /*
 
@@ -267,11 +269,11 @@ int32_t __elf_load_dyn(struct elf *elf) {
     alloc_size += header.vaddr - alloc_size;
     alloc_size += header.memsz;
 
-    for (; alloc_size % PM_PAGE_SIZE != 0; alloc_size++)
-      ;
+    while (alloc_size % VMM_PAGE_SIZE != 0)
+      alloc_size++;
   }
 
-  if ((elf->addr = pm_alloc(elf->count = pm_calc(alloc_size))) == NULL) {
+  if ((elf->addr = vmm_map(elf->count = div_ceil(alloc_size, VMM_PAGE_SIZE), VMM_FLAGS_DEFAULT)) == NULL) {
     elf_debg("failed allocate memory (%u pages) for the program header");
     return -ENOMEM;
   }
@@ -300,11 +302,11 @@ int32_t __elf_load_dyn(struct elf *elf) {
 
     // see if we can disable r/w permissions for this segment's pages
     if (!(header.flags & ELF_PH_FLAGS_R) && !(header.flags & ELF_PH_FLAGS_W))
-      pm_clear((uint64_t)alloc_pos, pm_calc(header.memsz), PM_ENTRY_FLAG_RW);
+      vmm_clear(alloc_pos, vmm_calc(header.memsz), VMM_FLAG_RW);
 
     // see if we should disable the execution for this segment's pages
     if (!(header.flags & ELF_PH_FLAGS_X))
-      pm_set((uint64_t)alloc_pos, pm_calc(header.memsz), PM_ENTRY_FLAG_XD);
+      vmm_set(alloc_pos, vmm_calc(header.memsz), VMM_FLAG_XD);
 
     // see if this section contains the entrypoint
     if (header.vaddr < elf->header.entry && header.vaddr + header.memsz > elf->header.entry)

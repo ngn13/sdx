@@ -6,9 +6,9 @@
 #include "limits.h"
 #include "types.h"
 
-#define vfs_debg(f, ...) pdebg("VFS: (0x%x:0x%x) " f, node, NULL == node ? 0 : node->fs, ##__VA_ARGS__)
-#define vfs_info(f, ...) pinfo("VFS: (0x%x:0x%x) " f, node, NULL == node ? 0 : node->fs, ##__VA_ARGS__)
-#define vfs_fail(f, ...) pfail("VFS: (0x%x:0x%x) " f, node, NULL == node ? 0 : node->fs, ##__VA_ARGS__)
+#define vfs_debg(f, ...) pdebg("VFS: " f, ##__VA_ARGS__)
+#define vfs_info(f, ...) pinfo("VFS: " f, ##__VA_ARGS__)
+#define vfs_fail(f, ...) pfail("VFS: " f, ##__VA_ARGS__)
 
 // defines a entry in the VFS (file, directory etc.)
 typedef struct vfs_node {

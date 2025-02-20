@@ -108,33 +108,47 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
 
   user_debg("entry for the new executable: 0x%x", fmt_entry);
 
-  // make sure the scheduling is disabled before we modify the current task
-  sched_lock();
-  sched();
+  /*
 
-  task_update(current, path, TASK_RING_USER, fmt_entry); // update the current task
-  task_mem_add(current, fmt_addr, fmt_count);            // add the executable memory region to the task
+   * we are gonna modify the current task, if an IRQ calls
+   * the scheduler our modifications will get fucked so we
+   * will temporarily lock (disable) the scheduler
+
+  */
+  sched_lock();
+
+  // update the current task
+  task_rename(current, path);
+
+  // add the executable memory region to the task, after removing the old one
+  task_mem_del(current, TASK_MEM_TYPE_CODE, NULL);
+  task_mem_add(current, TASK_MEM_TYPE_CODE, fmt_addr, vmm_resolve(fmt_addr), fmt_count);
 
   // copy the environment variables to the stack
-  if ((err = task_stack_copy_list(current, envp, ENV_MAX, &stack_envp)) < 0)
+  if ((err = task_stack_add_list(current, envp, ENV_MAX, &stack_envp)) < 0)
     panic("Exec: failed to copy arguments to new task stack for %s", path);
 
   // copy the arguments to the stack
-  if ((err = task_stack_copy_list(current, argv, ARG_MAX, &stack_argv)) < 0)
+  if ((err = task_stack_add_list(current, argv, ARG_MAX, &stack_argv)) < 0)
     panic("Exec: failed to copy arguments to new task stack for %s", path);
 
   // add pointers for the argv and envp to the stack
-  task_stack_copy(current, &stack_envp, sizeof(void *));
-  task_stack_copy(current, &stack_argv, sizeof(void *));
+  task_stack_add(current, &stack_envp, sizeof(void *));
+  task_stack_add(current, &stack_argv, sizeof(void *));
 
-  current->state = TASK_STATE_READY; // mark the current task ready
+  // make sure the registers won't be updated next time scheduler is called
+  sched_state(TASK_STATE_SAVE);
 
   user_info("new executable is ready");
 
-  sched_unlock(); // enable scheduling back again after we are done modifying the current task
-  sched();        // call the scheduler so next time we switch to this task, we will be running as the new process
+  // our modifications are complete, we can unlock (enable) the scheduler
+  sched_unlock();
 
-  return 0; // will never return
+  // call the scheduler to run as the new task
+  sched();
+
+  // will never return
+  return 0;
 }
 
 int32_t user_fork() {

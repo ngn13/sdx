@@ -1,10 +1,14 @@
 #include "core/ahci.h"
 
-#include "util/math.h"
 #include "util/mem.h"
 #include "util/printk.h"
+#include "util/string.h"
+#include <stdint.h>
 
-// ATAPI port command functions
+#define ahci_atapi_debg(f, ...) ahci_debg("(ATAPI) " f, ##__VA_ARGS__)
+#define ahci_atapi_info(f, ...) ahci_info("(ATAPI) " f, ##__VA_ARGS__)
+#define ahci_atapi_fail(f, ...) ahci_fail("(ATAPI) " f, ##__VA_ARGS__)
+#define ahci_atapi_warn(f, ...) ahci_warn("(ATAPI) " f, ##__VA_ARGS__)
 
 #define AHCI_SATA_H2D     0x27
 #define AHCI_SATA_COMMAND 1
@@ -17,7 +21,7 @@ enum ahci_atapi_cmd {
   AHCI_ATAPI_WRITE         = 0xAA,     // 6.2.13 WRITE(12) command
 };
 
-bool __ahci_atapi_cfis_setup(sata_fis_h2d_t *cfis) {
+bool __ahci_atapi_cfis_setup(struct sata_fis_h2d *cfis) {
   if (NULL == cfis)
     return false;
 
@@ -40,127 +44,110 @@ bool __ahci_atapi_cfis_setup(sata_fis_h2d_t *cfis) {
 
 /*
 
- * similar tot the ahci_sata_port_read, ahci_atapi_port_read reads specified amount of sectors
- * starting from the specified LBA
+ * similar tot the ahci_sata_port_read, ahci_atapi_port_read reads specified amount
+ * of sectors starting from the specified LBA
 
- * there no DMA commands for ATAPI, so it's normally not possible to read right to the buffer
- * however AHCI makes this possible
+ * there no DMA commands for ATAPI, so it's normally not possible to read right to
+ * the buffer however AHCI makes this possible
 
 */
-bool ahci_atapi_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
-  // reset interrupt status
-  data->port->is = UINT32_MAX;
+int32_t ahci_atapi_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
+  int32_t    err = 0;
+  ahci_cmd_t cmd = {
+      .vaddr     = data->vaddr,
+      .port      = data->port,
+      .data      = buf,
+      .data_size = sector_count * data->disk->sector_size,
+      .fis_size  = sizeof(struct sata_fis_h2d),
+  };
 
-  int8_t                  slot   = ahci_port_find_slot(data->port);
-  struct ahci_cmd_header *header = ahci_port_get_slot(data->port, slot);
-  struct ahci_cmd_table  *table  = NULL;
-
-  if (NULL == header) {
-    printk(KERN_DEBG, "AHCI: (0x%x) no available command slot for read command\n", data->port);
-    return false;
+  if ((err = ahci_cmd_setup(&cmd)) != 0) {
+    ahci_atapi_debg("failed to setup the read command: %s", strerror(err));
+    return err;
   }
 
-  // setup the command header which we obtained from the command list ("slot")
-  if (NULL == (table = ahci_port_setup_header(
-                   header, sizeof(sata_fis_h2d_t), false, sector_count * data->disk->sector_size, buf))) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to setup the header for read command\n", data->port, slot);
-    return false;
-  }
-
-  // we are using ATAPI
-  header->atapi = 1;
+  ahci_port_reset_is(data->port);
+  cmd.header->write = 0;
+  cmd.header->atapi = 1; // we are using ATAPI
 
   // setup the command FIS
-  __ahci_atapi_cfis_setup((void *)table->cfis);
+  __ahci_atapi_cfis_setup((void *)cmd.table->cfis);
 
   // now lets setup the command (https://wiki.osdev.org/ATAPI)
-  table->acmd[0] = AHCI_ATAPI_READ;
+  cmd.table->acmd[0] = AHCI_ATAPI_READ;
 
-  table->acmd[2] = (lba >> 24) & 0xff;
-  table->acmd[3] = (lba >> 16) & 0xff;
-  table->acmd[4] = (lba >> 8) & 0xff;
-  table->acmd[5] = lba & 0xff;
+  cmd.table->acmd[2] = (lba >> 24) & 0xff;
+  cmd.table->acmd[3] = (lba >> 16) & 0xff;
+  cmd.table->acmd[4] = (lba >> 8) & 0xff;
+  cmd.table->acmd[5] = lba & 0xff;
 
-  table->acmd[6] = (sector_count >> 24) & 0xff;
-  table->acmd[7] = (sector_count >> 16) & 0xff;
-  table->acmd[8] = (sector_count >> 8) & 0xff;
-  table->acmd[9] = sector_count & 0xff;
+  cmd.table->acmd[6] = (sector_count >> 24) & 0xff;
+  cmd.table->acmd[7] = (sector_count >> 16) & 0xff;
+  cmd.table->acmd[8] = (sector_count >> 8) & 0xff;
+  cmd.table->acmd[9] = sector_count & 0xff;
 
-  if (!ahci_port_issue_cmd(data->port, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to issue the read command\n", data->port, slot);
-    return false;
+  if ((err = ahci_cmd_issue(&cmd)) != 0) {
+    ahci_atapi_debg("failed to issue the read command: %s", strerror(err));
+    return err;
   }
 
-  printk(KERN_DEBG,
-      "AHCI: (0x%x:%d) read command success: 0x%x,0x%x,0x%x,0x%x...\n",
-      data->port,
-      slot,
-      buf[0],
-      buf[1],
-      buf[2],
-      buf[3]);
-
-  return true;
+  return 0;
 }
 
 /*
 
- * similar to the ahci_sata_port_write, ahci_atapi_port_write writes specified amount of sectors
- * starting from the specified LBA
+ * similar to the ahci_sata_port_write, ahci_atapi_port_write writes specified amount
+ * of sectors starting from the specified LBA
 
- * as mentioned earlier, there are no DMA commands for ATAPI, so normally we wouldn't be able write
- * right from the buffer, however AHCI makes this possible
+ * as mentioned earlier, there are no DMA commands for ATAPI, so normally we wouldn't
+ * be able write right from the buffer, however AHCI makes this possible
 
- * also the implementation is basically same with ahci_atapi_port_read, just uses a different command
+ * also the implementation is basically same with ahci_atapi_port_read, just uses a
+ * different command
 
 */
-bool ahci_atapi_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
-  data->port->is = UINT32_MAX;
+int32_t ahci_atapi_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
+  int32_t    err = 0;
+  ahci_cmd_t cmd = {
+      .vaddr     = data->vaddr,
+      .port      = data->port,
+      .data      = buf,
+      .data_size = sector_count * data->disk->sector_size,
+      .fis_size  = sizeof(struct sata_fis_h2d),
+  };
 
-  int8_t                  slot   = ahci_port_find_slot(data->port);
-  struct ahci_cmd_header *header = ahci_port_get_slot(data->port, slot);
-  struct ahci_cmd_table  *table  = NULL;
-
-  if (NULL == header) {
-    printk(KERN_DEBG, "AHCI: (0x%x) no available command slot for write command\n", data->port);
-    return false;
+  if ((err = ahci_cmd_setup(&cmd)) != 0) {
+    ahci_atapi_debg("failed to setup the write command: %s", strerror(err));
+    return err;
   }
 
-  if (NULL == (table = ahci_port_setup_header(
-                   header, sizeof(sata_fis_h2d_t), true, sector_count * data->disk->sector_size, buf))) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to setup the header for write command\n", data->port, slot);
-    return false;
+  ahci_port_reset_is(data->port);
+  cmd.header->write = 1;
+  cmd.header->atapi = 1;
+
+  __ahci_atapi_cfis_setup((void *)cmd.table->cfis);
+
+  cmd.table->acmd[0] = AHCI_ATAPI_WRITE;
+
+  cmd.table->acmd[2] = (lba >> 24) & 0xff;
+  cmd.table->acmd[3] = (lba >> 16) & 0xff;
+  cmd.table->acmd[4] = (lba >> 8) & 0xff;
+  cmd.table->acmd[5] = lba & 0xff;
+
+  cmd.table->acmd[6] = (sector_count >> 24) & 0xff;
+  cmd.table->acmd[7] = (sector_count >> 16) & 0xff;
+  cmd.table->acmd[8] = (sector_count >> 8) & 0xff;
+  cmd.table->acmd[9] = sector_count & 0xff;
+
+  if ((err = ahci_cmd_issue(&cmd)) != 0) {
+    ahci_atapi_debg("failed to issue the write command: %s", strerror(err));
+    return err;
   }
 
-  header->atapi = 1;
-
-  __ahci_atapi_cfis_setup((void *)table->cfis);
-
-  table->acmd[0] = AHCI_ATAPI_WRITE;
-
-  table->acmd[2] = (lba >> 24) & 0xff;
-  table->acmd[3] = (lba >> 16) & 0xff;
-  table->acmd[4] = (lba >> 8) & 0xff;
-  table->acmd[5] = lba & 0xff;
-
-  table->acmd[6] = (sector_count >> 24) & 0xff;
-  table->acmd[7] = (sector_count >> 16) & 0xff;
-  table->acmd[8] = (sector_count >> 8) & 0xff;
-  table->acmd[9] = sector_count & 0xff;
-
-  if (!ahci_port_issue_cmd(data->port, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to issue the write command\n", data->port, slot);
-    return false;
-  }
-
-  printk(KERN_DEBG, "AHCI: (0x%x:%d) write command success\n", data->port, slot);
-
-  return true;
+  return 0;
 }
 
-bool __ahci_atapi_port_inquiry(ahci_port_data_t *data, struct ahci_cmd_header *header, int8_t slot) {
-  struct ahci_cmd_table *table = NULL;
-
+int32_t __ahci_atapi_port_inquiry(ahci_port_data_t *data) {
   /*
 
    * we are gonna use ATAPI INQUIRY command to get device type
@@ -171,31 +158,33 @@ bool __ahci_atapi_port_inquiry(ahci_port_data_t *data, struct ahci_cmd_header *h
   uint8_t inquiry_data[AHCI_ATAPI_INQUIRY_DATA_MIN];
   bzero(inquiry_data, sizeof(inquiry_data));
 
-  if (NULL ==
-      (table = ahci_port_setup_header(header, sizeof(sata_fis_h2d_t), false, sizeof(inquiry_data), inquiry_data))) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to setup the header for inquiry command\n", data->port, slot);
-    return false;
-  }
-  header->atapi = 1;
+  int32_t    err = 0;
+  ahci_cmd_t cmd = {
+      .vaddr     = data->vaddr,
+      .port      = data->port,
+      .data      = inquiry_data,
+      .data_size = sizeof(inquiry_data),
+      .fis_size  = sizeof(struct sata_fis_h2d),
+  };
 
-  __ahci_atapi_cfis_setup((void *)table->cfis);
-  table->acmd[0] = AHCI_ATAPI_INQUIRY;
-  table->acmd[3] = (sizeof(inquiry_data) >> 8) & 0xff;
-  table->acmd[4] = sizeof(inquiry_data) & 0xff;
-
-  if (!ahci_port_issue_cmd(data->port, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to issue the inquiry command\n", data->port, slot);
-    return false;
+  if ((err = ahci_cmd_setup(&cmd)) != 0) {
+    ahci_atapi_debg("failed to setup the inquiry command: %s", strerror(err));
+    return err;
   }
 
-  printk(KERN_DEBG,
-      "AHCI: (0x%x:%d) inquiry command success: 0x%x,0x%x,0x%x,0x%x...\n",
-      data->port,
-      slot,
-      inquiry_data[0],
-      inquiry_data[1],
-      inquiry_data[2],
-      inquiry_data[3]);
+  ahci_port_reset_is(data->port);
+  cmd.header->write = 0;
+  cmd.header->atapi = 1;
+
+  __ahci_atapi_cfis_setup((void *)cmd.table->cfis);
+  cmd.table->acmd[0] = AHCI_ATAPI_INQUIRY;
+  cmd.table->acmd[3] = (sizeof(inquiry_data) >> 8) & 0xff;
+  cmd.table->acmd[4] = sizeof(inquiry_data) & 0xff;
+
+  if ((err = ahci_cmd_issue(&cmd)) != 0) {
+    ahci_atapi_debg("failed to issue the inquiry command: %s", strerror(err));
+    return err;
+  }
 
   // get device type (Table 82 — Peripheral device type)
   switch (inquiry_data[0] & 0x1f) {
@@ -212,38 +201,38 @@ bool __ahci_atapi_port_inquiry(ahci_port_data_t *data, struct ahci_cmd_header *h
     break;
   }
 
-  return true;
+  return 0;
 }
 
-bool __ahci_atapi_port_capacity(ahci_port_data_t *data, struct ahci_cmd_header *header, int8_t slot) {
-  struct ahci_cmd_table *table = NULL;
-
+int32_t __ahci_atapi_port_capacity(ahci_port_data_t *data) {
   uint8_t capacity_data[8];
   bzero(capacity_data, sizeof(capacity_data));
 
-  if (NULL ==
-      (table = ahci_port_setup_header(header, sizeof(sata_fis_h2d_t), false, sizeof(capacity_data), capacity_data))) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to setup the header for capacity command\n", data->port, slot);
-    return false;
+  int32_t    err = 0;
+  ahci_cmd_t cmd = {
+      .vaddr     = data->vaddr,
+      .port      = data->port,
+      .data      = capacity_data,
+      .data_size = sizeof(capacity_data),
+      .fis_size  = sizeof(struct sata_fis_h2d),
+  };
+
+  if ((err = ahci_cmd_setup(&cmd)) != 0) {
+    ahci_atapi_debg("failed to setup the capacity command: %s", strerror(err));
+    return err;
   }
-  header->atapi = 1;
 
-  __ahci_atapi_cfis_setup((void *)table->cfis);
-  table->acmd[0] = AHCI_ATAPI_READ_CAPACITY;
+  ahci_port_reset_is(data->port);
+  cmd.header->write = 0;
+  cmd.header->atapi = 1;
 
-  if (!ahci_port_issue_cmd(data->port, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to issue the capacity command\n", data->port, slot);
-    return false;
+  __ahci_atapi_cfis_setup((void *)cmd.table->cfis);
+  cmd.table->acmd[0] = AHCI_ATAPI_READ_CAPACITY;
+
+  if ((err = ahci_cmd_issue(&cmd)) != 0) {
+    ahci_atapi_debg("failed to issue the capacity command: %s", strerror(err));
+    return err;
   }
-
-  printk(KERN_DEBG,
-      "AHCI: (0x%x:%d) capacity command success: 0x%x,0x%x,0x%x,0x%x...\n",
-      data->port,
-      slot,
-      capacity_data[0],
-      capacity_data[1],
-      capacity_data[2],
-      capacity_data[3]);
 
   data->disk->sector_size =
       capacity_data[7] | (capacity_data[6] << 8) | (capacity_data[5] << 16) | (capacity_data[4] << 24);
@@ -251,47 +240,48 @@ bool __ahci_atapi_port_capacity(ahci_port_data_t *data, struct ahci_cmd_header *
       (capacity_data[3] | (capacity_data[2] << 8) | (capacity_data[1] << 16) | (capacity_data[0] << 24)) + 1;
   data->disk->size *= data->disk->sector_size;
 
-  return true;
+  return 0;
 }
 
-bool __ahci_atapi_port_mode_sense(ahci_port_data_t *data, struct ahci_cmd_header *header, int8_t slot) {
-  struct ahci_cmd_table *table = NULL;
-
+int32_t __ahci_atapi_port_mode_sense(ahci_port_data_t *data) {
   uint8_t sense_data[254];
   bzero(sense_data, sizeof(sense_data));
 
-  if (NULL == (table = ahci_port_setup_header(header, sizeof(sata_fis_h2d_t), false, sizeof(sense_data), sense_data))) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to setup the header for sense command\n", data->port, slot);
-    return false;
-  }
-  header->atapi = 1;
+  int32_t    err = 0;
+  ahci_cmd_t cmd = {
+      .vaddr     = data->vaddr,
+      .port      = data->port,
+      .data      = sense_data,
+      .data_size = sizeof(sense_data),
+      .fis_size  = sizeof(struct sata_fis_h2d),
+  };
 
-  __ahci_atapi_cfis_setup((void *)table->cfis);
-  table->acmd[0] = 0x5A;
+  if ((err = ahci_cmd_setup(&cmd)) != 0) {
+    ahci_atapi_debg("failed to setup the mode sense command: %s", strerror(err));
+    return err;
+  }
+
+  ahci_port_reset_is(data->port);
+  cmd.header->write = 0;
+  cmd.header->atapi = 1;
+
+  __ahci_atapi_cfis_setup((void *)cmd.table->cfis);
+  cmd.table->acmd[0] = 0x5A;
   // table->acmd[1] = 1 << 3;
-  table->acmd[2] = 0x3F;
+  cmd.table->acmd[2] = 0x3F;
   // table->acmd[4] = 254;
-  table->acmd[7] = (sizeof(sense_data) >> 8) & 0xff;
-  table->acmd[8] = sizeof(sense_data) & 0xff;
+  cmd.table->acmd[7] = (sizeof(sense_data) >> 8) & 0xff;
+  cmd.table->acmd[8] = sizeof(sense_data) & 0xff;
 
-  if (!ahci_port_issue_cmd(data->port, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to issue the sense command\n", data->port, slot);
-    return false;
+  if ((err = ahci_cmd_issue(&cmd)) != 0) {
+    ahci_atapi_debg("failed to issue the mode sense command: %s", strerror(err));
+    return err;
   }
-
-  printk(KERN_DEBG,
-      "AHCI: (0x%x:%d) sense command success: 0x%x,0x%x,0x%x,0x%x...\n",
-      data->port,
-      slot,
-      sense_data[0],
-      sense_data[1],
-      sense_data[2],
-      sense_data[3]);
 
   // check the write protect
   data->disk->read_only = (sense_data[3] & 1 << 7) == 1;
 
-  return true;
+  return 0;
 }
 
 /*
@@ -300,25 +290,17 @@ bool __ahci_atapi_port_mode_sense(ahci_port_data_t *data, struct ahci_cmd_header
  * and saves it related structures
 
 */
-bool ahci_atapi_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
-  data->port->is = UINT32_MAX;
+int32_t ahci_atapi_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
+  int32_t err = 0;
 
-  int8_t                  slot   = ahci_port_find_slot(data->port);
-  struct ahci_cmd_header *header = ahci_port_get_slot(data->port, slot);
-
-  if (NULL == header) {
-    printk(KERN_DEBG, "AHCI: (0x%x) no available command slot for info commands\n", data->port);
-    return false;
+  if ((err = __ahci_atapi_port_inquiry(data)) != 0) {
+    // ahci_atapi_debg("failed to obtain the port info, inquiry command failed: %s", strerror(err));
+    return err;
   }
 
-  if (!__ahci_atapi_port_inquiry(data, header, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to obtain port info, inquiry command failed\n", data->port, slot);
-    return false;
-  }
-
-  if (!__ahci_atapi_port_capacity(data, header, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to obtain port info, capacity command failed\n", data->port, slot);
-    return false;
+  if ((err = __ahci_atapi_port_capacity(data)) != 0) {
+    // ahci_atapi_debg("failed to obtain the port info, capacity command failed: %s", strerror(err));
+    return err;
   }
 
   /*if(!__ahci_atapi_port_mode_sense(data, header, slot)){
@@ -326,5 +308,5 @@ bool ahci_atapi_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_
     return false;
   }*/
 
-  return true;
+  return 0;
 }

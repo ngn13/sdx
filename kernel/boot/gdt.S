@@ -1,5 +1,8 @@
 #include "boot/boot.h"
 
+.global __gdt_update_pointer
+.type __gdt_update_pointer, @function
+
 .global gdt_desc_kernel_code_addr
 .global gdt_desc_kernel_data_addr
 .global gdt_desc_user_code_addr
@@ -172,7 +175,6 @@ gdt_pointer:
   .short gdt_end - gdt_start - 1
   .quad gdt_start - BOOT_KERNEL_ADDR
 
-.section .data
 gdt_desc_kernel_code_addr: .quad gdt_desc_kernel_code
 gdt_desc_kernel_data_addr: .quad gdt_desc_kernel_data
 gdt_desc_user_code_addr:   .quad gdt_desc_user_code
@@ -181,3 +183,12 @@ gdt_desc_tss_addr:         .quad gdt_desc_tss
 gdt_pointer_addr:          .quad gdt_pointer
 gdt_start_addr:            .quad gdt_start
 gdt_end_addr:              .quad gdt_end
+
+.section .text
+.code64
+
+__gdt_update_pointer:
+  // update GDT pointer's address
+  movabs $gdt_start, %rax
+  movabs %rax, (gdt_pointer+2)
+  ret

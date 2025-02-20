@@ -19,7 +19,7 @@ typedef __builtin_va_list va_list;
 #define va_copy(dest, src)  __builtin_va_copy(dest, src)
 
 typedef signed int pid_t;
-typedef char bool;
+typedef unsigned char bool;
 
 #endif
 

@@ -1,6 +1,5 @@
 #include "core/pci.h"
-
-#include "mm/vmm.h"
+#include "mm/heap.h"
 
 #include "util/io.h"
 #include "util/mem.h"
@@ -129,11 +128,15 @@ void __pci_enum_single(uint8_t bus, uint8_t slot, uint8_t func) {
   if (!pci_exists(bus, slot, func))
     goto next;
 
-  pci_device_t *cur = NULL;
+  pci_device_t *cur       = NULL;
+  uint64_t      list_size = sizeof(pci_device_t) * (++data.count);
 
-  data.list = vmm_realloc(data.list, sizeof(pci_device_t) * (++data.count));
-  cur       = &data.list[data.count - 1];
+  if (NULL == data.list)
+    data.list = heap_alloc(list_size);
+  else
+    data.list = heap_realloc(data.list, list_size);
 
+  cur = &data.list[data.count - 1];
   pci_device_load(cur, bus, slot, func);
 
   if (func == 0 && (cur->type & 0x80) != 0)

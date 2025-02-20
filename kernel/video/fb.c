@@ -96,7 +96,7 @@ void __fb_scroll() {
   for (; line < fb_data.height; line++) {
     // clear the last line
     if (line == fb_data.height - 1) {
-      bzero(&__fb_buf16()[line * fb_data.width], fb_data.width);
+      bzero(&__fb_buf16()[line * fb_data.width], fb_data.width * fb_data.char_size);
       continue;
     }
 

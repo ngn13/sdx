@@ -1,12 +1,12 @@
 #include "fs/fat32.h"
 #include "fs/vfs.h"
 
-#include "util/bit.h"
 #include "util/mem.h"
 #include "util/printk.h"
 
+#include "mm/heap.h"
+
 #include "errno.h"
-#include "mm/vmm.h"
 
 /*
 
@@ -80,46 +80,36 @@ struct fat32_boot_record {
       i.tail_signature == FAT32_FSINFO_TAIL_SIG)
 
 // (try to) load a FAT filesystem from the provided disk partition
-bool fat32_new(fs_t *fs) {
-  if (NULL == fs->part) {
-    pdebg("FAT32: cannot load the filesystem, need valid disk partition");
-    return false;
-  }
+int32_t fat32_new(fs_t *fs) {
+  if (NULL == fs->part)
+    return -EINVAL;
 
   struct fat32_boot_record fat_boot;
+  struct fat32_fsinfo      fsinfo;
 
   if (!__fat32_read_lba(0, sizeof(fat_boot), &fat_boot)) {
     fat32_debg("failed to read the boot record");
-    return false;
+    return -EFAULT;
   }
-
-  fat32_debg("boot record signature: 0x%x", fat_boot.extended.signature);
-  fat32_debg("boot record fsinfo sector: %d", fat_boot.extended.fsinfo_sector);
 
   if (!fat32_verify_extended(fat_boot.extended)) {
     fat32_debg("invalid boot record signature");
-    return false;
+    return -EFAULT;
   }
-
-  struct fat32_fsinfo fsinfo;
 
   if (!__fat32_read_lba(fat_boot.extended.fsinfo_sector, sizeof(fsinfo), &fsinfo)) {
     fat32_debg("failed to read the fsinfo structure");
-    return false;
+    return -EFAULT;
   }
-
-  fat32_debg(
-      "fsinfo signatures: 0x%x, 0x%x, 0x%x", fsinfo.head_signature, fsinfo.body_signature, fsinfo.tail_signature);
-  fat32_debg("fsinfo free cluster count: %d", fsinfo.free_cluster_count);
 
   if (!fat32_verify_fsinfo(fsinfo)) {
     fat32_debg("failed to verify fsinfo signature");
-    return false;
+    return -EFAULT;
   }
 
-  if (NULL == (fs->data = vmm_alloc(sizeof(struct fat32_data)))) {
+  if (NULL == (fs->data = heap_alloc(sizeof(struct fat32_data)))) {
     fat32_debg("failed to allocate node data");
-    return false;
+    return -EFAULT;
   }
 
   bzero(fat32_data(), sizeof(struct fat32_data));
@@ -130,14 +120,19 @@ bool fat32_new(fs_t *fs) {
       fat_boot.reserved_sector_count + (fat_boot.fat_count * fat_boot.extended.fat_sector_count);
   fat32_data()->root_cluster = fat_boot.extended.root_cluster;
 
-  fat32_debg("table start sector: %u", fat32_data()->fat_sector);
-  fat32_debg("root directory start cluster: %u", fat32_data()->root_cluster);
+  fat32_debg("loaded FAT32 filesystem from 0x%p", fs->part);
+  pdebg("       |- Boot record signature: 0x%x", fat_boot.extended.signature);
+  pdebg("       |- FSInfo sector: %u", fat_boot.extended.fsinfo_sector);
+  pdebg("       |- FSInfo signatures: %x,%x,%x", fsinfo.head_signature, fsinfo.body_signature, fsinfo.tail_signature);
+  pdebg("       |- FSInfo free cluster count: %u", fsinfo.free_cluster_count);
+  pdebg("       |- Table start sector: %u", fat32_data()->fat_sector);
+  pdebg("       `- Root directory start cluster: %u", fat32_data()->root_cluster);
 
   fs->namei = fat32_namei;
   fs->read  = fat32_read;
   fs->free  = fat32_free;
 
-  return true;
+  return 0;
 }
 
 int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer) {
@@ -227,5 +222,5 @@ int32_t fat32_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode) {
 }
 
 void fat32_free(fs_t *fs) {
-  vmm_free(fs->data);
+  heap_free(fs->data);
 }
