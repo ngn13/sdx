@@ -6,9 +6,9 @@
 #include "util/mem.h"
 #include "util/printk.h"
 
-#define gpt_debg(f, ...) pdebg("GPT: (0x%x) " f, disk, ##__VA_ARGS__)
-#define gpt_info(f, ...) pinfo("GPT: (0x%x) " f, disk, ##__VA_ARGS__)
-#define gpt_fail(f, ...) pfail("GPT: (0x%x) " f, disk, ##__VA_ARGS__)
+#define gpt_debg(f, ...) pdebg("GPT: " f, ##__VA_ARGS__)
+#define gpt_info(f, ...) pinfo("GPT: " f, ##__VA_ARGS__)
+#define gpt_fail(f, ...) pfail("GPT: " f, ##__VA_ARGS__)
 
 #define GPT_SIGNATURE  0x5452415020494645 // signature for the partition table header
 #define GPT_PROTECTIVE 0xee               // PMBR OS type
@@ -53,6 +53,7 @@ void __gpt_load_entry(disk_t *disk, struct gpt_part_entry *part, uint64_t indx) 
     return;
 
   gpt_debg("loaded the GPT partition %u", indx);
+  pdebg("     |- Disk: 0x%p", disk);
   pdebg("     |- Type: %g", type);
   pdebg("     |- GUID: %g", guid);
   pdebg("     |- Start LBA: %u", part->start_lba);
@@ -91,7 +92,7 @@ bool gpt_load(disk_t *disk) {
   guid[0] = ((uint64_t *)header.guid)[0];
   guid[1] = ((uint64_t *)header.guid)[1];
 
-  gpt_info("loaded the GPT header from the disk", guid);
+  gpt_info("loaded the GPT header from 0x%p", disk);
   gpt_info("GUID: %g", guid);
 
   if (disk->sector_size % header.entry_size) {

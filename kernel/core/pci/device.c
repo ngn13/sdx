@@ -84,6 +84,6 @@ int32_t pci_device_init(pci_device_t *d) {
     return err;
   }
 
-  pinfo("PCI: loaded %s driver for 0x%x:0x%x\n", cur->name, d->vendor_id, d->device_id);
+  pinfo("PCI: loaded %s driver for 0x%x:0x%x", cur->name, d->vendor_id, d->device_id);
   return 0;
 }

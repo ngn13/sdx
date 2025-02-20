@@ -37,6 +37,7 @@ disk_t *disk_add(disk_controller_t controller, void *data) {
   slist_add(&disk_first, disk, disk_t);
 
   disk_info("Added a new disk device");
+  pinfo("      |- Address: 0x%p", disk);
   pinfo("      |- Data: 0x%p", disk->data);
   pinfo("      `- Controller: %u (%s)", disk->controller, __disk_get_controller_name(disk->controller));
 

@@ -103,9 +103,6 @@ void entry() {
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
 
-  // temporary
-  _hang();
-
   /*
 
    * look for an available root filesystem and mount it
@@ -145,6 +142,9 @@ void entry() {
 
   if ((err = vfs_mount("/", rootfs)) != 0)
     panic("Failed to mount the root filesystem: %s", strerror(err));
+
+  // temporary
+  _hang();
 
   /*
 

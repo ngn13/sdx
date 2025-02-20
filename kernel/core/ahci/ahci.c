@@ -125,15 +125,15 @@ int32_t ahci_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t sec
       continue;
 
     if (pf->needs_buffer && (NULL == buffer || sector_count <= 0)) {
-      ahci_fail("(0x%x) %s operation failed, required buffer arguments not provided", data->port, pf->name);
+      ahci_fail("%s operation failed on port 0x%x, no buffer provided", pf->name, data->port);
       return -EINVAL;
     }
 
-    ahci_debg("(0x%x) performing %s operation", data->port, pf->name);
+    // ahci_debg("performing %s operation on port 0x%x", pf->name, data->port);
     return pf->func(data, lba, sector_count, buffer);
   }
 
-  ahci_fail("(0x%x) unknown %s operation: %d", data->port, __ahci_port_protocol(data), op);
+  ahci_fail("unknown %s operation on port 0x%x: %d", __ahci_port_protocol(data), data->port, op);
   return -EINVAL;
 }
 
@@ -146,6 +146,7 @@ int32_t ahci_init(pci_device_t *dev) {
   // map the base address after calculating max page count we'll need
   uint64_t base_page_count = vmm_calc(sizeof(ahci_mem_t));
   base = vmm_map_to_paddr((uint64_t)base, base_page_count, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT | VMM_FLAG_PCD);
+  ahci_debg("mapped ABAR at 0x%p to 0x%p", vmm_resolve((void *)base), base);
 
   // if BOHC is implemented and the BOHC indicates that the HBA is not OS owned, we'll own it
   if (bit_get(base->cap2, AHCI_CAP2_BOH) == 1 && bit_get(base->bohc, AHCI_BOHC_OOS) != 1) {
@@ -168,8 +169,8 @@ int32_t ahci_init(pci_device_t *dev) {
   bit_set(base->ghc, 1, 0);
   base->is = UINT32_MAX;
 
-  ahci_info("(0x%x) HBA supports version %d.%d", base, (base->vs >> 16) & 0xFFFF, base->vs & 0xFFFF);
-  ahci_info("(0x%x) enumerating %u ports", base, sizeof(base->ports) / sizeof(base->ports[0]));
+  ahci_info("HBA at 0x%p supports version %d.%d", base, (base->vs >> 16) & 0xFFFF, base->vs & 0xFFFF);
+  ahci_info("enumerating %u ports", sizeof(base->ports) / sizeof(base->ports[0]));
 
   ahci_port_data_t *port_data  = NULL;
   void             *port_vaddr = NULL;
@@ -205,7 +206,8 @@ int32_t ahci_init(pci_device_t *dev) {
       break;
     }
 
-    ahci_info("(0x%x) found an available port at index %u", base, port_data->index);
+    ahci_info("found an available port at index %u", port_data->index);
+    pinfo("      |- HBA: 0x%p", port_data->hba);
     pinfo("      |- Signature: 0x%x (%s)", port_data->port->sig, __ahci_port_protocol(port_data));
     pinfo("      |- Address: 0x%p", port_data);
     pinfo("      `- Vaddr: 0x%p", port_data->vaddr);

@@ -271,7 +271,7 @@ int32_t sched_init() {
   }
 
   // rename the main task
-  sched_info("created the main task");
+  sched_info("created the main task (0x%p)", task_main);
   task_rename(task_main, "main");
 
   // unmask the timer interrupt for the scheduler

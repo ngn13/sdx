@@ -188,19 +188,19 @@ uint64_t printk(enum printk_level level, char *fmt, ...) {
   case KERN_INFO:
     video_bg_set(VIDEO_COLOR_BLACK);
     video_fg_set(VIDEO_COLOR_LIGHT_BLUE);
-    size += __print("INFO>");
+    size += __print("INFO");
     break;
 
   case KERN_WARN:
     video_bg_set(VIDEO_COLOR_BLACK);
     video_fg_set(VIDEO_COLOR_YELLOW);
-    size += __print("WARN>");
+    size += __print("WARN");
     break;
 
   case KERN_FAIL:
     video_bg_set(VIDEO_COLOR_BLACK);
     video_fg_set(VIDEO_COLOR_LIGHT_RED);
-    size += __print("FAIL>");
+    size += __print("FAIL");
     break;
 
   case KERN_DEBG:
@@ -208,7 +208,7 @@ uint64_t printk(enum printk_level level, char *fmt, ...) {
       return 0;
     video_bg_set(VIDEO_COLOR_BLACK);
     video_fg_set(VIDEO_COLOR_BROWN);
-    size += __print("DEBG>");
+    size += __print("DEBG");
     break;
   }
 

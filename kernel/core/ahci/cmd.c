@@ -7,11 +7,6 @@
 #include "types.h"
 #include "errno.h"
 
-#define ahci_cmd_debg(f, ...) ahci_debg("(0x%x) " f, cmd->port, ##__VA_ARGS__)
-#define ahci_cmd_info(f, ...) ahci_info("(0x%x) " f, cmd->port, ##__VA_ARGS__)
-#define ahci_cmd_fail(f, ...) ahci_fail("(0x%x) " f, cmd->port, ##__VA_ARGS__)
-#define ahci_cmd_warn(f, ...) ahci_warn("(0x%x) " f, cmd->port, ##__VA_ARGS__)
-
 int32_t ahci_cmd_setup(ahci_cmd_t *cmd) {
   if (NULL == cmd)
     return -EINVAL;
@@ -41,7 +36,7 @@ int32_t ahci_cmd_setup(ahci_cmd_t *cmd) {
   }
 
   if (NULL == cmd->header) {
-    ahci_cmd_debg("failed to find an available command header for the port");
+    ahci_debg("failed to find an available command header for the port");
     return -EFAULT;
   }
 
@@ -52,7 +47,7 @@ int32_t ahci_cmd_setup(ahci_cmd_t *cmd) {
 
   */
   if (cmd->fis_size % sizeof(uint32_t) != 0) {
-    ahci_cmd_debg("invalid FIS size for the command header: %U", cmd->fis_size);
+    ahci_debg("invalid FIS size for the command header: %u", cmd->fis_size);
     return -EFAULT;
   }
 

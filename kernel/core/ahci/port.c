@@ -134,7 +134,7 @@ bool ahci_port_is_connected(ahci_port_t *port) {
 
   */
   if (!ahci_port_reset(port)) {
-    printk(KERN_DEBG, "AHCI: (port 0x%x) failed to reset during check\n", port);
+    printk(KERN_DEBG, "AHCI: failed to reset port 0x%p during check\n", port);
     return false;
   }
 
@@ -156,7 +156,7 @@ bool ahci_port_is_connected(ahci_port_t *port) {
 void *ahci_port_setup(ahci_port_t *port) {
   // stop sending SATA commands to the device
   if (!ahci_port_stop(port)) {
-    ahci_fail("(0x%x) failed to stop port for initialization", port);
+    ahci_fail("failed to stop port 0x%p for initialization", port);
     return NULL;
   }
 
@@ -231,7 +231,7 @@ void *ahci_port_setup(ahci_port_t *port) {
   port->ie = 1;
 
   if (!ahci_port_start(port)) {
-    ahci_fail("(0x%x) failed to start port after initialization", port);
+    ahci_fail("failed to start port 0x%p after initialization", port);
     return NULL;
   }
 
@@ -241,12 +241,12 @@ void *ahci_port_setup(ahci_port_t *port) {
 // check if TFD register contains an error, if so return false
 bool ahci_port_check_error(ahci_port_t *port, int64_t slot) {
   if (bit_get(port->tfd, AHCI_PxTFD_STS_ERR) == 1) {
-    ahci_debg("(0x%x) transfer error (TFD_STST_ERR)", port);
+    ahci_debg("transfer error (TFD_STST_ERR) for port 0x%p, slot: %d", port, slot);
     return false;
   }
 
   if (((port->tfd >> AHCI_PxTFD_ERR) & 0xFF) == 1) {
-    ahci_debg("(0x%x) port error (TFD_ERR)", port);
+    ahci_debg("port error (TFD_ERR) for port 0x%p, slot: %d", port, slot);
     return false;
   }
 

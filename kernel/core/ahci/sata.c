@@ -6,10 +6,10 @@
 #include "types.h"
 #include "errno.h"
 
-#define ahci_sata_debg(f, ...) ahci_debg("(SATA 0x%x) " f, data->port, ##__VA_ARGS__)
-#define ahci_sata_info(f, ...) ahci_info("(SATA 0x%x) " f, data->port, ##__VA_ARGS__)
-#define ahci_sata_fail(f, ...) ahci_fail("(SATA 0x%x) " f, data->port, ##__VA_ARGS__)
-#define ahci_sata_warn(f, ...) ahci_warn("(SATA 0x%x) " f, data->port, ##__VA_ARGS__)
+#define ahci_sata_debg(f, ...) ahci_debg("(SATA) " f, ##__VA_ARGS__)
+#define ahci_sata_info(f, ...) ahci_info("(SATA) " f, ##__VA_ARGS__)
+#define ahci_sata_fail(f, ...) ahci_fail("(SATA) " f, ##__VA_ARGS__)
+#define ahci_sata_warn(f, ...) ahci_warn("(SATA) " f, ##__VA_ARGS__)
 
 // SATA FIS types
 enum ahci_sata_fis_type {

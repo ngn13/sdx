@@ -82,10 +82,10 @@ bool disk_part_scan(disk_t *disk) {
   disk->available = false;
   __disk_part_block(disk);
 
-  disk_info("scanning the disk for partitions");
+  disk_info("scanning the disk at 0x%p for partitions", disk);
 
   if (!disk_do(disk, DISK_OP_INFO, 0, 0, NULL)) {
-    disk_fail("failed to load the disk information");
+    disk_fail("failed to load the disk information for 0x%p", disk);
     return false;
   }
 

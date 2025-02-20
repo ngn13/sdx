@@ -59,7 +59,8 @@ if [ $opt_log -eq 0 ]; then
 else
   qemu_args+=(
     -chardev stdio,id=char0,mux=on,logfile="${SERIALLOG}",signal=off
-    -serial chardev:char0 -mon chardev=char0
+    -serial chardev:char0
+    #-mon chardev=char0
   )
 fi
 

@@ -5,10 +5,10 @@
 #include "util/string.h"
 #include <stdint.h>
 
-#define ahci_atapi_debg(f, ...) ahci_debg("(ATAPI 0x%x) " f, data->port, ##__VA_ARGS__)
-#define ahci_atapi_info(f, ...) ahci_info("(ATAPI 0x%x) " f, data->port, ##__VA_ARGS__)
-#define ahci_atapi_fail(f, ...) ahci_fail("(ATAPI 0x%x) " f, data->port, ##__VA_ARGS__)
-#define ahci_atapi_warn(f, ...) ahci_warn("(ATAPI 0x%x) " f, data->port, ##__VA_ARGS__)
+#define ahci_atapi_debg(f, ...) ahci_debg("(ATAPI) " f, ##__VA_ARGS__)
+#define ahci_atapi_info(f, ...) ahci_info("(ATAPI) " f, ##__VA_ARGS__)
+#define ahci_atapi_fail(f, ...) ahci_fail("(ATAPI) " f, ##__VA_ARGS__)
+#define ahci_atapi_warn(f, ...) ahci_warn("(ATAPI) " f, ##__VA_ARGS__)
 
 #define AHCI_SATA_H2D     0x27
 #define AHCI_SATA_COMMAND 1

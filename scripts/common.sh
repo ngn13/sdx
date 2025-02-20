@@ -28,15 +28,15 @@ FG_BOLD="\e[1m"
 
 # logging
 info(){
-  echo -e "${FG_BOLD}${FG_BLUE}INFO> ${FG_RESET}${FG_BOLD}${1}${FG_RESET}"
+  echo -e "${FG_BOLD}${FG_BLUE}INFO ${FG_RESET}${FG_BOLD}${1}${FG_RESET}"
 }
 
 warn(){
-  echo -e "${FG_BOLD}${FG_YELLOW}WARN> ${FG_RESET}${FG_BOLD}${1}${FG_RESET}"
+  echo -e "${FG_BOLD}${FG_YELLOW}WARN ${FG_RESET}${FG_BOLD}${1}${FG_RESET}"
 }
 
 error(){
-  echo -e "${FG_BOLD}${FG_RED}FAIL> ${FG_RESET}${FG_BOLD}${1}${FG_RESET}"
+  echo -e "${FG_BOLD}${FG_RED}FAIL ${FG_RESET}${FG_BOLD}${1}${FG_RESET}"
 }
 
 desc() {

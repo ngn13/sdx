@@ -221,7 +221,7 @@ void im_init() {
     panic("Failed to allocate memory for the TSS");
 
   im_tss.rsp0 += VMM_PAGE_SIZE;
-  pdebg("IM: Created TSS stack at 0x%x", im_tss.rsp0);
+  pdebg("IM: created TSS stack at 0x%x", im_tss.rsp0);
 
   gdt_tss_set(&im_tss, (sizeof(struct tss) - 1));
 }

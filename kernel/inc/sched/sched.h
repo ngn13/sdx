@@ -6,10 +6,10 @@
 #include "core/pic.h"
 #include "types.h"
 
-#define sched_debg(f, ...) pdebg("Sched: (0x%x:%s) " f, current, NULL == current ? NULL : current->name, ##__VA_ARGS__)
-#define sched_info(f, ...) pinfo("Sched: (0x%x:%s) " f, current, NULL == current ? NULL : current->name, ##__VA_ARGS__)
-#define sched_fail(f, ...) pfail("Sched: (0x%x:%s) " f, current, NULL == current ? NULL : current->name, ##__VA_ARGS__)
-#define sched_warn(f, ...) pwarn("Sched: (0x%x:%s) " f, current, NULL == current ? NULL : current->name, ##__VA_ARGS__)
+#define sched_debg(f, ...) pdebg("Sched: " f, ##__VA_ARGS__)
+#define sched_info(f, ...) pinfo("Sched: " f, ##__VA_ARGS__)
+#define sched_fail(f, ...) pfail("Sched: " f, ##__VA_ARGS__)
+#define sched_warn(f, ...) pwarn("Sched: " f, ##__VA_ARGS__)
 
 // current task
 extern task_t *task_current;

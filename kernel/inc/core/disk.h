@@ -2,9 +2,9 @@
 #include "types.h"
 #include "util/printk.h"
 
-#define disk_debg(f, ...) pdebg("Disk: (0x%x) " f, disk, ##__VA_ARGS__)
-#define disk_info(f, ...) pinfo("Disk: (0x%x) " f, disk, ##__VA_ARGS__)
-#define disk_fail(f, ...) pfail("Disk: (0x%x) " f, disk, ##__VA_ARGS__)
+#define disk_debg(f, ...) pdebg("Disk: " f, ##__VA_ARGS__)
+#define disk_info(f, ...) pinfo("Disk: " f, ##__VA_ARGS__)
+#define disk_fail(f, ...) pfail("Disk: " f, ##__VA_ARGS__)
 
 typedef enum disk_type {
   DISK_TYPE_UNKNOWN = 0, // unknown type
