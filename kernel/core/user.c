@@ -12,9 +12,11 @@
 #include "util/mem.h"
 #include "util/panic.h"
 
+#include "mm/heap.h"
 #include "mm/mem.h"
 #include "mm/vmm.h"
 
+#include "limits.h"
 #include "types.h"
 #include "errno.h"
 
@@ -69,6 +71,8 @@ int32_t user_setup() {
 }
 
 int32_t user_exit(int32_t code) {
+  user_debg("exiting with code: %d", code);
+
   sched_exit(code);
   sched();
 
@@ -79,26 +83,43 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   if (NULL == path)
     return -EINVAL;
 
+  user_debg("executing %s", path);
+  user_debg("argv: 0x%p", argv);
+  user_debg("envp: 0x%p", envp);
+
   vfs_node_t *node = vfs_get(path);
   fmt_t       fmt;
 
+  char  **argv_copy = NULL, **envp_copy = NULL;
   void   *stack_argv = NULL, *stack_envp = NULL;
   int32_t err = 0;
 
   // see if we found the node
-  if (NULL == node)
-    return -ENOENT;
+  if (NULL == node) {
+    err = -ENOENT;
+    goto end;
+  }
 
   // we cannot execute a directory
-  if (vfs_node_is_directory(node))
-    return -EPERM;
+  if (vfs_node_is_directory(node)) {
+    err = -EPERM;
+    goto end;
+  }
 
   // TODO: handle shebang
+
+  // copy the arguments
+  if (NULL != argv)
+    argv_copy = charlist_copy(argv, ARG_MAX);
+
+  // copy the environment vars
+  if (NULL != envp)
+    envp_copy = charlist_copy(envp, ENV_MAX);
 
   // try to load the file using a known format
   if ((err = fmt_load(node, &fmt)) < 0) {
     user_fail("failed to load %s: %s", path, strerror(err));
-    return err;
+    goto end;
   }
 
   user_debg("entry for the new executable: 0x%x", fmt.entry);
@@ -160,16 +181,25 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   default:
     sched_fail("attempt to execute memory in an invalid VMA (0x%p)", fmt.entry);
     err = -EINVAL;
-    break;
+    goto end;
   }
 
   // copy the environment variables to the stack
-  if ((err = task_stack_add_list(current, envp, ENV_MAX, &stack_envp)) != 0)
-    panic("Exec: failed to copy arguments to new task stack for %s", path);
+  if ((err = task_stack_add_list(current, envp_copy, ENV_MAX, &stack_envp)) != 0)
+    panic("Failed to copy arguments to new task stack for %s", path);
 
   // copy the arguments to the stack
-  if ((err = task_stack_add_list(current, argv, ARG_MAX, &stack_argv)) != 0)
-    panic("Exec: failed to copy arguments to new task stack for %s", path);
+  if (NULL != argv_copy)
+    err = task_stack_add_list(current, argv_copy, ARG_MAX, &stack_argv);
+
+  // don't allow NULL argv
+  else {
+    char *temp_argv[] = {task_current->name, NULL};
+    err               = task_stack_add_list(current, temp_argv, ARG_MAX, &stack_argv);
+  }
+
+  if (err != 0)
+    panic("Failed to copy arguments to new task stack for %s", path);
 
   // add pointers for the argv and envp to the stack
   task_stack_add(current, &stack_envp, sizeof(void *));
@@ -178,15 +208,22 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   sched_state(TASK_STATE_SAVE); // save the registers
   sched_prio(TASK_PRIO_LOW);    // reset the priority
 
+  // call the scheduler to run as the new task
+  user_info("executing the new binary");
+
+end:
+  // free the copy of the argument and the environment list
+  charlist_free(argv_copy);
+  charlist_free(envp_copy);
+
   // our modifications are complete, we can unlock (enable) the scheduler
   sched_unlock();
 
-  // call the scheduler to run as the new task
-  user_info("new executable is ready");
+  // if everything went fine, will never return
   sched();
 
-  // will never return
-  return 0;
+  // return the error
+  return err;
 }
 
 int32_t user_fork() {

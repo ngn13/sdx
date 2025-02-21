@@ -85,9 +85,6 @@ int32_t task_mem_del(task_t *task, mem_type_t type, uint64_t vma) {
 
   mem_t *mem = NULL;
 
-  if (NULL == mem)
-    return -EFAULT;
-
   vmm_save();
   task_vmm_switch(task);
 

@@ -241,6 +241,9 @@ void *heap_realloc(void *mem, uint64_t size) {
 }
 
 void heap_free(void *mem) {
+  if (NULL == mem)
+    return;
+
   struct heap_chunk *start = NULL, *end = NULL, *cur = NULL;
 
   start = mem - HEAP_CHUNK_META_SIZE;

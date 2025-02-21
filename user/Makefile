@@ -6,7 +6,7 @@ SRCS += $(shell find . -maxdepth 1 -mindepth 1 -type d -not -name slibc)
 CFLAGS  = -nostartfiles -nostdlib -ffreestanding -fPIC -fPIE -Werror
 SFLAGS  = $(CFLAGS) -D__ASSEMBLY__=1 # make sure __ASSEMBLY__ is defined in assembly sources
 LFLAGS  = -pie --no-dynamic-linker -Bsymbolic
-INCLUDE = -I../config -I../inc
+INCLUDE = -I../../config -I../../inc
 
 # export required variables
 export CFLAGS  # c compiler flags

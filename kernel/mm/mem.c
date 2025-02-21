@@ -1,3 +1,4 @@
+#include "core/im.h"
 #include "mm/heap.h"
 #include "mm/mem.h"
 #include "mm/vmm.h"
@@ -68,15 +69,20 @@ void mem_free(mem_t *mem) {
 }
 
 mem_t *mem_del(mem_t **list, mem_type_t type, uint64_t vma) {
-  slist_foreach(list, mem_t) {
+  mem_t *pre = NULL, *cur = NULL;
+
+  for (cur = *list; cur != NULL; pre = cur, cur = cur->next) {
     if (type != 0 && type != cur->type)
       continue;
 
     if (vma != 0 && vma != vmm_vma(cur->vaddr))
       continue;
 
-    slist_del(list, cur, mem_t);
-    cur->next = NULL;
+    if (NULL == pre)
+      *list = cur->next;
+    else
+      pre->next = cur->next;
+
     return cur;
   }
 
