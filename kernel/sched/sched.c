@@ -159,7 +159,10 @@ void __sched_timer_handler(im_stack_t *stack) {
 
     */
     __sched_queue_del(task_current);
+
     // TODO: notify any tasks waiting on this task
+
+    task_free(task_current);
     task_current = NULL;
     break;
 
@@ -186,6 +189,7 @@ void __sched_timer_handler(im_stack_t *stack) {
     task_update_stack(task_current, stack);
     task_vmm_switch(task_current);
 
+    // decrement the remaining ticks
     task_current->ticks--;
     return;
   }
@@ -298,25 +302,25 @@ int32_t sched_init() {
 
 task_t *sched_fork() {
   // copy current task
-  task_t *task_new = task_create(task_current);
+  task_t *task = task_new();
 
-  if (NULL == task_new) {
+  if (NULL == task) {
     sched_fail("failed to fork the task");
     return NULL;
   }
 
   // set the required values
-  __sched_pid(task_new);
-  task_new->state = TASK_STATE_READY;
-  task_new->prio  = TASK_PRIO_LOW;
+  __sched_pid(task);
+  task->state = TASK_STATE_READY;
+  task->prio  = TASK_PRIO_LOW;
 
   // set the parent PID
   if (NULL != task_current)
-    task_new->ppid = task_current->pid;
+    task->ppid = task_current->pid;
 
   // add new task to the task list
-  __sched_queue_add(task_new);
-  return task_new;
+  __sched_queue_add(task);
+  return task;
 }
 
 task_t *sched_find(pid_t pid) {

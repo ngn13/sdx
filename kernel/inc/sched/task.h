@@ -1,6 +1,8 @@
 #pragma once
 
 #include "mm/vmm.h"
+#include "mm/mem.h"
+
 #include "limits.h"
 #include "types.h"
 
@@ -27,22 +29,6 @@ enum {
   TASK_PRIO_HIGH,
   TASK_PRIO_CR1TIKAL,
 };
-
-// task memory region types
-typedef enum {
-  TASK_MEM_TYPE_CODE = 1, // memory region contains runable code
-  TASK_MEM_TYPE_STACK,    // memory region contains program stack
-  TASK_MEM_TYPE_HEAP,     // memory region contains heap memory
-} task_mem_type_t;
-
-// task memory region
-typedef struct task_mem {
-  task_mem_type_t  type;  // memory region type (what it's used for)
-  void            *vaddr; // memory region virtual start address
-  uint64_t         paddr; // memory region physical start address
-  uint64_t         num;   // number of pages in the region
-  struct task_mem *next;  // next memory region
-} task_mem_t;
 
 // task signal set strucure (signal list)
 typedef struct task_sigset {
@@ -93,16 +79,22 @@ typedef struct task {
   int32_t exit_code; // exit code for the task
   int32_t wait_code; // exit code for the task the current task is waiting for
 
-  void       *vmm; // VMM used for this task
-  task_mem_t *mem; // memory region list
+  void  *vmm; // VMM used for this task
+  mem_t *mem; // memory region list
 
   struct task *next; // next task in the task queue
   struct task *prev; // previous task in the task queue
 } task_t;
 
-task_t *task_create(task_t *copy);                   // create a new task, if a task is provided copy it
+task_t *task_new();                                  // create a new task, if a task is provided copy it
 int32_t task_rename(task_t *task, const char *name); // rename the task
 int32_t task_free(task_t *task);                     // free a given task
+
+#define task_mem_add(task, reg) (mem_add(&task->mem, reg)) // add a memory region to task's memory region list
+int32_t task_mem_del(
+    task_t *task, mem_type_t type, uint64_t vma); // remove and unmap a memory region from the task's memory region list
+int32_t task_mem_clear(task_t *task);             // free every memory region and clear the task's memory region list
+int32_t task_mem_copy(task_t *to, task_t *from);  // copy memory regions from one task to the other
 
 // copies im_stack_t to task_regs_t
 #define __stack_to_regs(regs, stack)                                                                                   \

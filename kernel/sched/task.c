@@ -1,9 +1,7 @@
-#include "sched/task.h"
+#include "sched/sched.h"
 #include "sched/signal.h"
 #include "sched/stack.h"
-#include "sched/mem.h"
 
-#include "util/printk.h"
 #include "util/string.h"
 #include "util/list.h"
 #include "util/mem.h"
@@ -14,10 +12,7 @@
 #include "types.h"
 #include "errno.h"
 
-task_t *task_create(task_t *copy) {
-
-  // TODO: maybe rename this function to task_new() and use current instead of copy?
-
+task_t *task_new() {
   task_t *task_new = heap_alloc(sizeof(task_t));
   int32_t err      = 0;
 
@@ -25,7 +20,7 @@ task_t *task_create(task_t *copy) {
   bzero(task_new, sizeof(task_t));
 
   // create a new VMM for the task
-  if (NULL != copy)
+  if (NULL != task_current)
     task_new->vmm = vmm_new();
   else
     task_new->vmm = vmm_get();
@@ -37,8 +32,8 @@ task_t *task_create(task_t *copy) {
    * and allocate a new memory region for the stack
 
   */
-  if (NULL != copy)
-    err = task_mem_copy(task_new, copy);
+  if (NULL != task_current)
+    err = task_mem_copy(task_new, task_current);
 
   else {
     task_mem_clear(task_new);
@@ -53,34 +48,8 @@ task_t *task_create(task_t *copy) {
   task_signal_clear(task_new);
 
   // copy registers
-  if (NULL != copy)
-    memcpy(&task_new->regs, &copy->regs, sizeof(task_regs_t));
-
-  /*
-
-  task->regs.rflags = ((1 << 1) | (1 << 9));
-  task->regs.rip    = (uint64_t)entry; // set the instruction pointer to the given entry address
-
-  switch (task->ring) {
-  case TASK_RING_KERNEL:
-    task->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
-    task->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
-    task->regs.rsp = (uint64_t)task->stack.kernel + pm_size(TASK_STACK_PAGE_COUNT);
-    break;
-
-  case TASK_RING_USER:
-    task->regs.cs  = gdt_offset(gdt_desc_user_code_addr);
-    task->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
-    task->regs.rsp = (uint64_t)task->stack.user + pm_size(TASK_STACK_PAGE_COUNT);
-
-     * ORed with 3 to set the RPL to 3
-     * see https://wiki.osdev.org/Segment_Selector
-
-    task->regs.cs |= 3;
-    task->regs.ss |= 3;
-
-    break;
-  }*/
+  if (NULL != task_current)
+    memcpy(&task_new->regs, &task_current->regs, sizeof(task_regs_t));
 
   return task_new;
 }
@@ -103,4 +72,58 @@ int32_t task_free(task_t *task) {
   // free the task structure
   heap_free(task);
   return 0;
+}
+
+void __task_mem_free(mem_t *mem) {
+  mem_unmap(mem);
+  mem_free(mem);
+}
+
+int32_t task_mem_del(task_t *task, mem_type_t type, uint64_t vma) {
+  if (NULL == task)
+    return -EINVAL;
+
+  mem_t *mem = NULL;
+
+  if (NULL == mem)
+    return -EFAULT;
+
+  vmm_save();
+  task_vmm_switch(task);
+
+  while (NULL != (mem = mem_del(&task->mem, type, vma)))
+    __task_mem_free(mem);
+
+  vmm_restore();
+  return 0;
+}
+
+int32_t task_mem_clear(task_t *task) {
+  vmm_save();
+  task_vmm_switch(task);
+
+  slist_clear(&task->mem, __task_mem_free, mem_t);
+
+  vmm_restore();
+  return 0;
+}
+
+int32_t task_mem_copy(task_t *to, task_t *from) {
+  mem_t  *copy = NULL;
+  int32_t err  = 0;
+
+  vmm_save();
+  task_vmm_switch(to);
+
+  slist_foreach(&from->mem, mem_t) {
+    if ((copy = mem_copy(cur)) == NULL) {
+      err = -EFAULT;
+      goto end;
+    }
+    task_mem_add(to, copy);
+  }
+
+end:
+  vmm_restore();
+  return err;
 }

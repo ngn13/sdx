@@ -29,6 +29,9 @@
 #define VMM_FLAG_G        (1 << 8)    // global
 #define VMM_FLAG_XD       (1UL << 63) // execute disable (64 bit only, https://wiki.osdev.org/File:64-bit_page_tables2.png)
 #define VMM_FLAGS_DEFAULT (VMM_FLAG_P | VMM_FLAG_RW) // default flags
+#define VMM_FLAGS_ALL                                                                                                  \
+  (VMM_FLAG_P | VMM_FLAG_RW | VMM_FLAG_US | VMM_FLAG_PWT | VMM_FLAG_PCD | VMM_FLAG_A | VMM_FLAG_D | VMM_FLAG_PAT |     \
+      VMM_FLAG_G | VMM_FLAG_XD) // all flags
 
 #ifndef __ASSEMBLY__
 

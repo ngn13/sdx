@@ -1,7 +1,6 @@
 #include "sched/sched.h"
 #include "sched/stack.h"
 #include "sched/task.h"
-#include "sched/mem.h"
 
 #include "core/user.h"
 #include "boot/boot.h"
@@ -13,14 +12,15 @@
 #include "util/mem.h"
 #include "util/panic.h"
 
+#include "mm/mem.h"
 #include "mm/vmm.h"
 
 #include "types.h"
 #include "errno.h"
 
-#define user_debg(f, ...) pdebg("User: (%s:%d:%s) " f, current->name, current->pid, __func__, ##__VA_ARGS__)
-#define user_info(f, ...) pinfo("User: (%s:%d:%s) " f, current->name, current->pid, __func__, ##__VA_ARGS__)
-#define user_fail(f, ...) pfail("User: (%s:%d:%s) " f, current->name, current->pid, __func__, ##__VA_ARGS__)
+#define user_debg(f, ...) pdebg("User: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
+#define user_info(f, ...) pinfo("User: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
+#define user_fail(f, ...) pfail("User: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
 
 struct user_call user_calls[] = {
     {.code = 0, .func = user_exit},
@@ -79,11 +79,11 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   if (NULL == path)
     return -EINVAL;
 
-  vfs_node_t *node       = vfs_get(path);
-  void       *stack_argv = NULL, *stack_envp = NULL;
-  void       *fmt_addr = NULL, *fmt_entry = NULL;
-  uint64_t    len = 0, fmt_count = 0;
-  int32_t     err = 0, i = 0;
+  vfs_node_t *node = vfs_get(path);
+  fmt_t       fmt;
+
+  void   *stack_argv = NULL, *stack_envp = NULL;
+  int32_t err = 0;
 
   // see if we found the node
   if (NULL == node)
@@ -96,12 +96,12 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   // TODO: handle shebang
 
   // try to load the file using a known format
-  if ((err = fmt_load(node, &fmt_entry, &fmt_addr, &fmt_count)) < 0) {
+  if ((err = fmt_load(node, &fmt)) < 0) {
     user_fail("failed to load %s: %s", path, strerror(err));
     return err;
   }
 
-  user_debg("entry for the new executable: 0x%x", fmt_entry);
+  user_debg("entry for the new executable: 0x%x", fmt.entry);
 
   /*
 
@@ -115,9 +115,13 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   // update the current task
   task_rename(current, path);
 
-  // add the executable memory region to the task, after removing the old one
-  task_mem_del(current, TASK_MEM_TYPE_CODE, NULL);
-  task_mem_add(current, TASK_MEM_TYPE_CODE, fmt_addr, vmm_resolve(fmt_addr), fmt_count);
+  // remove old binary format memory regions
+  task_mem_del(current, MEM_TYPE_CODE, NULL);
+  task_mem_del(current, MEM_TYPE_RDONLY, NULL);
+  task_mem_del(current, MEM_TYPE_DATA, NULL);
+
+  // add the new regions from the loaded format
+  task_mem_add(current, fmt.mem);
 
   // update the registers
   bzero(&current->regs, sizeof(task_regs_t));
@@ -129,9 +133,9 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
 
   */
   current->regs.rflags = ((1 << 1) | (1 << 9));
-  current->regs.rip    = (uint64_t)fmt_entry;
+  current->regs.rip    = (uint64_t)fmt.entry;
 
-  switch (vmm_vma(fmt_entry)) {
+  switch (vmm_vma(fmt.entry)) {
   case VMM_VMA_KERNEL:
     task_current->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
     task_current->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
@@ -154,7 +158,7 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
     break;
 
   default:
-    sched_fail("attempt to execute memory in an invalid VMA (0x%p)", fmt_entry);
+    sched_fail("attempt to execute memory in an invalid VMA (0x%p)", fmt.entry);
     err = -EINVAL;
     break;
   }

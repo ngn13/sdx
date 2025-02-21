@@ -168,7 +168,7 @@ int32_t vmm_set(void *vaddr, uint64_t num, uint64_t flags) {
   if (NULL == (entry = __vmm_entry_from_vaddr((uint64_t)vaddr)))
     return -EFAULT;
 
-  *entry &= ~(flags);
+  *entry |= flags;
   return 0;
 }
 
@@ -178,7 +178,7 @@ int32_t vmm_clear(void *vaddr, uint64_t num, uint64_t flags) {
   if (NULL == (entry = __vmm_entry_from_vaddr((uint64_t)vaddr)))
     return -EFAULT;
 
-  *entry |= flags;
+  *entry &= ~(flags);
   return 0;
 }
 
@@ -305,7 +305,7 @@ void *__vmm_map_to_vaddr_internal(uint64_t vaddr, uint64_t num, uint64_t align, 
   }
 
   return __vmm_map_to_paddr_internal(
-      paddr, vaddr, num, flags, VMM_VMA_USER >= vaddr && vaddr > VMM_VMA_USER_END ? VMM_FLAG_US : 0, true);
+      paddr, vaddr, num, flags, VMM_VMA_USER >= vaddr && vaddr < VMM_VMA_USER_END ? VMM_FLAG_US : 0, true);
 }
 
 uint64_t __vmm_find_contiguous(uint64_t num, uint64_t align, uint64_t vma) {
