@@ -4,6 +4,7 @@
 #include "mm/vmm.h"
 #include "mm/heap.h"
 
+#include "sched/task.h"
 #include "util/printk.h"
 #include "util/panic.h"
 #include "util/list.h"
@@ -46,11 +47,11 @@ struct im_idtr {
 } __attribute__((packed));
 
 struct im_handler_entry {
-  im_handler_func_t       *func;       // handler function
-  im_handler_prio_t        prio;       // handler function priority
-  uint8_t                  vector;     // selected vector for the handler
-  bool                     is_enabled; // is the handler enabled
-  struct im_handler_entry *next, *pre; // next and previous handler
+  im_handler_func_t       *func;        // handler function
+  im_handler_prio_t        prio;        // handler function priority
+  uint8_t                  vector;      // selected vector for the handler
+  bool                     is_enabled;  // is the handler enabled
+  struct im_handler_entry *next, *prev; // next and previous handler
 };
 
 struct im_handler {
@@ -175,19 +176,15 @@ void im_del_handler(uint8_t vector, im_handler_func_t handler) {
 
 void im_disable_handler(uint8_t vector, im_handler_func_t handler) {
   dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler) {
+    if (cur->vector == vector && cur->func == handler)
       cur->is_enabled = false;
-      break;
-    }
   }
 }
 
 void im_enable_handler(uint8_t vector, im_handler_func_t handler) {
   dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler) {
+    if (cur->vector == vector && cur->func == handler)
       cur->is_enabled = true;
-      break;
-    }
   }
 }
 
@@ -217,17 +214,21 @@ void im_init() {
   // setup the TSS
   bzero(&im_tss, sizeof(struct tss));
 
+  // single page should be enough for the interrupt stack
   if ((im_tss.rsp0 = (uint64_t)vmm_map(1, VMM_FLAGS_DEFAULT)) == NULL)
-    panic("Failed to allocate memory for the TSS");
+    panic("Failed to allocate a stack for the TSS");
 
+  // stack starts at the end
   im_tss.rsp0 += VMM_PAGE_SIZE;
-  pdebg("IM: Created TSS stack at 0x%x", im_tss.rsp0);
+  pdebg("IM: TSS stack at 0x%p", im_tss.rsp0);
 
   gdt_tss_set(&im_tss, (sizeof(struct tss) - 1));
+}
 
-  // load the IDTR
-  __asm__("lidt (%0)" ::"rm"(&im_idtr));
-
-  // load the TSS
-  __asm__("ltr %0" ::"r"(gdt_offset(gdt_desc_tss_addr)));
+void im_enable() {
+  // load the IDTR & TSS, then sti (set interrupt)
+  __asm__("lidt (%0)\n"
+          "ltr %1\n"
+          "sti\n" ::"rm"(&im_idtr),
+      "r"(gdt_offset(gdt_desc_tss_addr)));
 }

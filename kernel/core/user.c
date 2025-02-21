@@ -1,31 +1,26 @@
 #include "sched/sched.h"
 #include "sched/stack.h"
 #include "sched/task.h"
-#include "sched/mem.h"
 
 #include "core/user.h"
 #include "boot/boot.h"
-
-#include "mm/vmm.h"
-#include "mm/pm.h"
 
 #include "fs/fmt.h"
 #include "fs/vfs.h"
 
 #include "util/asm.h"
+#include "util/mem.h"
 #include "util/panic.h"
+
+#include "mm/mem.h"
+#include "mm/vmm.h"
 
 #include "types.h"
 #include "errno.h"
 
-#define user_debg(f, ...) pdebg("User: (%s:%d:%s) " f, current->name, current->pid, __func__, ##__VA_ARGS__)
-#define user_info(f, ...) pinfo("User: (%s:%d:%s) " f, current->name, current->pid, __func__, ##__VA_ARGS__)
-#define user_fail(f, ...) pfail("User: (%s:%d:%s) " f, current->name, current->pid, __func__, ##__VA_ARGS__)
-
-#define MSR_EFER  0xC0000080 // EFER (Extended Feature Enables) MSR
-#define MSR_STAR  0xC0000081 // STAR (System Call Target Address) MSR
-#define MSR_LSTAR 0xC0000082 // LSTAR (IA-32e Mode System Call Target Address) MSR
-#define MSR_FMASK 0xC0000084 // FMASK (System Call Flag Mask) MSR
+#define user_debg(f, ...) pdebg("User: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
+#define user_info(f, ...) pinfo("User: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
+#define user_fail(f, ...) pfail("User: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
 
 struct user_call user_calls[] = {
     {.code = 0, .func = user_exit},
@@ -40,8 +35,8 @@ int32_t user_setup() {
    * see Table 2-2. IA-32 Architectural MSRs (Contd.) and
    * see SDM Vol 3, 6.8.8 Fast System Calls in 64-Bit Mode
 
-   * to enable SYSCALL/SYSRET, first thing we need to set bit 0 (SCE)
-   * in the EFER MSR, then to get them to actually work, we need to set some other MSRs
+   * to enable SYSCALL/SYSRET, first thing we need to set bit 0 (SCE) in the EFER MSR,
+   * then to get them to actually work, we need to set some other MSRs
 
    * STAR[47:32] = code segment (CS) for kernel (used for syscall)
    * stack segment (SS) is calculated by STAR[47:32] + 8
@@ -84,11 +79,11 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   if (NULL == path)
     return -EINVAL;
 
-  vfs_node_t *node       = vfs_get(path);
-  void       *stack_argv = NULL, *stack_envp = NULL;
-  void       *fmt_addr = NULL, *fmt_entry = NULL;
-  uint64_t    len = 0, fmt_count = 0;
-  int32_t     err = 0, i = 0;
+  vfs_node_t *node = vfs_get(path);
+  fmt_t       fmt;
+
+  void   *stack_argv = NULL, *stack_envp = NULL;
+  int32_t err = 0;
 
   // see if we found the node
   if (NULL == node)
@@ -101,40 +96,97 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   // TODO: handle shebang
 
   // try to load the file using a known format
-  if ((err = fmt_load(node, &fmt_entry, &fmt_addr, &fmt_count)) < 0) {
+  if ((err = fmt_load(node, &fmt)) < 0) {
     user_fail("failed to load %s: %s", path, strerror(err));
     return err;
   }
 
-  user_debg("entry for the new executable: 0x%x", fmt_entry);
+  user_debg("entry for the new executable: 0x%x", fmt.entry);
 
-  // make sure the scheduling is disabled before we modify the current task
+  /*
+
+   * we are gonna modify the current task, if an IRQ calls
+   * the scheduler our modifications will get fucked so we
+   * will temporarily lock (disable) the scheduler
+
+  */
   sched_lock();
-  sched();
 
-  task_update(current, path, TASK_RING_USER, fmt_entry); // update the current task
-  task_mem_add(current, fmt_addr, fmt_count);            // add the executable memory region to the task
+  // update the current task
+  task_rename(current, path);
+
+  // remove old binary format memory regions
+  task_mem_del(current, MEM_TYPE_CODE, NULL);
+  task_mem_del(current, MEM_TYPE_RDONLY, NULL);
+  task_mem_del(current, MEM_TYPE_DATA, NULL);
+
+  // add the new regions from the loaded format
+  task_mem_add(current, fmt.mem);
+
+  // update the registers
+  bzero(&current->regs, sizeof(task_regs_t));
+
+  /*
+
+   * bit 1 = reserved, 9 = interrupt enable
+   * https://en.wikipedia.org/wiki/FLAGS_register
+
+  */
+  current->regs.rflags = ((1 << 1) | (1 << 9));
+  current->regs.rip    = (uint64_t)fmt.entry;
+
+  switch (vmm_vma(fmt.entry)) {
+  case VMM_VMA_KERNEL:
+    task_current->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
+    task_current->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
+    task_current->regs.rsp = task_stack_get(task_current, VMM_VMA_KERNEL);
+    break;
+
+  case VMM_VMA_USER:
+    task_current->regs.cs  = gdt_offset(gdt_desc_user_code_addr);
+    task_current->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
+    task_current->regs.rsp = task_stack_get(task_current, VMM_VMA_USER);
+
+    /*
+
+     * ORed with 3 to set the RPL to 3
+     * see https://wiki.osdev.org/Segment_Selector
+
+    */
+    task_current->regs.cs |= 3;
+    task_current->regs.ss |= 3;
+    break;
+
+  default:
+    sched_fail("attempt to execute memory in an invalid VMA (0x%p)", fmt.entry);
+    err = -EINVAL;
+    break;
+  }
 
   // copy the environment variables to the stack
-  if ((err = task_stack_copy_list(current, envp, ENV_MAX, &stack_envp)) < 0)
+  if ((err = task_stack_add_list(current, envp, ENV_MAX, &stack_envp)) != 0)
     panic("Exec: failed to copy arguments to new task stack for %s", path);
 
   // copy the arguments to the stack
-  if ((err = task_stack_copy_list(current, argv, ARG_MAX, &stack_argv)) < 0)
+  if ((err = task_stack_add_list(current, argv, ARG_MAX, &stack_argv)) != 0)
     panic("Exec: failed to copy arguments to new task stack for %s", path);
 
   // add pointers for the argv and envp to the stack
-  task_stack_copy(current, &stack_envp, sizeof(void *));
-  task_stack_copy(current, &stack_argv, sizeof(void *));
+  task_stack_add(current, &stack_envp, sizeof(void *));
+  task_stack_add(current, &stack_argv, sizeof(void *));
 
-  current->state = TASK_STATE_READY; // mark the current task ready
+  sched_state(TASK_STATE_SAVE); // save the registers
+  sched_prio(TASK_PRIO_LOW);    // reset the priority
 
+  // our modifications are complete, we can unlock (enable) the scheduler
+  sched_unlock();
+
+  // call the scheduler to run as the new task
   user_info("new executable is ready");
+  sched();
 
-  sched_unlock(); // enable scheduling back again after we are done modifying the current task
-  sched();        // call the scheduler so next time we switch to this task, we will be running as the new process
-
-  return 0; // will never return
+  // will never return
+  return 0;
 }
 
 int32_t user_fork() {

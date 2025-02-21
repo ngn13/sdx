@@ -18,7 +18,9 @@
 
 // boot/paging.S
 extern uint32_t paging_mb_data_offset;
-#define BOOT_MB_DATA_ADDR (0xffffffff80200000 + paging_mb_data_offset)
+#define BOOT_MB_INFO_START_VADDR (0xffffffff80200000) // start of the virtual address mapping for mb info
+#define BOOT_MB_INFO_END_VADDR   (0xffffffff80201000) // end of the virtual address mapping for mb info
+#define BOOT_MB_INFO_VADDR       (BOOT_MB_INFO_START_VADDR + paging_mb_data_offset) // mb info address
 
 extern uint64_t paging_temp_tables_addr;
 #define BOOT_TEMP_PML4_VADDR (paging_temp_tables_addr)

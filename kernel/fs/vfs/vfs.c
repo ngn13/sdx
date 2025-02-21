@@ -60,7 +60,7 @@ int32_t vfs_mount(char *path, fs_t *fs) {
     }
 
     vfs_node_lock(node);
-    vfs_info("mounted node to root");
+    vfs_info("mounted node 0x%p to root", node);
 
     return 0;
   }

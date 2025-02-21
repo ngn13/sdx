@@ -4,30 +4,26 @@
 #include "util/mem.h"
 #include "util/printk.h"
 #include "util/bit.h"
+#include "util/asm.h"
 #include "util/string.h"
 
 #include "types.h"
 #include "errno.h"
 
-bool vmm_init() {
-  return false;
-}
-
-void *vmm_alloc(uint64_t size) {
-  return NULL;
-}
-
-void *vmm_realloc(void *mem, uint64_t size) {
-  return NULL;
-}
-
-void vmm_free(void *mem) {
-  return;
-}
-
 #define vmm_fail(f, ...) pfail("VMM: " f, ##__VA_ARGS__)
 #define vmm_warn(f, ...) pwarn("VMM: " f, ##__VA_ARGS__)
 #define vmm_debg(f, ...) pdebg("VMM: " f, ##__VA_ARGS__)
+
+/*
+
+ * not an actual entry flag, bit 9 of the entry is free for use
+ * so i use to keep track of pages that are allocated from the PMM
+
+*/
+#define VMM_FLAG_PADDR_ALLOC (1 << 9)
+#define VMM_FLAGS_CLEAR                                                                                                \
+  (~(VMM_FLAG_P | VMM_FLAG_RW | VMM_FLAG_US | VMM_FLAG_PWT | VMM_FLAG_PCD | VMM_FLAG_A | VMM_FLAG_D | VMM_FLAG_PAT |   \
+      VMM_FLAG_G | VMM_FLAG_XD | VMM_FLAG_PADDR_ALLOC))
 
 #define vmm_vma_is_valid(vma) (VMM_VMA_KERNEL == vma || VMM_VMA_USER == vma)
 #define vmm_vma_does_contain(addr)                                                                                     \
@@ -84,8 +80,48 @@ bool __vmm_is_table_free(uint64_t *table_vaddr) {
   return true;
 }
 
+int32_t vmm_init() {
+  /*
+
+   * enable the XD page flag (bit 11 on EFER)
+
+   * for more information see:
+   * https://wiki.osdev.org/Paging#Page_Map_Table_Entries
+   * https://wiki.osdev.org/CPU_Registers_x86-64#IA32_EFER
+
+  */
+  uint64_t efer = _msr_read(MSR_EFER);
+  _msr_write(MSR_EFER, efer | (1 << 11));
+
+  return 0;
+}
+
+int32_t vmm_sync(void *vmm) {
+  uint64_t pml4_paddr = (uint64_t)vmm, *pml4_vaddr = NULL;
+
+  // temporarily map old PML4
+  if ((pml4_vaddr = vmm_map_to_paddr(pml4_paddr, 1, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT)) == NULL) {
+    vmm_warn("failed to map the old PML4 @ 0x%p to sync", pml4_paddr);
+    return -EFAULT;
+  }
+
+  // clean the user VMA contents
+  bzero(pml4_vaddr, vmm_pml4_index(VMM_VMA_USER_END) * VMM_TABLE_ENTRY_SIZE);
+
+  // copy the current PML4's kernel VMA contents
+  memcpy(pml4_vaddr + vmm_pml4_index(VMM_VMA_KERNEL),
+      vmm_pml4_vaddr() + vmm_pml4_index(VMM_VMA_KERNEL),
+      (VMM_TABLE_ENTRY_COUNT - vmm_pml4_index(VMM_VMA_KERNEL)) * VMM_TABLE_ENTRY_SIZE);
+
+  // fix the recursive paging entry
+  pml4_vaddr[510] = (uint64_t)pml4_paddr | VMM_FLAGS_DEFAULT;
+
+  // unmap the PML4
+  return vmm_unmap(pml4_vaddr, 1);
+}
+
 void *vmm_new() {
-  uint64_t pml4_paddr, *pml4_vaddr = NULL;
+  uint64_t pml4_paddr = 0;
 
   // allocate a new PML4
   if ((pml4_paddr = pmm_alloc(1, 0)) == 0) {
@@ -93,25 +129,24 @@ void *vmm_new() {
     return NULL;
   }
 
-  // temporarily map it
-  if ((pml4_vaddr = vmm_map_to_paddr(pml4_paddr, 1, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT)) == NULL) {
-    vmm_warn("failed to map the new PML4 @ 0x%p", pml4_paddr);
+  // sync the kernel VMA with the current one
+  if (vmm_sync((void *)pml4_paddr) < 0) {
+    vmm_warn("failed to sync new PML4");
     pmm_free(pml4_paddr, 1);
     return NULL;
   }
 
-  // copy the current PMl4's kernel VMA contents
-  memcpy(pml4_vaddr + vmm_pml4_index(VMM_VMA_KERNEL),
-      vmm_pml4_vaddr() + vmm_pml4_index(VMM_VMA_KERNEL),
-      (VMM_TABLE_ENTRY_COUNT - vmm_pml4_index(VMM_VMA_KERNEL)) * VMM_TABLE_ENTRY_SIZE);
-
-  // change the recursive paging entry so it point's to the new PML4
-  pml4_vaddr[510] = (uint64_t)pml4_paddr | VMM_FLAGS_DEFAULT;
-
-  // unmap it
-  vmm_unmap(pml4_vaddr, 1);
-
   return (void *)pml4_paddr;
+}
+
+void *vmm_get() {
+  void *vmm;
+
+  __asm__("mov %%cr3, %%rax\n"
+          "mov %%rax, %0\n" ::"m"(vmm)
+      : "%rax");
+
+  return vmm;
 }
 
 int32_t vmm_switch(void *vmm) {
@@ -127,6 +162,43 @@ int32_t vmm_switch(void *vmm) {
   return 0;
 }
 
+int32_t vmm_set(void *vaddr, uint64_t num, uint64_t flags) {
+  uint64_t *entry = NULL;
+
+  if (NULL == (entry = __vmm_entry_from_vaddr((uint64_t)vaddr)))
+    return -EFAULT;
+
+  *entry |= flags;
+  return 0;
+}
+
+int32_t vmm_clear(void *vaddr, uint64_t num, uint64_t flags) {
+  uint64_t *entry = NULL;
+
+  if (NULL == (entry = __vmm_entry_from_vaddr((uint64_t)vaddr)))
+    return -EFAULT;
+
+  *entry &= ~(flags);
+  return 0;
+}
+
+uint64_t vmm_vma(void *vaddr) {
+  if ((uint64_t)vaddr >= VMM_VMA_KERNEL && (uint64_t)vaddr < VMM_VMA_KERNEL_END)
+    return VMM_VMA_KERNEL;
+  return VMM_VMA_USER;
+}
+
+uint64_t vmm_resolve(void *vaddr) {
+  uint64_t *entry = NULL;
+
+  if (NULL == (entry = __vmm_entry_from_vaddr((uint64_t)vaddr)))
+    return 0;
+
+  if (*entry & VMM_FLAG_PS)
+    return vmm_entry_to_addr(*entry) | ((uint64_t)vaddr & 0x1fffff);
+  return vmm_entry_to_addr(*entry) | ((uint64_t)vaddr & 0xfff);
+}
+
 int32_t vmm_unmap(void *_vaddr, uint64_t num) {
   uint64_t vaddr = (uint64_t)_vaddr, *entry = NULL;
   int32_t  err = 0;
@@ -139,7 +211,7 @@ int32_t vmm_unmap(void *_vaddr, uint64_t num) {
       return -EFAULT;
     }
 
-    if ((err = pmm_free(vmm_entry_to_addr(*entry), 1)) != 0) {
+    if (*entry & VMM_FLAG_PADDR_ALLOC && (err = pmm_free(vmm_entry_to_addr(*entry), 1)) != 0) {
       vmm_warn("failed to free the physical page @ 0x%p", vmm_entry_to_addr(*entry));
       return err;
     }
@@ -172,7 +244,8 @@ int32_t vmm_unmap(void *_vaddr, uint64_t num) {
   return 0;
 }
 
-void *__vmm_map_to_paddr_internal(uint64_t paddr, uint64_t vaddr, uint64_t num, uint64_t flags, uint64_t all_flags) {
+void *__vmm_map_to_paddr_internal(
+    uint64_t paddr, uint64_t vaddr, uint64_t num, uint64_t flags, uint64_t all_flags, bool paddr_allocated) {
   uint64_t *table = NULL, start = vaddr;
 
   vmm_debg("mapping %u pages from 0x%p to 0x%p", num, paddr, vaddr);
@@ -208,6 +281,16 @@ void *__vmm_map_to_paddr_internal(uint64_t paddr, uint64_t vaddr, uint64_t num, 
     // add the page entry to PT
     table  = &vmm_pt_entry(vaddr);
     *table = (uint64_t)paddr | flags | all_flags;
+
+    /*
+
+     * if page is allocated with PMM mark it as allocated
+     * so when we vmm_unmap() it will automatically free it
+     * from the PMM as well
+
+    */
+    if (paddr_allocated)
+      *table |= VMM_FLAG_PADDR_ALLOC;
   }
 
   return (void *)start;
@@ -222,20 +305,22 @@ void *__vmm_map_to_vaddr_internal(uint64_t vaddr, uint64_t num, uint64_t align, 
   }
 
   return __vmm_map_to_paddr_internal(
-      paddr, vaddr, num, flags, VMM_VMA_USER >= vaddr && vaddr > VMM_VMA_USER_END ? VMM_FLAG_US : 0);
+      paddr, vaddr, num, flags, VMM_VMA_USER >= vaddr && vaddr < VMM_VMA_USER_END ? VMM_FLAG_US : 0, true);
 }
 
-uint64_t __vmm_find_contiguous(uint64_t num, uint64_t vma) {
+uint64_t __vmm_find_contiguous(uint64_t num, uint64_t align, uint64_t vma) {
   uint64_t pos = vma, start = 0, cur = 0;
 
-  for (; num > cur; pos += VMM_PAGE_SIZE) {
+  for (; num > cur && vmm_vma_does_contain(pos); pos += VMM_PAGE_SIZE) {
     // first page, so our first allocation will be the start address
-    if (cur == 0)
-      start = pos;
+    if (cur == 0) {
+      // make sure the start address is aligned
+      if (align != 0 && pos % align != 0)
+        continue;
 
-    // make sure the virutal address is in one of the VMAs
-    if (!vmm_vma_does_contain(pos))
-      break;
+      // set the start address
+      start = pos;
+    }
 
     /*
 
@@ -269,7 +354,7 @@ void *vmm_map_with(uint64_t num, uint64_t align, uint64_t vma, uint64_t flags) {
 
   uint64_t vaddr = 0;
 
-  if ((vaddr = __vmm_find_contiguous(num, vma)) == 0)
+  if ((vaddr = __vmm_find_contiguous(num, align, vma)) == 0)
     return NULL;
 
   return __vmm_map_to_vaddr_internal(vaddr, num, align, flags);
@@ -283,7 +368,7 @@ void *vmm_map_to_paddr(uint64_t paddr, uint64_t num, uint64_t vma, uint64_t flag
 
   uint64_t vaddr = 0, pos = 0;
 
-  if ((vaddr = __vmm_find_contiguous(num, vma)) == 0)
+  if ((vaddr = __vmm_find_contiguous(num, 0, vma)) == 0)
     return NULL;
 
   if (paddr % VMM_PAGE_SIZE != 0) {
@@ -293,10 +378,10 @@ void *vmm_map_to_paddr(uint64_t paddr, uint64_t num, uint64_t vma, uint64_t flag
 
   for (pos = paddr; pos < paddr + num * VMM_PAGE_SIZE; pos += VMM_PAGE_SIZE) {
     if (pmm_is_allocated(pos))
-      vmm_warn("mapping 0x%p, which is not a free page", pos);
+      vmm_debg("mapping 0x%p, which is not a free page", pos);
   }
 
-  return __vmm_map_to_paddr_internal(paddr, vaddr, num, flags, 0);
+  return __vmm_map_to_paddr_internal(paddr, vaddr, num, flags, 0, false);
 }
 
 void *vmm_map_to_vaddr(uint64_t vaddr, uint64_t num, uint64_t align, uint64_t flags) {

@@ -1,25 +1,65 @@
 #include "sched/sched.h"
-#include "sched/task.h"
 #include "sched/signal.h"
 #include "sched/stack.h"
-#include "sched/mem.h"
-
-#include "mm/vmm.h"
-#include "mm/pm.h"
-
-#include "boot/boot.h"
 
 #include "util/string.h"
 #include "util/list.h"
 #include "util/mem.h"
 
+#include "mm/vmm.h"
+#include "mm/heap.h"
+
 #include "types.h"
 #include "errno.h"
 
-task_t *task_alloc() {
-  task_t *new = vmm_alloc(sizeof(task_t));
-  bzero(new, sizeof(task_t));
-  return new;
+task_t *task_new() {
+  task_t *task_new = heap_alloc(sizeof(task_t));
+  int32_t err      = 0;
+
+  // clear the stack structure
+  bzero(task_new, sizeof(task_t));
+
+  // create a new VMM for the task
+  if (NULL != task_current)
+    task_new->vmm = vmm_new();
+  else
+    task_new->vmm = vmm_get();
+
+  /*
+
+   * if we are copying from an other process copy it's
+   * memory regions, otherwise clear all the regions
+   * and allocate a new memory region for the stack
+
+  */
+  if (NULL != task_current)
+    err = task_mem_copy(task_new, task_current);
+
+  else {
+    task_mem_clear(task_new);
+    err = task_stack_alloc(task_new);
+  }
+
+  // check for errors
+  if (err != 0)
+    return NULL;
+
+  // setup new task's signal queue
+  task_signal_clear(task_new);
+
+  // copy registers
+  if (NULL != task_current)
+    memcpy(&task_new->regs, &task_current->regs, sizeof(task_regs_t));
+
+  return task_new;
+}
+
+int32_t task_rename(task_t *task, const char *name) {
+  if (NULL == task || NULL == name)
+    return -EINVAL;
+
+  strncpy(task->name, name, NAME_MAX + 1);
+  return 0;
 }
 
 int32_t task_free(task_t *task) {
@@ -28,69 +68,62 @@ int32_t task_free(task_t *task) {
 
   task_mem_clear(task);    // free the task's memory regions
   task_signal_clear(task); // free the task's signal queue
-  task_stack_free(task);   // free the task's stack
 
   // free the task structure
-  vmm_free(task);
-
+  heap_free(task);
   return 0;
 }
 
-int32_t task_update(task_t *task, const char *name, uint8_t ring, void *entry) {
-  if (NULL == task || NULL == name || !__task_is_valid_ring(ring))
+void __task_mem_free(mem_t *mem) {
+  mem_unmap(mem);
+  mem_free(mem);
+}
+
+int32_t task_mem_del(task_t *task, mem_type_t type, uint64_t vma) {
+  if (NULL == task)
     return -EINVAL;
 
-  task_stack_alloc(task);  // allocate a user & kernel stack
-  task_signal_clear(task); // free the task's signal queue
-  task_mem_clear(task);    // free the task's memory regions
+  mem_t *mem = NULL;
 
-  // set the required values
-  strncpy(task->name, name, NAME_MAX + 1);
-  task->state     = TASK_STATE_BUSY;
-  task->prio      = TASK_PRIO_DEFAULT;
-  task->min_ticks = TASK_TICKS_DEFAULT;
-  task->ring      = ring;
+  if (NULL == mem)
+    return -EFAULT;
 
-  // update the registers
-  bzero(&task->regs, sizeof(task_regs_t));
+  vmm_save();
+  task_vmm_switch(task);
 
-  /*
+  while (NULL != (mem = mem_del(&task->mem, type, vma)))
+    __task_mem_free(mem);
 
-   * bit 1 = reserved, 9 = interrupt enable
-   * https://en.wikipedia.org/wiki/FLAGS_register
-
-  */
-  task->regs.rflags = ((1 << 1) | (1 << 9));
-  task->regs.rip    = (uint64_t)entry; // set the instruction pointer to the given entry address
-
-  switch (task->ring) {
-  case TASK_RING_KERNEL:
-    task->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
-    task->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
-    task->regs.rsp = (uint64_t)task->stack.kernel + pm_size(TASK_STACK_PAGE_COUNT);
-    break;
-
-  case TASK_RING_USER:
-    task->regs.cs  = gdt_offset(gdt_desc_user_code_addr);
-    task->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
-    task->regs.rsp = (uint64_t)task->stack.user + pm_size(TASK_STACK_PAGE_COUNT);
-
-    /*
-
-     * ORed with 3 to set the RPL to 3
-     * see https://wiki.osdev.org/Segment_Selector
-
-    */
-    task->regs.cs |= 3;
-    task->regs.ss |= 3;
-
-    break;
-  }
-
+  vmm_restore();
   return 0;
 }
 
-task_t *task_copy(task_t *task) {
-  // TODO: implement
-  return NULL;
+int32_t task_mem_clear(task_t *task) {
+  vmm_save();
+  task_vmm_switch(task);
+
+  slist_clear(&task->mem, __task_mem_free, mem_t);
+
+  vmm_restore();
+  return 0;
+}
+
+int32_t task_mem_copy(task_t *to, task_t *from) {
+  mem_t  *copy = NULL;
+  int32_t err  = 0;
+
+  vmm_save();
+  task_vmm_switch(to);
+
+  slist_foreach(&from->mem, mem_t) {
+    if ((copy = mem_copy(cur)) == NULL) {
+      err = -EFAULT;
+      goto end;
+    }
+    task_mem_add(to, copy);
+  }
+
+end:
+  vmm_restore();
+  return err;
 }

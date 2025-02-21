@@ -74,7 +74,7 @@ typedef struct pci_driver {
 #define PCI_TYPE_ANY     0xff
 
   // init function for the driver
-  bool (*init)(pci_device_t *d);
+  int32_t (*init)(pci_device_t *d);
 } pci_driver_t;
 
 uint32_t pci_read32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
@@ -87,7 +87,7 @@ bool pci_write8(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint8_t
 
 void pci_device_load(
     pci_device_t *d, uint8_t bus, uint8_t slot, uint8_t func); // load a device data from a specific address
-bool pci_device_init(pci_device_t *d);                         // init a device, with the driver(s)
+int32_t pci_device_init(pci_device_t *d);                      // init a device, with the driver(s)
 #define pci_device_read32(d, o) pci_read32(d->bus, d->slot, d->func, o)
 #define pci_device_read16(d, o) pci_read16(d->bus, d->slot, d->func, o)
 #define pci_device_read8(d, o)  pci_read8(d->bus, d->slot, d->func, o)

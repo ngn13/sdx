@@ -1,6 +1,8 @@
 #pragma once
 #include "core/disk.h"
 #include "core/pci.h"
+
+#include "util/math.h"
 #include "types.h"
 
 extern pci_driver_t ahci_driver;
@@ -11,7 +13,7 @@ extern pci_driver_t ahci_driver;
  * used as a part of the HBA memory structure (pointed by ABAR)
 
 */
-typedef volatile struct ahci_port {
+typedef volatile struct {
   uint64_t clb; // command list base address
 #define AHCI_PORT_CMD_LIST_COUNT  32
 #define ahci_port_cmd_list_size() (sizeof(struct ahci_cmd_header) * AHCI_PORT_CMD_LIST_COUNT)
@@ -34,7 +36,7 @@ typedef volatile struct ahci_port {
   uint32_t reserved[10];
 
   uint32_t vendor[4]; // vendor specific
-} ahci_port_t;
+} __attribute__((packed)) ahci_port_t;
 
 /*
 
@@ -42,7 +44,7 @@ typedef volatile struct ahci_port {
  * contains generic host control and port control registers
 
 */
-typedef volatile struct ahci_mem {
+typedef volatile struct {
   // generic host control (0x00 - 0x2C)
   uint32_t cap;     // host capabilities
   uint32_t ghc;     // global host control
@@ -66,16 +68,16 @@ typedef volatile struct ahci_mem {
   uint8_t vendor[96];
 
   // port control registers
-  ahci_port_t ports[1];
-} ahci_mem_t;
+  ahci_port_t ports[32]; // sizeof(ahci_mem->pi) * 8
+} __attribute__((packed)) ahci_mem_t;
 
 /*
 
- * command headers are used to create the command list, which is pointed by ahci_port.clb
- * each header in the command list is called a "slot"
+ * command headers are used to create the command list, which is pointed
+ * by ahci_port.clb each header in the command list is called a "slot"
 
 */
-typedef struct ahci_cmd_header {
+struct ahci_cmd_header {
   // dword 0
   uint8_t cfl      : 5;
   uint8_t atapi    : 1;
@@ -100,15 +102,16 @@ typedef struct ahci_cmd_header {
 
   // dword 4-7
   uint32_t reserved1[4];
-} ahci_cmd_header_t;
+};
 
 /*
 
- * physical region descriptor, used by ahci_cmd_table to store multiple PRDs
- * these PRDs are stored in a PRD table (PRDT), and the table length is specified by ahci_cmd_header.prdtl
+ * physical region descriptor, used by ahci_cmd_table to store multiple
+ * PRDs these PRDs are stored in a PRD table (PRDT), and the table length
+ * is specified by ahci_cmd_header.prdtl
 
 */
-typedef struct ahci_prd {
+struct ahci_prd {
   // dword 0-1
   uint64_t dba;
 
@@ -120,29 +123,29 @@ typedef struct ahci_prd {
 #define AHCI_PRD_DATA_MAX (4 * 1024 * 1024)
   uint32_t reserved1 : 9;
   uint32_t interrupt : 1;
-} ahci_prd_t;
+};
 
 /*
 
- * command table structure, pointed by the ahci_cmd_header.ctba
- * it's used to store the the actual command
+ * command table structure, pointed by the ahci_cmd_header.ctba it's
+ * used to store the the actual command
 
 */
-typedef struct ahci_cmd_table {
+struct ahci_cmd_table {
   uint8_t cfis[64];
   uint8_t acmd[16];
   uint8_t reserved[48];
 
-  ahci_prd_t prdt[AHCI_PRDTL_MAX];
-} ahci_cmd_table_t;
+  struct ahci_prd prdt[AHCI_PRDTL_MAX];
+};
 
 // port types and signatures
-typedef enum ahci_port_type {
+enum ahci_port_type {
   AHCI_PORT_TYPE_SATA = 0,
 #define AHCI_SIGNATURE_SATA 0x101
   AHCI_PORT_TYPE_ATAPI = 1,
 #define AHCI_SIGNATURE_ATAPI 0xEB140101
-} ahci_port_type_t;
+};
 
 // ATA commands
 enum ahci_ata_cmd {
@@ -156,28 +159,8 @@ enum ahci_ata_cmd {
   512 // identify data requires 256 words (as shown in Table 45 — IDENTIFY DEVICE data)
 };
 
-typedef enum ahci_protocol {
-  AHCI_PROTOCOL_SATA  = 0,
-  AHCI_PROTOCOL_ATAPI = 1,
-} ahci_protocol_t;
-
-// stores information about available ports
-typedef struct ahci_port_data {
-  uint8_t         index;    // index of the port in the related HBA port list
-  ahci_port_t    *port;     // port memory address
-  ahci_mem_t     *base;     // HBA base address (HBA related with the port)
-  ahci_protocol_t protocol; // protocol used for port communication
-  disk_t         *disk;     // a pointer to the disk object used for this device
-} ahci_port_data_t;
-
-// stuff for ATAPI (see core/ahci/atapi.c)
-bool ahci_atapi_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
-bool ahci_atapi_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
-bool ahci_atapi_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
-
-// stuff for SATA (see core/ahci/sata.c)
 // Register host to device (H2D) FIS
-typedef struct sata_fis_h2d {
+struct sata_fis_h2d {
   // dword 0
   uint8_t type;
 
@@ -210,10 +193,10 @@ typedef struct sata_fis_h2d {
   // dword 4
   uint16_t auxiliary;
   uint16_t reserved1;
-} sata_fis_h2d_t;
+};
 
 // Register device to host (D2H) FIS
-typedef struct sata_fis_d2h {
+struct sata_fis_d2h {
   // dword 0
   uint8_t type;
 
@@ -243,10 +226,10 @@ typedef struct sata_fis_d2h {
 
   // dword 4
   uint32_t reserved4;
-} sata_fis_d2h_t;
+};
 
 // PIO setup FIS
-typedef struct sata_fis_pio_setup {
+struct sata_fis_pio_setup {
   // dword 0
   uint8_t type;
 
@@ -279,10 +262,10 @@ typedef struct sata_fis_pio_setup {
   // dword 4
   uint16_t transfer_count;
   uint32_t reserved4;
-} sata_fis_pio_setup_t;
+};
 
 // Data FIS
-typedef struct sata_fis_data {
+struct sata_fis_data {
   // dword 0
   uint8_t type;
 
@@ -293,24 +276,69 @@ typedef struct sata_fis_data {
 
   // dword 1...n
   uint32_t data[1];
-} sata_fis_data_t;
+};
 
-bool ahci_sata_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
-bool ahci_sata_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
-bool ahci_sata_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+// AHCI driver structures & functions
+#define ahci_debg(f, ...) pdebg("AHCI: " f, ##__VA_ARGS__)
+#define ahci_info(f, ...) pinfo("AHCI: " f, ##__VA_ARGS__)
+#define ahci_fail(f, ...) pfail("AHCI: " f, ##__VA_ARGS__)
+#define ahci_warn(f, ...) pwarn("AHCI: " f, ##__VA_ARGS__)
 
-// helper port commands (see core/ahci/port.c)
-bool                   ahci_port_stop(ahci_port_t *port);
-bool                   ahci_port_start(ahci_port_t *port);
-bool                   ahci_port_check(ahci_port_t *port);
-int8_t                 ahci_port_find_slot(ahci_port_t *port);
-bool                   ahci_port_init(ahci_port_t *port);
-bool                   ahci_port_check_tfd(ahci_port_t *port, int64_t slot);
-bool                   ahci_port_issue_cmd(ahci_port_t *port, int8_t slot);
-struct ahci_cmd_table *ahci_port_setup_header(
-    ahci_cmd_header_t *header, uint64_t cmd_fis_size, bool write_to_device, uint64_t sector_count, uint8_t *buf);
-#define ahci_port_get_slot(port, slot) (slot == -1 ? NULL : &((struct ahci_cmd_header *)port->clb)[slot])
+// different protocols our AHCI driver supports
+typedef enum {
+  AHCI_PROTOCOL_SATA,
+  AHCI_PROTOCOL_ATAPI,
+} ahci_protocol_t;
 
-// ahci driver entry
-bool ahci_port_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf);
-bool ahci_init(pci_device_t *dev);
+// stores information about a single available port
+typedef struct {
+  ahci_port_t *port; // port memory
+  ahci_mem_t  *hba;  // HBA memory
+
+  ahci_protocol_t protocol; // protocol used for port communication
+  uint8_t         index;    // index of the port in the related HBA port list
+  void           *vaddr;    // virtual base address (used calculate vaddrs of other structures)
+  disk_t         *disk;     // a pointer to the disk object used for this device
+} ahci_port_data_t;
+
+// stores information about a single command
+typedef struct {
+  // input (used to setup the command)
+  ahci_port_t *port;      // port memory
+  void        *vaddr;     // virtual base address of the port
+  uint64_t     fis_size;  // size of the command FIS
+  uint64_t     data_size; // size of the data block (bytes)
+  uint8_t     *data;      // vaddr pointer to the data block to read/write
+
+  // output (obtained after calling ahci_cmd_setup() with the input)
+  int8_t                  slot;   // command slot (number of the command header that is being used)
+  struct ahci_cmd_header *header; // vaddr pointer to the command header
+  struct ahci_cmd_table  *table;  // vaddr pointer to the command table
+} ahci_cmd_t;
+
+// general AHCI functions
+int32_t ahci_init(pci_device_t *dev);
+int32_t ahci_do(ahci_port_data_t *data, disk_op_t op, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+
+// port functions (core/ahci/port.c)
+#define ahci_port_reset_is(port) (port->is = UINT32_MAX)
+void *ahci_port_setup(ahci_port_t *port);
+bool  ahci_port_stop(ahci_port_t *port);
+bool  ahci_port_start(ahci_port_t *port);
+bool  ahci_port_is_connected(ahci_port_t *port);
+bool  ahci_port_is_busy(ahci_port_t *port);
+bool  ahci_port_check_error(ahci_port_t *port, int64_t slot);
+
+// command functions (core/ahci/cmd.c)
+int32_t ahci_cmd_setup(ahci_cmd_t *cmd);
+int32_t ahci_cmd_issue(ahci_cmd_t *cmd);
+
+// SATA commands (core/ahci/sata.c)
+int32_t ahci_sata_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+int32_t ahci_sata_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+int32_t ahci_sata_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+
+// ATAPI commands (core/ahci/atapi.c)
+int32_t ahci_atapi_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+int32_t ahci_atapi_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);
+int32_t ahci_atapi_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf);

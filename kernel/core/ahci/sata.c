@@ -1,11 +1,15 @@
 #include "core/ahci.h"
 
-#include "util/math.h"
 #include "util/mem.h"
-#include "util/printk.h"
 #include "util/string.h"
 
-// SATA port command functions
+#include "types.h"
+#include "errno.h"
+
+#define ahci_sata_debg(f, ...) ahci_debg("(SATA) " f, ##__VA_ARGS__)
+#define ahci_sata_info(f, ...) ahci_info("(SATA) " f, ##__VA_ARGS__)
+#define ahci_sata_fail(f, ...) ahci_fail("(SATA) " f, ##__VA_ARGS__)
+#define ahci_sata_warn(f, ...) ahci_warn("(SATA) " f, ##__VA_ARGS__)
 
 // SATA FIS types
 enum ahci_sata_fis_type {
@@ -20,17 +24,10 @@ enum ahci_sata_fis_type {
 };
 
 struct ahci_sata_cmd {
-  // SATA/ATA command
-  uint8_t cmd;
-
-  // device register value
-  uint8_t device;
-
-  // if set to true, then the sector count register is required
-  bool use_sectors;
-
-  // if set to true, then LBA register is required
-  bool use_lba;
+  uint8_t cmd;         // SATA/ATA command
+  uint8_t device;      // device register value
+  bool    use_sectors; // if set to true, then the sector count register is required
+  bool    use_lba;     // if set to true, then LBA register is required
 };
 
 // A.11.7.4 MODEL NUMBER field
@@ -51,7 +48,7 @@ struct ahci_sata_cmd *__ahci_sata_find_props(uint8_t cmd) {
 }
 
 bool __ahci_sata_new(
-    ahci_port_data_t *data, sata_fis_h2d_t *fis, enum ahci_ata_cmd cmd, uint64_t lba, uint64_t sector_count) {
+    ahci_port_data_t *data, struct sata_fis_h2d *fis, enum ahci_ata_cmd cmd, uint64_t lba, uint64_t sector_count) {
   // find the command properites
   struct ahci_sata_cmd *c = __ahci_sata_find_props(cmd);
 
@@ -60,7 +57,7 @@ bool __ahci_sata_new(
     return false;
 
   // clear out the FIS
-  bzero(fis, sizeof(sata_fis_h2d_t));
+  bzero(fis, sizeof(struct sata_fis_h2d));
 
   // the FIS type, command/control selection and the command
   fis->type    = SATA_FIS_REG_H2D;
@@ -89,134 +86,123 @@ bool __ahci_sata_new(
 
 /*
 
- * ahci_sata_port_read reads specified amount of sectors starting from the specified LBA
- * it uses READ_DMA so we read right into the specified buffer
+ * ahci_sata_port_read reads specified amount of sectors starting from the
+ * specified LBA it uses READ_DMA so we read right into the specified buffer
 
 */
-bool ahci_sata_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
-  // reset interrupt status
-  data->port->is = UINT32_MAX;
+int32_t ahci_sata_port_read(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
+  int32_t    err = 0;
+  ahci_cmd_t cmd = {
+      .vaddr     = data->vaddr,
+      .port      = data->port,
+      .data      = buf,
+      .data_size = sector_count * data->disk->sector_size,
+      .fis_size  = sizeof(struct sata_fis_h2d),
+  };
 
-  int8_t                  slot   = ahci_port_find_slot(data->port);
-  struct ahci_cmd_header *header = ahci_port_get_slot(data->port, slot);
-  struct ahci_cmd_table  *table  = NULL;
-
-  // read fails if don't have any available slots
-  if (NULL == header) {
-    printk(KERN_DEBG, "AHCI: (0x%x) no available command slot for read command\n", data->port);
-    return false;
+  // setup the command
+  if ((err = ahci_cmd_setup(&cmd)) != 0) {
+    ahci_sata_debg("failed to setup the read command: %s", strerror(err));
+    return err;
   }
 
-  // setup the command header which we obtained from the command list ("slot")
-  if (NULL == (table = ahci_port_setup_header(
-                   header, sizeof(sata_fis_h2d_t), false, sector_count * data->disk->sector_size, buf))) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to setup the header for read command\n", data->port, slot);
-    return false;
-  }
+  ahci_port_reset_is(data->port); // reset interrupt status
+  cmd.header->write = 0;          // this is a read operation
 
   // now lets setup the command
-  if (!__ahci_sata_new(data, (void *)table->cfis, AHCI_ATA_READ_DMA_EXT, lba, sector_count)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to create the read command FIS\n", data->port, slot);
-    return false;
+  if (!__ahci_sata_new(data, (void *)cmd.table->cfis, AHCI_ATA_READ_DMA_EXT, lba, sector_count)) {
+    ahci_sata_debg("failed to create the read command FIS");
+    return -EFAULT;
   }
 
   // and last but not least, issue the command
-  if (!ahci_port_issue_cmd(data->port, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to issue the read command\n", data->port, slot);
-    return false;
+  if ((err = ahci_cmd_issue(&cmd)) != 0) {
+    ahci_sata_debg("failed to issue the read command: %s", strerror(err));
+    return err;
   }
 
-  printk(KERN_DEBG,
-      "AHCI: (0x%x:%d) read command success: 0x%x,0x%x,0x%x,0x%x...\n",
-      data->port,
-      slot,
-      buf[0],
-      buf[1],
-      buf[2],
-      buf[3]);
-
-  return true;
+  return 0;
 }
 
 /*
 
- * ahci_sata_port_write writes specified amount of sectors starting from the specified LBA
- * it uses WRITE_DMA so we write right from the buffer
+ * ahci_sata_port_write writes specified amount of sectors starting from the
+ * specified LBA it uses WRITE_DMA so we write right from the buffer
 
- * for the implementation, mainly it's similar to ahci_sata_port_read
- * however this time, we'll setup a different command
+ * for the implementation, mainly it's similar to ahci_sata_port_read however
+ * this time, we'll setup a different command
 
 */
-bool ahci_sata_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
-  data->port->is = UINT32_MAX;
+int32_t ahci_sata_port_write(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
+  int32_t    err = 0;
+  ahci_cmd_t cmd = {
+      .vaddr     = data->vaddr,
+      .port      = data->port,
+      .data      = buf,
+      .data_size = sector_count * data->disk->sector_size,
+      .fis_size  = sizeof(struct sata_fis_h2d),
+  };
 
-  int8_t                  slot   = ahci_port_find_slot(data->port);
-  struct ahci_cmd_header *header = ahci_port_get_slot(data->port, slot);
-  struct ahci_cmd_table  *table  = NULL;
-
-  if (NULL == header) {
-    printk(KERN_DEBG, "AHCI: (0x%x) no available command slot for write command\n", data->port);
-    return false;
+  if ((err = ahci_cmd_setup(&cmd)) != 0) {
+    ahci_sata_debg("failed to setup the write command: %s", strerror(err));
+    return err;
   }
 
-  if (NULL == (table = ahci_port_setup_header(
-                   header, sizeof(sata_fis_h2d_t), false, sector_count * data->disk->sector_size, buf))) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to setup the header for write command\n", data->port, slot);
-    return false;
+  ahci_port_reset_is(data->port);
+  cmd.header->write = 1;
+
+  if (!__ahci_sata_new(data, (void *)cmd.table->cfis, AHCI_ATA_WRITE_DMA_EXT, lba, sector_count)) {
+    ahci_sata_debg("failed to create the write command FIS");
+    return -EFAULT;
   }
 
-  if (!__ahci_sata_new(data, (void *)table->cfis, AHCI_ATA_WRITE_DMA_EXT, lba, sector_count)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to create the write command FIS\n", data->port, slot);
-    return false;
+  if ((err = ahci_cmd_issue(&cmd)) != 0) {
+    ahci_sata_debg("failed to issue the write command: %s", strerror(err));
+    return err;
   }
 
-  if (!ahci_port_issue_cmd(data->port, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to issue the write command\n", data->port, slot);
-    return false;
-  }
-
-  printk(KERN_DEBG, "AHCI: (0x%x:%d) write command success\n", data->port, slot);
-
-  return true;
+  return 0;
 }
 
 /*
 
- * ahci_sata_port_info uses the IDENTIFY_DEVICE command to get information
- * about the device, and saves it to related structures
+ * ahci_sata_port_info uses the IDENTIFY_DEVICE command to get information about
+ * the device, and saves it to related structures
 
 */
-bool ahci_sata_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
-  data->port->is = UINT32_MAX;
-
-  int64_t                 slot   = ahci_port_find_slot(data->port);
-  struct ahci_cmd_header *header = ahci_port_get_slot(data->port, slot);
-  struct ahci_cmd_table  *table  = NULL;
-
+int32_t ahci_sata_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_count, uint8_t *buf) {
   // buffer used to store IDENTIFY command output
   uint8_t info[AHCI_ATA_IDENTIFY_DEVICE_DATA_SIZE];
   bzero(info, sizeof(info));
 
-  if (NULL == header) {
-    printk(KERN_DEBG, "AHCI: (0x%x) no available command slot for identify command\n", data->port);
-    return false;
+  int32_t    err = 0;
+  ahci_cmd_t cmd = {
+      .vaddr     = data->vaddr,
+      .port      = data->port,
+      .data      = info,
+      .data_size = sizeof(info),
+      .fis_size  = sizeof(struct sata_fis_h2d),
+  };
+
+  if ((err = ahci_cmd_setup(&cmd)) != 0) {
+    ahci_sata_debg("failed to setup the identify command: %s", strerror(err));
+    return err;
   }
 
-  if (NULL == (table = ahci_port_setup_header(header, sizeof(sata_fis_h2d_t), false, sizeof(info), info))) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to setup the header for identify command\n", data->port, slot);
-    return false;
+  ahci_port_reset_is(data->port);
+  cmd.header->write = 0;
+
+  if (!__ahci_sata_new(data, (void *)cmd.table->cfis, AHCI_ATA_IDENTIFY_DEVICE, 0, 0)) {
+    ahci_sata_debg("failed to create the identify command FIS");
+    return -EFAULT;
   }
 
-  if (!__ahci_sata_new(data, (void *)table->cfis, AHCI_ATA_IDENTIFY_DEVICE, 0, 0)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to create the identify command FIS\n", data->port, slot);
-    return false;
+  if ((err = ahci_cmd_issue(&cmd)) != 0) {
+    ahci_sata_debg("failed to issue the identify command: %s", strerror(err));
+    return err;
   }
 
-  if (!ahci_port_issue_cmd(data->port, slot)) {
-    printk(KERN_DEBG, "AHCI: (0x%x:%d) failed to issue the identify command\n", data->port, slot);
-    return false;
-  }
-
+  // extract the model
   char model[AHCI_MODEL_LEN + 1];
   bzero(model, sizeof(model));
 
@@ -252,14 +238,8 @@ bool ahci_sata_port_info(ahci_port_data_t *data, uint64_t lba, uint64_t sector_c
     data->disk->size = (uint64_t)((uint16_t *)info)[61] << 16 | (uint64_t)((uint16_t *)info)[60];
 
   data->disk->size *= sizeof(uint64_t) * data->disk->sector_size;
+
   // TODO: somehow obtain the sector size as well
 
-  printk(KERN_DEBG,
-      "AHCI: (0x%x:%d) identify success, sector_size: %l size: %l\n",
-      data->port,
-      slot,
-      data->disk->sector_size,
-      data->disk->size);
-
-  return true;
+  return 0;
 }

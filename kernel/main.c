@@ -32,7 +32,6 @@
 #include "core/user.h"
 
 #include "mm/pmm.h"
-#include "mm/heap.h"
 
 #include "sched/sched.h"
 #include "sched/task.h"
@@ -42,7 +41,6 @@
 
 #include "util/panic.h"
 #include "util/printk.h"
-#include "util/mem.h"
 #include "util/asm.h"
 
 void entry() {
@@ -53,8 +51,12 @@ void entry() {
     pfail("Failed to initalize the serial communication: %s", strerror(err));
 
   // load multiboot data
-  if ((err = mb_load((void *)BOOT_MB_DATA_ADDR)) != 0)
+  if ((err = mb_load((void *)BOOT_MB_INFO_VADDR)) != 0)
     panic("Failed to load multiboot data: %s", strerror(err));
+
+  // initialize virtual memory manager
+  if ((err = vmm_init()) != 0)
+    panic("Failed to initialize virtual memory manager: %s", strerror(err));
 
   // initialize physical memory manager (so we can start mapping & allocating memory)
   if ((err = pmm_init()) != 0)
@@ -95,15 +97,12 @@ void entry() {
   // enable the interrupts
   im_enable();
 
-  // temporary
-  _hang();
-
   // initialize the scheduler
   if ((err = sched_init()) != 0)
     panic("Failed to start the scheduler: %s", strerror(err));
 
   // make current task (us) critikal
-  task_level(current, TASK_LEVEL_CRITIKAL);
+  sched_prio(TASK_PRIO_CR1TIKAL);
 
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
