@@ -9,6 +9,7 @@
 #ifndef __ASSEMBLY__
 
 #include "util/asm.h"
+#include "mm/vmm.h"
 
 #define BOOT_KERNEL_START_PADDR (_start_addr - BOOT_KERNEL_ADDR)
 #define BOOT_KERNEL_END_PADDR   (_end_addr - BOOT_KERNEL_ADDR)
@@ -18,9 +19,14 @@
 
 // boot/paging.S
 extern uint32_t paging_mb_data_offset;
+extern uint32_t paging_mb_data_addr;
 #define BOOT_MB_INFO_START_VADDR (0xffffffff80200000) // start of the virtual address mapping for mb info
 #define BOOT_MB_INFO_END_VADDR   (0xffffffff80201000) // end of the virtual address mapping for mb info
-#define BOOT_MB_INFO_VADDR       (BOOT_MB_INFO_START_VADDR + paging_mb_data_offset) // mb info address
+
+#define BOOT_MB_INFO_VADDR (BOOT_MB_INFO_START_VADDR + paging_mb_data_offset) // mb info address
+
+#define BOOT_MB_INFO_START_PADDR (paging_mb_data_addr)
+#define BOOT_MB_INFO_END_PADDR   (vmm_align(paging_mb_data_addr + *(uint64_t *)BOOT_MB_INFO_VADDR))
 
 extern uint64_t paging_temp_tables_addr;
 #define BOOT_TEMP_PML4_VADDR (paging_temp_tables_addr)

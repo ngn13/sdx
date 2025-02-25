@@ -1,32 +1,17 @@
-#include "sched/stack.h"
 #include "sched/sched.h"
 #include "sched/task.h"
+
+#include "mm/region.h"
+#include "mm/paging.h"
+#include "mm/vmm.h"
 
 #include "util/string.h"
 #include "util/mem.h"
 
-#include "mm/vmm.h"
-#include "mm/mem.h"
-
 #include "errno.h"
 #include "types.h"
 
-uint64_t __task_stack_add_internal(task_t *task, void *val, uint64_t size) {
-  // copy the value to the stack
-  task->regs.rsp -= size;
-  memcpy((void *)task->regs.rsp, val, size);
-
-  // fix the stack alignment
-  for (; task->regs.rsp % 8 != 0; task->regs.rsp--, size++)
-    ;
-
-  return size;
-}
-
 int32_t task_stack_alloc(task_t *task) {
-  vmm_save();
-  task_vmm_switch(task);
-
   /*
 
    * we have two stacks, one for ring 3 (userland) and one for ring 0 (kernel)
@@ -36,42 +21,35 @@ int32_t task_stack_alloc(task_t *task) {
    * region list of the task
 
   */
+  region_t *kernel_stack = region_new(REGION_TYPE_STACK, VMM_VMA_KERNEL, NULL, TASK_STACK_PAGE_COUNT);
+  region_t *user_stack   = region_new(REGION_TYPE_STACK, VMM_VMA_USER, NULL, TASK_STACK_PAGE_COUNT);
+  int32_t   err          = 0;
 
-  mem_t *kernel_stack = mem_map(MEM_TYPE_STACK, TASK_STACK_PAGE_COUNT, VMM_VMA_KERNEL);
-  mem_t *user_stack   = mem_map(MEM_TYPE_STACK, TASK_STACK_PAGE_COUNT, VMM_VMA_USER);
-
-  if (NULL == kernel_stack) {
-    mem_unmap(user_stack);
-    mem_free(user_stack);
-
-    sched_fail("failed to allocate kernel stack for 0x%p", task);
-    return -ENOMEM;
+  if ((err = region_map(kernel_stack)) != 0) {
+    sched_fail("failed to map kernel stack region for 0x%p: %s", task, strerror(err));
+    return err;
   }
 
-  if (NULL == user_stack) {
-    mem_unmap(kernel_stack);
-    mem_free(kernel_stack);
-
-    sched_fail("failed to allocate user stack for 0x%p", task);
-    return -ENOMEM;
+  if ((err = region_map(user_stack)) != 0) {
+    sched_fail("failed to map user stack region for 0x%p: %s", task, strerror(err));
+    return err;
   }
 
   task_mem_add(task, kernel_stack);
   task_mem_add(task, user_stack);
-
-  vmm_restore();
   return 0;
 }
 
 uint64_t task_stack_add(task_t *task, void *val, uint64_t size) {
-  vmm_save();
-  task_vmm_switch(task);
+  // copy the value to the stack
+  task->regs.rsp -= size;
+  memcpy((void *)task->regs.rsp, val, size);
 
-  uint64_t ret = __task_stack_add_internal(task, val, size);
+  // fix the stack alignment
+  for (; task->regs.rsp % 8 != 0; task->regs.rsp--, size++)
+    ;
 
-  // restore the old VMM
-  vmm_restore();
-  return ret;
+  return size;
 }
 
 int32_t task_stack_add_list(task_t *task, char *list[], uint64_t limit, void **stack) {
@@ -94,10 +72,6 @@ int32_t task_stack_add_list(task_t *task, char *list[], uint64_t limit, void **s
    * argv/envp pointer --'
 
   */
-
-  vmm_save();
-  task_vmm_switch(task);
-
   uint64_t len = 0, total = 0, i = 0;
   char   **cur = NULL;
 
@@ -116,7 +90,7 @@ int32_t task_stack_add_list(task_t *task, char *list[], uint64_t limit, void **s
     if ((total += len = strlen(list[i]) + 1) > limit)
       return -E2BIG;
 
-    __task_stack_add_internal(task, list[i], len);
+    task_stack_add(task, list[i], len);
 
     *cur = (void *)task->regs.rsp;
     cur++;
@@ -124,12 +98,14 @@ int32_t task_stack_add_list(task_t *task, char *list[], uint64_t limit, void **s
 
   // end pointer list with a NULL pointer
   *cur = NULL;
-
-  vmm_restore();
   return 0;
 }
 
-uint64_t task_stack_get(task_t *task, uint64_t vma) {
-  mem_t *mem = mem_find(&task->mem, MEM_TYPE_STACK, vma);
-  return mem == NULL ? 0 : (uint64_t)mem->vaddr + TASK_STACK_PAGE_COUNT * VMM_PAGE_SIZE;
+void *task_stack_get(task_t *task, uint8_t vma) {
+  region_t *stack = task_mem_find(task, REGION_TYPE_STACK, vma);
+
+  if (NULL == stack)
+    return NULL;
+
+  return stack->vaddr + stack->num * PAGE_SIZE;
 }

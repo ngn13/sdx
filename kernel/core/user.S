@@ -1,7 +1,4 @@
 #include "sched/task.h"
-#include "core/user.h"
-#include "mm/vmm.h"
-
 #include "util/stack.S"
 #include "errno.h"
 

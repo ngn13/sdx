@@ -1,11 +1,11 @@
 #pragma once
-#include "mm/mem.h"
+#include "mm/region.h"
 #include "fs/vfs.h"
 #include "types.h"
 
 typedef struct {
-  void  *entry;
-  mem_t *mem;
+  void     *entry;
+  region_t *mem;
 } fmt_t;
 
 int32_t fmt_load(vfs_node_t *node, fmt_t *fmt);

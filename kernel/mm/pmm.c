@@ -8,6 +8,7 @@
 #include "mm/vmm.h"
 
 #include "errno.h"
+#include <stdint.h>
 
 #define pmm_fail(f, ...) pfail("PMM: " f, ##__VA_ARGS__)
 #define pmm_warn(f, ...) pwarn("PMM: " f, ##__VA_ARGS__)
@@ -33,15 +34,9 @@ struct pmm_reg             pmm_reg_known[] =
 },
                pmm_reg_free; // stores the free memory region
 
-#define __pmm_align_to_page(num, inc)                                                                                  \
-  do {                                                                                                                 \
-    while (num % VMM_PAGE_SIZE != 0)                                                                                   \
-      num += inc;                                                                                                      \
-  } while (0)
-
 #define __pmm_foreach_mb_mmap_entry()                                                                                  \
   for (multiboot_memory_map_t *map = (void *)&pmm_mmap_tag->entries[0];                                                \
-      pmm_mmap_tag->size > (void *)map - (void *)&pmm_mmap_tag->entries[0];                                            \
+      pmm_mmap_tag->size > (uint64_t)map - (uint64_t)&pmm_mmap_tag->entries[0];                                        \
       map++)
 
 #define __pmm_foreach_reg_known() for (struct pmm_reg *reg = &pmm_reg_known[0]; reg->start != 0 || reg->end != 0; reg++)
@@ -52,16 +47,15 @@ struct pmm_reg             pmm_reg_known[] =
 #define __pmm_reg_is_valid(reg)       ((reg)->end > (reg)->start && (reg)->end >= (reg)->pos && (reg)->pos >= (reg)->start)
 #define __pmm_reg_align(reg)                                                                                           \
   do {                                                                                                                 \
-    __pmm_align_to_page((reg)->start, 1);                                                                              \
-    __pmm_align_to_page((reg)->end, -1);                                                                               \
-  } while (0);
+    (reg)->start = round_up((reg)->start, PAGE_SIZE);                                                                  \
+    (reg)->end   = round_down((reg)->end, PAGE_SIZE);                                                                  \
+  } while (0)
 
-#define PMM_BM_ENTRY_BIT_SIZE    (sizeof(uint64_t) * 8)
-#define __pmm_bm_is_ready()      (pmm_bm != NULL && pmm_bm_size != 0)
-#define __pmm_bm_get_max_index() (pmm_bm_size / 8)
-#define __pmm_bm_pos_reset(pos)  bzero(pos, sizeof(pmm_bm_pos_t));
-#define __pmm_bm_pos_to_addr(pos)                                                                                      \
-  (pmm_reg_free.start + ((pos)->bit + (pos)->index * PMM_BM_ENTRY_BIT_SIZE) * VMM_PAGE_SIZE)
+#define PMM_BM_ENTRY_BIT_SIZE      (sizeof(uint64_t) * 8)
+#define __pmm_bm_is_ready()        (pmm_bm != NULL && pmm_bm_size != 0)
+#define __pmm_bm_get_max_index()   (pmm_bm_size / 8)
+#define __pmm_bm_pos_reset(pos)    bzero(pos, sizeof(pmm_bm_pos_t));
+#define __pmm_bm_pos_to_addr(pos)  (pmm_reg_free.start + ((pos)->bit + (pos)->index * PMM_BM_ENTRY_BIT_SIZE) * PAGE_SIZE)
 #define __pmm_bm_pos_set(pos)      (pmm_bm[(pos)->index] |= 1 << (pos)->bit)
 #define __pmm_bm_pos_clear(pos)    (pmm_bm[(pos)->index] &= ~(1 << (pos)->bit))
 #define __pmm_bm_pos_get(pos)      ((pmm_bm[(pos)->index] >> (pos)->bit) & 1)
@@ -72,7 +66,7 @@ bool __pmm_bm_pos_from_addr(pmm_bm_pos_t *pos, uint64_t addr) {
     return false;
 
   addr -= pmm_reg_free.start;
-  addr /= VMM_PAGE_SIZE;
+  addr /= PAGE_SIZE;
 
   pos->index = addr / PMM_BM_ENTRY_BIT_SIZE;
   pos->bit   = addr % PMM_BM_ENTRY_BIT_SIZE;
@@ -105,6 +99,14 @@ bool __pmm_is_free_memory(uint64_t addr) {
       return false;
   }
 
+  // check if the address is in the kernel binary range
+  if (BOOT_KERNEL_START_PADDR <= addr && BOOT_KERNEL_END_PADDR > addr)
+    return false;
+
+  // check if the address is in the mb info range
+  if (BOOT_MB_INFO_START_PADDR <= addr && BOOT_MB_INFO_END_PADDR > addr)
+    return false;
+
   // check if the adddress is in a available (free) memory region
   __pmm_foreach_mb_mmap_entry() {
     // we should only check the available mmap tags
@@ -112,7 +114,7 @@ bool __pmm_is_free_memory(uint64_t addr) {
       continue;
 
     // check if address is in the range of this mmap tag
-    if (addr < map->addr || addr + VMM_PAGE_SIZE > map->addr + map->len)
+    if (addr < map->addr || addr + PAGE_SIZE > map->addr + map->len)
       continue;
 
     return true;
@@ -160,13 +162,13 @@ int32_t pmm_init() {
   }
 
   // calculate the bitmap size for pmm_mem_start to pmm_mem_end
-  pmm_bm_size = __pmm_reg_size(&pmm_reg_free) / VMM_PAGE_SIZE / 8;
-  __pmm_align_to_page(pmm_bm_size, 1);
+  pmm_bm_size = __pmm_reg_size(&pmm_reg_free) / PAGE_SIZE / 8;
+  pmm_bm_size = round_up(pmm_bm_size, PAGE_SIZE);
 
   pmm_debg("bitmapping 0x%p - 0x%p with %u bytes", pmm_reg_free.start, pmm_reg_free.end, pmm_bm_size);
 
   // allocate memory for the bitmap
-  if ((pmm_bm = vmm_map(pmm_bm_size / VMM_PAGE_SIZE, VMM_FLAGS_DEFAULT)) == NULL) {
+  if ((pmm_bm = vmm_map(pmm_bm_size / PAGE_SIZE, 0, 0)) == NULL) {
     pmm_fail("failed to allocate the bitmap (size: %u)", pmm_bm_size);
     return -EFAULT;
   }
@@ -194,7 +196,7 @@ int32_t pmm_init() {
 uint64_t __pmm_alloc_no_bm(uint64_t num, uint64_t align) {
   uint64_t pos = pmm_reg_free.pos, start = 0, cur = 0;
 
-  for (; num > cur; pos += VMM_PAGE_SIZE) {
+  for (; num > cur; pos += PAGE_SIZE) {
     if (pos >= pmm_reg_free.end)
       break;
 
@@ -217,8 +219,7 @@ uint64_t __pmm_alloc_no_bm(uint64_t num, uint64_t align) {
 }
 
 uint64_t pmm_alloc(uint64_t num, uint64_t align) {
-  if (align != 0 && ((VMM_PAGE_SIZE > align && VMM_PAGE_SIZE % align != 0) ||
-                        (align > VMM_PAGE_SIZE && align % VMM_PAGE_SIZE != 0))) {
+  if (align != 0 && ((PAGE_SIZE > align && PAGE_SIZE % align != 0) || (align > PAGE_SIZE && align % PAGE_SIZE != 0))) {
     pmm_fail("requested invalid alignment (0x%x)", align);
     return NULL;
   }

@@ -200,7 +200,7 @@ void *ahci_port_setup(ahci_port_t *port) {
    * reason
 
   */
-  clb_vaddr = vmm_map_with(page_count, 1024, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT | VMM_FLAG_PCD);
+  clb_vaddr = vmm_map(page_count, 1024, VMM_ATTR_NO_CACHE);
   port->clb = vmm_resolve(clb_vaddr);
   bzero(clb_vaddr, size);
 

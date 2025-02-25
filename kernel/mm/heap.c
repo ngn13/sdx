@@ -16,7 +16,7 @@
 #define HEAP_CHUNK_MAGIC     0xa71e394b53a81759
 #define HEAP_CHUNK_DATA_SIZE (16)
 #define HEAP_CHUNK_META_SIZE (sizeof(struct heap_chunk) - HEAP_CHUNK_DATA_SIZE)
-#define HEAP_CHUNK_PER_PAGE  (VMM_PAGE_SIZE / sizeof(struct heap_chunk))
+#define HEAP_CHUNK_PER_PAGE  (PAGE_SIZE / sizeof(struct heap_chunk))
 
 /*
 
@@ -60,7 +60,7 @@ struct heap_chunk *heap_chunk_first = NULL;
 struct heap_chunk *heap_chunk_last  = NULL;
 
 int32_t __heap_extend() {
-  struct heap_chunk *cur = vmm_map(1, VMM_FLAGS_DEFAULT);
+  struct heap_chunk *cur = vmm_map(1, 0, 0);
 
   if (NULL == cur) {
     heap_fail("failed to allocate a new page for extending the heap");

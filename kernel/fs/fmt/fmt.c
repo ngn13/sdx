@@ -1,5 +1,5 @@
 #include "fs/fmt.h"
-#include "mm/mem.h"
+#include "mm/region.h"
 #include "mm/vmm.h"
 
 #include "util/list.h"
@@ -20,11 +20,6 @@ struct fmt fmt_table[] = {
     {.name = "ELF", .load = elf_load},
     {.name = NULL,  .load = NULL    },
 };
-
-void __fmt_mem_free(mem_t *mem) {
-  mem_unmap(mem);
-  mem_free(mem);
-}
 
 int32_t fmt_load(vfs_node_t *node, fmt_t *fmt) {
   if (NULL == node || NULL == fmt)
@@ -69,6 +64,12 @@ void fmt_free(fmt_t *fmt) {
   if (NULL == fmt)
     return;
 
-  slist_clear(&fmt->mem, __fmt_mem_free, mem_t);
+  // unmap all the memory regions
+  region_each(&fmt->mem) region_unmap(fmt->mem);
+
+  // free all the regions
+  slist_clear(&fmt->mem, region_free, region_t);
+
+  // clear the format data
   bzero(fmt, sizeof(fmt_t));
 }

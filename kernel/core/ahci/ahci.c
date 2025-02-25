@@ -145,7 +145,7 @@ int32_t ahci_init(pci_device_t *dev) {
 
   // map the base address after calculating max page count we'll need
   uint64_t base_page_count = vmm_calc(sizeof(ahci_mem_t));
-  base = vmm_map_to_paddr((uint64_t)base, base_page_count, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT | VMM_FLAG_PCD);
+  base                     = vmm_map_paddr((uint64_t)base, base_page_count, VMM_ATTR_NO_CACHE | VMM_ATTR_SAVE);
   ahci_debg("mapped ABAR at 0x%p to 0x%p", vmm_resolve((void *)base), base);
 
   // if BOHC is implemented and the BOHC indicates that the HBA is not OS owned, we'll own it

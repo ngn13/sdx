@@ -1,6 +1,6 @@
+#include "mm/region.h"
 #include "sched/sched.h"
-#include "sched/signal.h"
-#include "sched/stack.h"
+#include "sched/task.h"
 
 #include "util/string.h"
 #include "util/list.h"
@@ -16,42 +16,75 @@ task_t *task_new() {
   task_t *task_new = heap_alloc(sizeof(task_t));
   int32_t err      = 0;
 
-  // clear the stack structure
+  // clear the task structure
   bzero(task_new, sizeof(task_t));
 
-  // create a new VMM for the task
-  if (NULL != task_current)
-    task_new->vmm = vmm_new();
-  else
-    task_new->vmm = vmm_get();
+  // use the current VMM
+  sched_debg("using the current VMM for the new task 0x%p", task_new);
+  task_new->vmm = vmm_get();
 
-  /*
-
-   * if we are copying from an other process copy it's
-   * memory regions, otherwise clear all the regions
-   * and allocate a new memory region for the stack
-
-  */
-  if (NULL != task_current)
-    err = task_mem_copy(task_new, task_current);
-
-  else {
-    task_mem_clear(task_new);
-    err = task_stack_alloc(task_new);
+  // allocate a new stack for the new task
+  sched_debg("allocating a new stack for the new task 0x%p", task_new);
+  if ((err = task_stack_alloc(task_new)) != 0) {
+    sched_fail("failed to allocate a new stack for the tasK 0x%p: %s", task_new, strerror(err));
+    heap_free(task_new);
+    return NULL;
   }
 
-  // check for errors
-  if (err != 0)
-    return NULL;
-
-  // setup new task's signal queue
-  task_signal_clear(task_new);
-
-  // copy registers
-  if (NULL != task_current)
-    memcpy(&task_new->regs, &task_current->regs, sizeof(task_regs_t));
-
+  // return the new task
   return task_new;
+}
+
+task_t *task_copy() {
+  task_t   *copy = heap_alloc(sizeof(task_t));
+  region_t *cur = NULL, *new = NULL;
+  int32_t   err = 0;
+
+  // clear the stack structure
+  bzero(copy, sizeof(task_t));
+
+  // create a new VMM for the task
+  sched_debg("creating a new VMM for the task 0x%p", task_new);
+  copy->vmm = vmm_new();
+
+  // copy the task's memory regions
+  for (cur = current->mem; cur != NULL; cur = cur->next) {
+    // copy the memory region
+    if ((new = region_copy(cur)) == NULL) {
+      sched_fail("failed to copy the %s memory region (0x%p)", region_name(cur), cur->vaddr);
+      return NULL;
+    }
+
+    // add new memory region to the task
+    sched_debg("adding %s memory region @ 0x%p (%u pages)", region_name(cur), cur->vaddr, cur->num);
+    task_mem_add(copy, new);
+  }
+
+  // copy the registers
+  sched_debg("copying registers from current task");
+  memcpy(&copy->regs, &task_current->regs, sizeof(task_regs_t));
+
+  // return the copied task
+  return copy;
+}
+
+void task_free(task_t *task) {
+  sched_debg("freeing the task 0x%p", task);
+
+  // free the memory regions
+  region_each(&task->mem) {
+    sched_debg("freeing %s memory region @ 0x%p (%u pages)", region_name(cur), cur->paddr, cur->num);
+    region_free(cur);
+  }
+
+  // clear the signal queue
+  slist_foreach(&task->signal, task_sigset_t) heap_free(cur);
+
+  // free the VMM
+  vmm_free(task->vmm);
+
+  // free the task structure
+  heap_free(task);
 }
 
 int32_t task_rename(task_t *task, const char *name) {
@@ -62,65 +95,28 @@ int32_t task_rename(task_t *task, const char *name) {
   return 0;
 }
 
-int32_t task_free(task_t *task) {
-  if (NULL == task)
-    return -EINVAL;
+int32_t task_switch(task_t *task) {
+  int32_t err = 0;
 
-  task_mem_clear(task);    // free the task's memory regions
-  task_signal_clear(task); // free the task's signal queue
+  if (vmm_get() == task->vmm)
+    return 0;
 
-  // free the task structure
-  heap_free(task);
-  return 0;
-}
-
-void __task_mem_free(mem_t *mem) {
-  mem_unmap(mem);
-  mem_free(mem);
-}
-
-int32_t task_mem_del(task_t *task, mem_type_t type, uint64_t vma) {
-  if (NULL == task)
-    return -EINVAL;
-
-  mem_t *mem = NULL;
-
-  vmm_save();
-  task_vmm_switch(task);
-
-  while (NULL != (mem = mem_del(&task->mem, type, vma)))
-    __task_mem_free(mem);
-
-  vmm_restore();
-  return 0;
-}
-
-int32_t task_mem_clear(task_t *task) {
-  vmm_save();
-  task_vmm_switch(task);
-
-  slist_clear(&task->mem, __task_mem_free, mem_t);
-
-  vmm_restore();
-  return 0;
-}
-
-int32_t task_mem_copy(task_t *to, task_t *from) {
-  mem_t  *copy = NULL;
-  int32_t err  = 0;
-
-  vmm_save();
-  task_vmm_switch(to);
-
-  slist_foreach(&from->mem, mem_t) {
-    if ((copy = mem_copy(cur)) == NULL) {
-      err = -EFAULT;
-      goto end;
-    }
-    task_mem_add(to, copy);
+  if (task->old) {
+    vmm_sync(task->vmm);
+    task->old = false;
   }
 
-end:
-  vmm_restore();
-  return err;
+  if ((err = vmm_switch(task->vmm)) != 0) {
+    sched_fail("failed to switch to the task VMM: %s", strerror(err));
+    return err;
+  }
+
+  region_each(&task->mem) {
+    if ((err = region_map(cur)) != 0) {
+      sched_fail("failed to map the %s memory region (0x%p)", region_name(cur), cur->vaddr);
+      return err;
+    }
+  }
+
+  return 0;
 }

@@ -64,10 +64,9 @@ int32_t fb_init() {
 
   video_debg("framebuffer located at physical address 0x%x (%ux%u)", fb_data.addr, fb_data.width, fb_data.height);
 
-  uint64_t fb_page_count = div_ceil(fb_data.width * fb_data.height, VMM_PAGE_SIZE);
+  uint64_t fb_page_count = vmm_calc(fb_data.width * fb_data.height);
 
-  if ((fb_data.addr = (uint64_t)vmm_map_to_paddr(
-           fb_data.addr, fb_page_count, VMM_VMA_KERNEL, VMM_FLAGS_DEFAULT | VMM_FLAG_PCD)) == 0) {
+  if ((fb_data.addr = (uint64_t)vmm_map_paddr(fb_data.addr, fb_page_count, VMM_ATTR_NO_CACHE)) == 0) {
     video_fail("failed to map %u pages for the framebuffer to kernel VMA", fb_page_count);
     return -EFAULT;
   }

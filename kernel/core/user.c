@@ -1,5 +1,5 @@
+#include "mm/region.h"
 #include "sched/sched.h"
-#include "sched/stack.h"
 #include "sched/task.h"
 
 #include "core/user.h"
@@ -12,8 +12,7 @@
 #include "util/mem.h"
 #include "util/panic.h"
 
-#include "mm/heap.h"
-#include "mm/mem.h"
+#include "mm/region.h"
 #include "mm/vmm.h"
 
 #include "limits.h"
@@ -43,7 +42,7 @@ int32_t user_setup() {
    * STAR[47:32] = code segment (CS) for kernel (used for syscall)
    * stack segment (SS) is calculated by STAR[47:32] + 8
 
-   * STAR[63:48] + 16 = code segment (CS) for user (user for sysret)
+   * STAR[63:48] + 16 = code segment (CS) for user (used for sysret)
    * stack segment is calculated by STAR[63:48] + 8... why? fuck you that's why
 
    * LSTAR stores the 64 bit address for the handler that will be called by syscall
@@ -62,7 +61,7 @@ int32_t user_setup() {
   _msr_write(MSR_EFER, efer | 1); // just enable SCE
 
   _msr_write(
-      MSR_STAR, (gdt_offset(gdt_desc_kernel_code_addr) << 32) | ((gdt_offset(gdt_desc_kernel_data_addr) - 5) << 48));
+      MSR_STAR, (gdt_offset(gdt_desc_kernel_code_addr) << 32) | ((gdt_offset(gdt_desc_user_data_addr) - 5) << 48));
   _msr_write(MSR_LSTAR, (uint64_t)_user_handler);
   _msr_write(MSR_FMASK,
       UINT64_MAX - (1 << 1)); // bit 1 reserved in eflags (see https://en.wikipedia.org/wiki/FLAGS_register#FLAGS)
@@ -88,6 +87,7 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   user_debg("envp: 0x%p", envp);
 
   vfs_node_t *node = vfs_get(path);
+  region_t   *cur  = NULL;
   fmt_t       fmt;
 
   char  **argv_copy = NULL, **envp_copy = NULL;
@@ -137,9 +137,14 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   task_rename(current, path);
 
   // remove old binary format memory regions
-  task_mem_del(current, MEM_TYPE_CODE, NULL);
-  task_mem_del(current, MEM_TYPE_RDONLY, NULL);
-  task_mem_del(current, MEM_TYPE_DATA, NULL);
+  while (NULL != (cur = task_mem_find(current, REGION_TYPE_CODE, VMM_VMA_USER)))
+    task_mem_del(current, cur);
+
+  while (NULL != (cur = task_mem_find(current, REGION_TYPE_RDONLY, VMM_VMA_USER)))
+    task_mem_del(current, cur);
+
+  while (NULL != (cur = task_mem_find(current, REGION_TYPE_DATA, VMM_VMA_USER)))
+    task_mem_del(current, cur);
 
   // add the new regions from the loaded format
   task_mem_add(current, fmt.mem);
@@ -156,33 +161,28 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   current->regs.rflags = ((1 << 1) | (1 << 9));
   current->regs.rip    = (uint64_t)fmt.entry;
 
-  switch (vmm_vma(fmt.entry)) {
-  case VMM_VMA_KERNEL:
-    task_current->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
-    task_current->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
-    task_current->regs.rsp = task_stack_get(task_current, VMM_VMA_KERNEL);
-    break;
+  /*
 
-  case VMM_VMA_USER:
-    task_current->regs.cs  = gdt_offset(gdt_desc_user_code_addr);
-    task_current->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
-    task_current->regs.rsp = task_stack_get(task_current, VMM_VMA_USER);
+   * old code for jumping to kernel code
 
-    /*
+   * task_current->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
+   * task_current->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
+   * task_current->regs.rsp = task_stack_get(task_current, VMM_VMA_KERNEL);
 
-     * ORed with 3 to set the RPL to 3
-     * see https://wiki.osdev.org/Segment_Selector
+  */
 
-    */
-    task_current->regs.cs |= 3;
-    task_current->regs.ss |= 3;
-    break;
+  current->regs.cs  = gdt_offset(gdt_desc_user_code_addr);
+  current->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
+  current->regs.rsp = (uint64_t)task_stack_get(task_current, VMM_VMA_USER);
 
-  default:
-    sched_fail("attempt to execute memory in an invalid VMA (0x%p)", fmt.entry);
-    err = -EINVAL;
-    goto end;
-  }
+  /*
+
+   * ORed with 3 to set the RPL to 3
+   * see https://wiki.osdev.org/Segment_Selector
+
+  */
+  current->regs.cs |= 3;
+  current->regs.ss |= 3;
 
   // copy the environment variables to the stack
   if ((err = task_stack_add_list(current, envp_copy, ENV_MAX, &stack_envp)) != 0)
@@ -227,6 +227,18 @@ end:
 }
 
 int32_t user_fork() {
-  // TODO: implement
-  return -ENOSYS;
+  user_debg("forking the current task");
+
+  pid_t caller = current->pid;
+  sched_state(TASK_STATE_FORK);
+
+  // calling the scheduler to create the new task
+  sched();
+
+  // parent returns child PID
+  if (caller == current->pid)
+    return task_current->cpid;
+
+  // child returns 0
+  return 0;
 }

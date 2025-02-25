@@ -1,11 +1,12 @@
 #include "boot/boot.h"
-#include "mm/vmm.h"
+#include "mm/paging.h"
 
 .global paging_mb_data_offset
 .global paging_temp_tables_addr
 .global __paging_setup
 .global __paging_clean
 
+.type paging_mb_data_addr,   @common
 .type paging_mb_data_offset,   @common
 .type paging_temp_tables_addr, @common
 .type __paging_setup, @function
@@ -20,6 +21,7 @@ paging_temp_tables:
 // error messages
 err_paging_kernel_large:  .string "HALTING: Kernel is too large (larger than 4MiB)"
 err_paging_mb_data_large: .string "HALTING: Multiboot information is too large (larger than 2MiB)"
+paging_mb_data_addr:      .int 0
 paging_mb_data_offset:    .int 0
 paging_temp_tables_addr:  .quad paging_temp_tables
 
@@ -75,11 +77,14 @@ __paging_setup:
   mov (%ebx), %ecx
   mov %ecx, 12(%esp) // esp+12 = mb info size
 
+  // save the multiboot address to paging_mb_data_addr
+  mov %ebx, (paging_mb_data_addr - BOOT_KERNEL_ADDR)
+
   // align address to a 2 MiB page
   .Lpaging_setup_align_mb_addr:
     xor %edx, %edx           // clear remainder
     mov %ebx, %eax           // eax = dividend
-    mov $VMM_PAGE_SIZE, %ecx // ecx = divisor
+    mov $PAGE_SIZE, %ecx // ecx = divisor
     div %ecx                 // divide to check if we are aligned to a page
 
     test %edx, %edx // check if the remainder is zero
@@ -105,7 +110,7 @@ __paging_setup:
 
   // check multiboot info size
   mov 12(%esp), %ecx
-  cmpl $VMM_PAGE_SIZE, %ecx
+  cmpl $PAGE_SIZE, %ecx
   ja .Lpaging_setup_fail_mb_large
 
   // get page table addresses
@@ -123,13 +128,13 @@ __paging_setup:
 
   */
   mov %ebx, (%eax)
-  or $VMM_FLAGS_DEFAULT, (%eax)
+  orl $PTE_FLAGS_DEFAULT, (%eax)
 
   mov %eax, 510*8(%eax)
-  or $VMM_FLAGS_DEFAULT, 510*8(%eax)
+  orl $PTE_FLAGS_DEFAULT, 510*8(%eax)
 
   mov %ebx, 511*8(%eax)
-  or $VMM_FLAGS_DEFAULT, 511*8(%eax)
+  orl $PTE_FLAGS_DEFAULT, 511*8(%eax)
 
   /*
 
@@ -139,10 +144,10 @@ __paging_setup:
 
   */
   mov %ecx, (%ebx)
-  or $VMM_FLAGS_DEFAULT, (%ebx)
+  orl $PTE_FLAGS_DEFAULT, (%ebx)
 
   mov %ecx, 510*8(%ebx)
-  or $VMM_FLAGS_DEFAULT, 510*8(%ebx)
+  orl $PTE_FLAGS_DEFAULT, 510*8(%ebx)
 
   /*
 
@@ -151,11 +156,11 @@ __paging_setup:
    * then next entry will point to our PT
 
   */
-  movl $(VMM_FLAGS_DEFAULT | VMM_FLAG_PS), (%ecx)
+  movl $(PTE_FLAGS_DEFAULT | PTE_FLAG_PS), (%ecx)
 
   add $(512*8*2), %ebx // ebx = PT
   movl %ebx, 8(%ecx)
-  or $VMM_FLAGS_DEFAULT, 8(%ecx)
+  orl $PTE_FLAGS_DEFAULT, 8(%ecx)
 
   /*
 
@@ -165,7 +170,7 @@ __paging_setup:
 
   */
   movl %edx, (%ebx)
-  or $VMM_FLAGS_DEFAULT, (%ebx)
+  orl $PTE_FLAGS_DEFAULT, (%ebx)
 
   // restore registers
   pop %edx

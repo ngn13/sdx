@@ -1,13 +1,13 @@
 #pragma once
 
 #include "mm/vmm.h"
-#include "mm/mem.h"
+#include "mm/region.h"
 
 #include "limits.h"
 #include "types.h"
 
+#define TASK_STACK_PAGE_COUNT (4) // 4 pages, 16KB
 #define TASK_REG_COUNT        (20)
-#define TASK_STACK_PAGE_COUNT (16) // 16 pages, 64KB
 #define TASK_TICKS_DEFAULT    (20)
 
 #define TASK_PRIO_MAX (63)
@@ -21,6 +21,7 @@ enum {
   TASK_STATE_SAVE,  // task should be saved, don't modify the registers
   TASK_STATE_WAIT,  // task is waiting on something, should be moved to end of to the queue
   TASK_STATE_DEAD,  // task is dead, should be removed from the queue
+  TASK_STATE_FORK,  // task should be forked
 };
 
 // different task priorities
@@ -66,7 +67,7 @@ typedef struct {
 // task structure
 typedef struct task {
   char  name[NAME_MAX + 1]; // task name
-  pid_t pid, ppid;          // PID and parent PID
+  pid_t pid, ppid, cpid;    // PID, parent PID and last child PID
 
   task_regs_t regs;      // saved task registers
   uint8_t     ticks;     // current tick counter for this task
@@ -79,22 +80,38 @@ typedef struct task {
   int32_t exit_code; // exit code for the task
   int32_t wait_code; // exit code for the task the current task is waiting for
 
-  void  *vmm; // VMM used for this task
-  mem_t *mem; // memory region list
+  region_t *mem; // memory region list
+  void     *vmm; // VMM used for this task
+  bool      old; // is the VMM up-to-date
 
   struct task *next; // next task in the task queue
   struct task *prev; // previous task in the task queue
 } task_t;
 
-task_t *task_new();                                  // create a new task, if a task is provided copy it
+task_t *task_new();                                  // create a new task
+task_t *task_copy();                                 // copy the task
+void    task_free(task_t *task);                     // free a given task
+int32_t task_switch(task_t *task);                   // switch to given task's VMM
 int32_t task_rename(task_t *task, const char *name); // rename the task
-int32_t task_free(task_t *task);                     // free a given task
 
-#define task_mem_add(task, reg) (mem_add(&task->mem, reg)) // add a memory region to task's memory region list
+// sched/mem.c
+#define task_mem_add(task, reg) (region_add(&task->mem, reg)) // add a memory region to task's memory region list
+#define task_mem_find(task, type, vma)                                                                                 \
+  (region_find(&task->mem, type, vma)) // find the given memory region from task's memory region list
 int32_t task_mem_del(
-    task_t *task, mem_type_t type, uint64_t vma); // remove and unmap a memory region from the task's memory region list
-int32_t task_mem_clear(task_t *task);             // free every memory region and clear the task's memory region list
-int32_t task_mem_copy(task_t *to, task_t *from);  // copy memory regions from one task to the other
+    task_t *task, region_t *reg); // remove and unmap a memory region from the task's memory region list
+
+// sched/signal.c
+int32_t task_signal_setup();                                             // setup the default signal handlers
+int32_t task_signal_set(task_t *task, int32_t sig, task_sighand_t hand); // set a signal handler for the task
+int32_t task_signal_add(task_t *task, int32_t sig);                      // add a signal to the task's signal queue
+int32_t task_signal_pop(task_t *task);                                   // get and handle the next signal in the queue
+
+// sched/stack.c
+int32_t  task_stack_alloc(task_t *task);                           // allocate a stack for the given task
+uint64_t task_stack_add(task_t *task, void *value, uint64_t size); // add a value to the task's stack
+int32_t task_stack_add_list(task_t *task, char *list[], uint64_t limit, void **stack); // add a list to the task's stack
+void   *task_stack_get(task_t *task, uint8_t vma);
 
 // copies im_stack_t to task_regs_t
 #define __stack_to_regs(regs, stack)                                                                                   \
@@ -144,16 +161,9 @@ int32_t task_mem_copy(task_t *to, task_t *from);  // copy memory regions from on
     stack->ss     = regs->ss;                                                                                          \
   } while (0)
 
-#define task_ticks(task)               (task->prio * TASK_TICKS_DEFAULT)
+#define task_ticks_reset(task)         (task->ticks = task->prio * TASK_TICKS_DEFAULT) // reset the tick counter
 #define task_update_regs(task, stack)  __stack_to_regs((&task->regs), stack) // update task registers from the im_stack_t
 #define task_update_stack(task, stack) __regs_to_stack((&task->regs), stack) // update im_stack_t from task registers
 #define task_sigset_empty(task)        (NULL == task->signal)
-#define task_vmm_switch(task)                                                                                          \
-  do {                                                                                                                 \
-    if (vmm_get() == task->vmm)                                                                                        \
-      break;                                                                                                           \
-    vmm_sync(task->vmm);                                                                                               \
-    vmm_switch(task->vmm);                                                                                             \
-  } while (0)
 
 #endif

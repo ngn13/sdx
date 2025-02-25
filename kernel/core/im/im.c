@@ -4,7 +4,6 @@
 #include "mm/vmm.h"
 #include "mm/heap.h"
 
-#include "sched/task.h"
 #include "util/printk.h"
 #include "util/panic.h"
 #include "util/list.h"
@@ -215,12 +214,12 @@ void im_init() {
   bzero(&im_tss, sizeof(struct tss));
 
   // single page should be enough for the interrupt stack
-  if ((im_tss.rsp0 = (uint64_t)vmm_map(1, VMM_FLAGS_DEFAULT)) == NULL)
+  if ((im_tss.rsp0 = (uint64_t)vmm_map(1, 0, 0)) == NULL)
     panic("Failed to allocate a stack for the TSS");
 
   // stack starts at the end
-  im_tss.rsp0 += VMM_PAGE_SIZE;
-  pdebg("IM: TSS stack at 0x%p", im_tss.rsp0);
+  im_tss.rsp0 += PAGE_SIZE;
+  pdebg("IM: TSS stack @ 0x%p", im_tss.rsp0);
 
   gdt_tss_set(&im_tss, (sizeof(struct tss) - 1));
 }
@@ -231,4 +230,9 @@ void im_enable() {
           "ltr %1\n"
           "sti\n" ::"rm"(&im_idtr),
       "r"(gdt_offset(gdt_desc_tss_addr)));
+}
+
+void *im_stack() {
+  // stack is allocated and the address is calculated in im_init()
+  return (void *)im_tss.rsp0;
 }

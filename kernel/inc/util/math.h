@@ -12,4 +12,7 @@ uint64_t gdu(uint64_t val);
 uint64_t div_ceil(uint64_t x, uint64_t y);
 uint64_t div_floor(uint64_t x, uint64_t y);
 
+uint64_t round_up(uint64_t x, uint64_t f);
+uint64_t round_down(uint64_t x, uint64_t f);
+
 #endif

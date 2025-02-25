@@ -1,4 +1,3 @@
-#include "sched/signal.h"
 #include "sched/sched.h"
 #include "sched/task.h"
 
@@ -36,8 +35,26 @@ int32_t task_signal_setup() {
   return 0;
 }
 
-int32_t task_signal_clear(task_t *task) {
-  slist_clear(&task->signal, __sigset_free, task_sigset_t);
+int32_t task_signal_set(task_t *task, int32_t sig, task_sighand_t hand) {
+  if (NULL == task || sig > SIG_MAX || sig < 0)
+    return -EINVAL;
+
+  if (SIG_IGN == hand && !__signal_can_ignore(sig))
+    return 0;
+
+  task->sighand[sig] = hand;
+  return 0;
+}
+
+int32_t task_signal_add(task_t *task, int32_t sig) {
+  if (NULL == task || sig > SIG_MAX || sig < SIG_MIN)
+    return -EINVAL;
+
+  task_sigset_t *signal = heap_alloc(sizeof(task_sigset_t));
+  bzero(signal, sizeof(task_sigset_t));
+  signal->value = sig;
+
+  slist_add(&task->signal, signal, task_sigset_t);
   return 0;
 }
 
@@ -77,27 +94,4 @@ int32_t task_signal_pop(task_t *task) {
   }
 
   return signal;
-}
-
-int32_t task_signal(task_t *task, int32_t sig, task_sighand_t hand) {
-  if (NULL == task || sig > SIG_MAX || sig < 0)
-    return -EINVAL;
-
-  if (SIG_IGN == hand && !__signal_can_ignore(sig))
-    return 0;
-
-  task->sighand[sig] = hand;
-  return 0;
-}
-
-int32_t task_kill(task_t *task, int32_t sig) {
-  if (NULL == task || sig > SIG_MAX || sig < SIG_MIN)
-    return -EINVAL;
-
-  task_sigset_t *signal = heap_alloc(sizeof(task_sigset_t));
-  bzero(signal, sizeof(task_sigset_t));
-  signal->value = sig;
-
-  slist_add(&task->signal, signal, task_sigset_t);
-  return 0;
 }

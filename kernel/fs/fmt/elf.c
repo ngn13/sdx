@@ -1,11 +1,11 @@
 #include "fs/fmt.h"
 #include "fs/vfs.h"
 
-#include "mm/mem.h"
 #include "util/printk.h"
 #include "util/math.h"
 #include "util/mem.h"
 
+#include "mm/region.h"
 #include "mm/vmm.h"
 
 #include "errno.h"
@@ -180,7 +180,7 @@ struct elf_program_header {
 */
 struct elf {
   void             *entry;  // entry point for the ELF
-  mem_t            *mem;    // memory regions used for loading the ELF
+  region_t         *mem;    // memory regions used for loading the ELF
   vfs_node_t       *node;   // VFS file node to load
   struct elf_header header; // ELF header
   uint32_t          ph_pos; // current program header position
@@ -244,19 +244,23 @@ int64_t __elf_ph_next(struct elf *elf, struct elf_program_header *header) {
 }
 
 int32_t __elf_load_dyn(struct elf *elf) {
-  void    *alloc_pos = NULL, *addr = NULL;
-  uint64_t alloc_size = 0, count = 0;
-  int64_t  err = 0;
-  mem_t   *mem = NULL;
-
   struct elf_program_header header;
 
-  while ((err = __elf_ph_next(elf, &header)) > 0) {
-    if (header.type != ELF_PH_TYPE_LOAD)
-      continue; // we only care about type LOAD
+  region_t *mem  = NULL;
+  uint8_t   type = 0;
+  void     *pos  = NULL;
+  uint64_t  size = 0;
+  int64_t   err  = 0;
 
+  // loop through the program headers one more time
+  while ((err = __elf_ph_next(elf, &header)) > 0) {
+    // check the header type (only care about LOAD)
+    if (header.type != ELF_PH_TYPE_LOAD)
+      continue;
+
+    // check the size of the header (ignore empty)
     if (header.memsz == 0)
-      continue; // ignore empty
+      continue;
 
     elf_debg("obtained %u. program header", elf->ph_pos);
     pdebg("     |- Type: 0x%x", header.type);
@@ -267,70 +271,72 @@ int32_t __elf_load_dyn(struct elf *elf) {
     pdebg("     |- Memsz: 0x%x", header.memsz);
     pdebg("     `- Align: 0x%x", header.align);
 
-    if (alloc_size > header.vaddr) {
-      elf_debg("invalid program header postioning");
+    // check the alignment
+    /*if (header.offset != 0 && header.vaddr % header.offset != header.align) {
+      elf_debg("invalid program header alignment");
       return -ENOEXEC;
+    }*/
+
+    // align the size to a page
+    size = vmm_align(header.memsz);
+    type = REGION_TYPE_CODE;
+
+    // see if we can disable R/W permissions for this segment's pages
+    if (!(header.flags & ELF_PH_FLAGS_R) && !(header.flags & ELF_PH_FLAGS_W))
+      type = REGION_TYPE_RDONLY;
+
+    // see if we should disable the execution for this segment's pages
+    else if (!(header.flags & ELF_PH_FLAGS_X))
+      type = REGION_TYPE_DATA;
+
+    // create the new region
+    if ((mem = region_new(type, VMM_VMA_USER, pos, vmm_calc(size))) == NULL) {
+      elf_debg("failed to create new memory region");
+      return -ENOMEM;
     }
 
-    alloc_size += header.vaddr - alloc_size;
-    alloc_size += header.memsz;
+    // map the new memory region
+    if ((err = region_map(mem)) != 0) {
+      elf_debg("failed to map %s memory region @ 0x%p (%u pages): %s",
+          region_name(mem),
+          mem->vaddr,
+          mem->num,
+          strerror(err));
+      return err;
+    }
 
-    while (alloc_size % VMM_PAGE_SIZE != 0)
-      alloc_size++;
-  }
+    // add memory region to the list
+    region_add(&elf->mem, mem);
 
-  if ((addr = vmm_map_with(count = vmm_calc(alloc_size), 0, VMM_VMA_USER, VMM_FLAGS_DEFAULT)) == NULL) {
-    elf_debg("failed allocate memory (%u pages) for the program header");
-    return -ENOMEM;
-  }
-
-  elf->ph_pos = 0;
-
-  while ((err = __elf_ph_next(elf, &header)) > 0) {
-    if (header.type != ELF_PH_TYPE_LOAD)
-      continue; // again, we only care about type LOAD
-
-    if (header.memsz == 0)
-      continue; // ignore empty
-
-    // setup the position
-    alloc_pos = addr + header.vaddr;
+    // set the first position
+    if (NULL == pos)
+      pos = mem->vaddr;
 
     // load filesz bytes from file to the allocated memory
-    if (header.filesz != 0 && (err = __elf_read(elf, header.offset, header.filesz, alloc_pos)) < 0) {
-      elf_debg("failed to load %u. program header from the file: %s", strerror(err));
+    if (header.filesz != 0 && (err = __elf_read(elf, header.offset, header.filesz, pos)) < 0) {
+      elf_debg("failed to load program header from the file: %s", strerror(err));
       return -EIO;
     }
 
-    // create and add a new region for the header
-    mem = mem_new(MEM_TYPE_CODE, alloc_pos, vmm_calc(header.memsz));
-    mem_add(&elf->mem, mem);
-
     // zero out the rest of the memory
     for (uint64_t i = header.filesz; i < header.memsz; i++)
-      ((uint8_t *)alloc_pos)[i] = 0;
-
-    // see if we should disable the execution for this segment's pages
-    if (!(header.flags & ELF_PH_FLAGS_X))
-      mem->type = MEM_TYPE_DATA;
-
-    // see if we can disable r/w permissions for this segment's pages
-    if (!(header.flags & ELF_PH_FLAGS_R) && !(header.flags & ELF_PH_FLAGS_W))
-      mem->type = MEM_TYPE_RDONLY;
-
-    // update the flags for the region
-    mem_apply(mem);
+      ((uint8_t *)pos)[i] = 0;
 
     // see if this section contains the entrypoint
     if (header.vaddr < elf->header.entry && header.vaddr + header.memsz > elf->header.entry)
-      elf->entry = alloc_pos + elf->header.entry;
+      elf->entry = pos + elf->header.entry;
+
+    // move to the next position
+    pos += size;
   }
 
+  // check if we failed to get the next program header
   if (err < 0) {
-    elf_debg("failed to read the %d. program header: %s", elf->ph_pos, err);
+    elf_debg("failed to read the %d. program header: %s", elf->ph_pos, strerror(err));
     return err;
   }
 
+  // check if found the entrypoint
   if (elf->entry == 0) {
     elf_fail("failed to find the entry point");
     return -ENOEXEC;
