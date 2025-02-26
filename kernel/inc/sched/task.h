@@ -66,8 +66,9 @@ typedef struct {
 
 // task structure
 typedef struct task {
-  char  name[NAME_MAX + 1]; // task name
-  pid_t pid, ppid, cpid;    // PID, parent PID and last child PID
+  char    name[NAME_MAX + 1]; // task name
+  pid_t   pid, ppid, cpid;    // PID, parent PID and last child PID
+  int32_t exit_code;          // exit code for the task
 
   task_regs_t regs;      // saved task registers
   uint8_t     ticks;     // current tick counter for this task
@@ -77,7 +78,7 @@ typedef struct task {
   task_sighand_t sighand[SIG_MAX]; // signal handlers
   task_sigset_t *signal;           // signal queue
 
-  int32_t exit_code; // exit code for the task
+  pid_t   wait_pid;  // PID of the process we are waiting for
   int32_t wait_code; // exit code for the task the current task is waiting for
 
   region_t *mem; // memory region list

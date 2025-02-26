@@ -56,8 +56,8 @@ struct pmm_reg             pmm_reg_known[] =
 #define __pmm_bm_get_max_index()   (pmm_bm_size / 8)
 #define __pmm_bm_pos_reset(pos)    bzero(pos, sizeof(pmm_bm_pos_t));
 #define __pmm_bm_pos_to_addr(pos)  (pmm_reg_free.start + ((pos)->bit + (pos)->index * PMM_BM_ENTRY_BIT_SIZE) * PAGE_SIZE)
-#define __pmm_bm_pos_set(pos)      (pmm_bm[(pos)->index] |= 1 << (pos)->bit)
-#define __pmm_bm_pos_clear(pos)    (pmm_bm[(pos)->index] &= ~(1 << (pos)->bit))
+#define __pmm_bm_pos_set(pos)      (pmm_bm[(pos)->index] |= ((uint64_t)1 << (pos)->bit))
+#define __pmm_bm_pos_clear(pos)    (pmm_bm[(pos)->index] &= ~((uint64_t)1 << (pos)->bit))
 #define __pmm_bm_pos_get(pos)      ((pmm_bm[(pos)->index] >> (pos)->bit) & 1)
 #define __pmm_bm_pos_is_valid(pos) (__pmm_bm_get_max_index() > (pos)->index)
 
