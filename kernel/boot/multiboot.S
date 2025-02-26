@@ -28,6 +28,7 @@ multiboot_start:
   .int -(MULTIBOOT2_HEADER_MAGIC + MULTIBOOT_ARCHITECTURE_I386 + (multiboot_end - multiboot_start))
 
   // address tag
+  .align 8
   multiboot_address_tag_start:
     .short MULTIBOOT_HEADER_TAG_ADDRESS
     .short MULTIBOOT_HEADER_TAG_OPTIONAL
@@ -40,6 +41,7 @@ multiboot_start:
   multiboot_address_tag_end:
 
   // entry address tag
+  .align 8
   multiboot_entry_tag_start:
     .short MULTIBOOT_HEADER_TAG_ENTRY_ADDRESS
     .short MULTIBOOT_HEADER_TAG_OPTIONAL
@@ -48,6 +50,7 @@ multiboot_start:
     .int __entry - BOOT_KERNEL_ADDR // entry_addr
   multiboot_entry_tag_end:
 
+  .align 8
   .short MULTIBOOT_HEADER_TAG_END
   .short 0
 multiboot_end:

@@ -11,10 +11,9 @@ jobs:
       - name: Install depends
         run: |
           sudo apt update
-          sudo apt install gcc-14-x86-64-linux-gnu  \
-                      binutils-x86-64-gnu      \
-                      gdisk dosfstools grub-pc \
-                      qemu-system pcre2-utils
+          sudo apt install gcc-14-x86-64-linux-gnu   \
+                      binutils-x86-64-gnu make gdisk \
+                      dosfstools grub-pc qemu-system pcre2-utils
 
       - name: Checkout repository
         uses: actions/checkout@v4

@@ -70,36 +70,3 @@ check_sha256() {
     return 1
   fi
 }
-
-# extract the script name from a process' command line
-_get_script_by_pid(){
-  local proc_command="$(ps -p $1 -o command | sed -n 2p)"
-  local proc_script="${proc_command}"
-
-  # remove previous arguments (such as doas, sudo or /bin/bash)
-  if [[ "${proc_command}" == *" "* ]]; then
-    proc_script="$(echo "${proc_script}" | awk '{print $NF}')"
-  fi
-
-  echo "${proc_script}"
-}
-
-# checks the parent script that called the current script
-check_parent_script(){
-  # extract the script name from  the parent process' command line
-  local parent_script="$(_get_script_by_pid $PPID)"
-
-  if [[ "${parent_script}" == "${1}" ]]; then
-    return 0
-  fi
-
-  # extract the script name from parent process' parent process' command line
-  local parent_parent_pid="$(ps -p $PPID -o ppid | sed -n 2p)"
-  local parent_parent_script="$(_get_script_by_pid $parent_parent_pid)"
-
-  if [[ "${parent_parent_script}" == "${1}" ]]; then
-    return 0
-  fi
-
-  return 1
-}

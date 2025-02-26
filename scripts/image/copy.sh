@@ -1,16 +1,10 @@
-#!/bin/sh
+#!/bin/bash
 
 # copies the sdx files to the disk image
 
 source ./scripts/image/loop.sh
 if [ $? -ne 0 ]; then
   echo "Failed to import the loop.sh"
-  exit 1
-fi
-
-if ! check_parent_script "./scripts/image.sh"; then
-  error "Invalid execution"
-  desc "This script is supposed be run by the scripts/image.sh"
   exit 1
 fi
 

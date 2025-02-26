@@ -8,12 +8,6 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-if ! check_parent_script "./scripts/image.sh"; then
-  error "Invalid execution"
-  desc "This script is supposed be run by the scripts/image.sh"
-  exit 1
-fi
-
 if [ "${UID}" -ne 0 ]; then
   error "You should run this script as root"
   exit 1
