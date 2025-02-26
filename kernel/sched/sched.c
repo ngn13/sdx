@@ -75,7 +75,7 @@ int32_t __sched_queue_add(task_t *task) {
 }
 
 void __sched_queue_clean() {
-  task_t *corpse = NULL;
+  task_t *corpse = NULL, *parent = NULL;
 
   // look for the dead task
   dlist_foreach(&task_head, task_t) {
@@ -88,6 +88,10 @@ void __sched_queue_clean() {
   // we should have switch to a new task
   if (NULL == corpse || task_current == corpse)
     return;
+
+  // add task to parent's wait queue
+  if (NULL != (parent = sched_find(corpse->ppid)))
+    task_waitq_add(parent, corpse);
 
   // remove from the list
   __sched_queue_del(corpse);
@@ -194,9 +198,6 @@ void __sched_timer_handler(im_stack_t *stack) {
      * after the next task switch with __sched_queue_clean
 
     */
-
-    // TODO: notify any tasks waiting on this task
-
     task_current = NULL;
     break;
 
@@ -437,7 +438,29 @@ void sched_unlock() {
 
 */
 task_t *sched_next(task_t *task) {
+  /*
+
+   * if task is NULL, this the first time calling sched_next()
+   * we can just return the first task in the task list
+
+  */
   if (NULL == task)
     return task_head;
+
+  // otherwise return the next task in the list
   return task->next;
+}
+
+task_t *sched_child(task_t *task, task_t *child) {
+  // caller needs to provide a task
+  if (NULL == task)
+    return NULL;
+
+  // look for the next child process
+  while ((child = sched_next(child)) != NULL)
+    if (child->ppid == task->pid)
+      break;
+
+  // return the found child
+  return child;
 }

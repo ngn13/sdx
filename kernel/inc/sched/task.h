@@ -1,7 +1,7 @@
 #pragma once
 
-#include "mm/vmm.h"
 #include "mm/region.h"
+#include "mm/heap.h"
 
 #include "limits.h"
 #include "types.h"
@@ -31,11 +31,18 @@ enum {
   TASK_PRIO_CR1TIKAL,
 };
 
-// task signal set strucure (signal list)
+// task signal set structure (signal list)
 typedef struct task_sigset {
   int32_t             value;
   struct task_sigset *next;
 } task_sigset_t;
+
+// task wait queue structure (wait list)
+typedef struct task_waitq {
+  int32_t            pid;    // PID of the child process that commited suicide
+  int32_t            status; // status of the child process
+  struct task_waitq *next;
+} task_waitq_t;
 
 // task signal handler
 typedef void (*task_sighand_t)(int32_t);
@@ -66,9 +73,8 @@ typedef struct {
 
 // task structure
 typedef struct task {
-  char    name[NAME_MAX + 1]; // task name
-  pid_t   pid, ppid, cpid;    // PID, parent PID and last child PID
-  int32_t exit_code;          // exit code for the task
+  char  name[NAME_MAX + 1]; // task name
+  pid_t pid, ppid, cpid;    // PID, parent PID and last child PID
 
   task_regs_t regs;      // saved task registers
   uint8_t     ticks;     // current tick counter for this task
@@ -78,8 +84,11 @@ typedef struct task {
   task_sighand_t sighand[SIG_MAX]; // signal handlers
   task_sigset_t *signal;           // signal queue
 
-  pid_t   wait_pid;  // PID of the process we are waiting for
-  int32_t wait_code; // exit code for the task the current task is waiting for
+  task_waitq_t *waitq_head; // wait queue head
+  task_waitq_t *waitq_tail; // wait queue tail
+
+  int32_t term_code; // termination code (signal)
+  int32_t exit_code; // exit code for the task
 
   region_t *mem; // memory region list
   void     *vmm; // VMM used for this task
@@ -107,6 +116,14 @@ int32_t task_signal_setup();                                             // setu
 int32_t task_signal_set(task_t *task, int32_t sig, task_sighand_t hand); // set a signal handler for the task
 int32_t task_signal_add(task_t *task, int32_t sig);                      // add a signal to the task's signal queue
 int32_t task_signal_pop(task_t *task);                                   // get and handle the next signal in the queue
+#define task_signal_clear(task) slist_clear(&(task)->signal, heap_free, task_sigset_t) // free the entire signal queue
+
+// sched/waitq.c
+int32_t       task_waitq_add(task_t *task, task_t *child); // create a new waitq from the child and add to task's waitq
+task_waitq_t *task_waitq_pop(task_t *task);                // get next waitq in the task's wait queue
+#define task_waitq_free(waitq)    (heap_free(waitq))       // free a waitq object
+#define task_waitq_clear(task)    slist_clear(&(task)->waitq_head, task_waitq_free, task_waitq_t) // free the entire waitq
+#define task_waitq_is_empty(task) ((task)->waitq_head == NULL) // check if the waitq is empty
 
 // sched/stack.c
 int32_t  task_stack_alloc(task_t *task);                           // allocate a stack for the given task

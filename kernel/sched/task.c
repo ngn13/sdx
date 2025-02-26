@@ -77,8 +77,9 @@ void task_free(task_t *task) {
     region_free(cur);
   }
 
-  // clear the signal queue
-  slist_foreach(&task->signal, task_sigset_t) heap_free(cur);
+  // clear the signal & wait queue
+  task_signal_clear(task);
+  task_waitq_clear(task);
 
   // free the VMM
   vmm_free(task->vmm);

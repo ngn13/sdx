@@ -1,4 +1,3 @@
-#include "mm/region.h"
 #include "sched/sched.h"
 #include "sched/task.h"
 
@@ -27,6 +26,7 @@ struct user_call user_calls[] = {
     {.code = 0, .func = user_exit},
     {.code = 1, .func = user_fork},
     {.code = 2, .func = user_exec},
+    {.code = 3, .func = user_wait},
     {.func = NULL},
 };
 
@@ -69,13 +69,10 @@ int32_t user_setup() {
   return 0;
 }
 
-int32_t user_exit(int32_t code) {
+void user_exit(int32_t code) {
   user_debg("exiting with code: %d", code);
-
   sched_exit(code);
-  sched();
-
-  return 0; // will never return
+  sched(); // will never return
 }
 
 int32_t user_exec(char *path, char *argv[], char *envp[]) {
@@ -226,13 +223,26 @@ end:
   return err;
 }
 
-int32_t user_fork() {
+pid_t user_fork() {
   user_debg("forking the current task");
 
-  pid_t caller = current->pid;
-  sched_state(TASK_STATE_FORK);
+  /*
 
-  // calling the scheduler to create the new task
+   * save the caller PID to check if we are running
+   * as the parent or the child after the fork
+
+  */
+  pid_t caller = current->pid;
+
+  /*
+
+   * setting our TASK_STATE_FORK will make it so the next
+   * time the scheduler is called the current task will be
+   * forked, to fork the task right now, we call the
+   * scheduler ourselves
+
+  */
+  sched_state(TASK_STATE_FORK);
   sched();
 
   // parent returns child PID
@@ -241,4 +251,43 @@ int32_t user_fork() {
 
   // child returns 0
   return 0;
+}
+
+pid_t user_wait(int32_t *status) {
+  task_waitq_t *waitq = NULL;
+  pid_t         pid   = 0;
+
+  // if the wait queue is not empty, just use the next waitq
+  if (!task_waitq_is_empty(task_current))
+    goto end;
+
+  /*
+
+   * check if we have any children before waiting on
+   * a wait queue update, since if we don't have any
+   * children task's wait queue will never be updated
+
+  */
+  if (NULL == sched_child(task_current, NULL))
+    return -ECHILD;
+
+  // wait for a waitq
+  while (task_waitq_is_empty(task_current)) {
+    sched_state(TASK_STATE_WAIT);
+    sched();
+  }
+
+end:
+  // get the current waitq in the queue
+  waitq = task_waitq_pop(task_current);
+
+  // get the waitq status and PID
+  *status = waitq->status;
+  pid     = waitq->pid;
+
+  // free the waitq
+  task_waitq_free(waitq);
+
+  // return the PID
+  return pid;
 }

@@ -18,11 +18,13 @@
 task_sighand_t sigdfl[SIG_MAX];
 
 void __sighand_term(int32_t sig) {
+  task_current->term_code = sig;
   sched_exit(SIG_EXIT_CODE + sig);
 }
 
 void __sighand_dump(int32_t sig) {
   core_dump(&task_current->regs);
+  task_current->term_code = sig;
   sched_exit(SIG_EXIT_CODE + sig);
 }
 

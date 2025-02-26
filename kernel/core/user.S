@@ -1,6 +1,6 @@
 #include "sched/task.h"
 #include "util/stack.S"
-#include "errno.h"
+#include "mm/vmm.h"
 
 .section .text
 .code64
@@ -27,7 +27,7 @@ _user_handler:
   // save the syscall number
   mov %rax, %r9
 
-  // also first 3 arguments  needs to preserved for the handler call
+  // also first 3 arguments needs to preserved for the handler call
   mov %rdi, %r12
   mov %rsi, %r11
   mov %rdx, %r10
