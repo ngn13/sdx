@@ -20,9 +20,10 @@ if [ ! -f "${IMAGE}" ]; then
   exit 1
 fi
 
-opt_log=0     # logging serial output to a file is disabled, enable with --log
-opt_gtk=1     # using GTK display, switch to nographic option with --no-gtk
-opt_display=1 # video display is enabled, disable video display with --no-display
+opt_serial_log=0 # logging serial output to a file is disabled, enable with --serial-log
+opt_display=1    # video display is enabled, disable video display with --no-display
+opt_gtk=1        # using GTK display, switch to nographic option with --no-gtk
+opt_log=0        # logging stdout and stderr is disabled, enable with --log
 
 qemu_args=(
   -s
@@ -35,16 +36,20 @@ qemu_args=(
 
 for arg in "$@"; do
   case "${arg}" in
-    "--log")
-      opt_log=1
+    "--serial-log")
+      opt_serial_log=1
+      ;;
+
+    "--no-display")
+      opt_display=0
       ;;
 
     "--no-gtk")
       opt_gtk=0
       ;;
 
-    "--no-display")
-      opt_display=0
+    "--log")
+      opt_log=1
       ;;
 
     "--"*)
@@ -54,7 +59,7 @@ for arg in "$@"; do
   esac
 done
 
-if [ $opt_log -eq 0 ]; then
+if [ $opt_serial_log -eq 0 ]; then
   qemu_args+=(-serial mon:stdio)
 else
   qemu_args+=(
@@ -72,4 +77,8 @@ else
   qemu_args+=(-nographic)
 fi
 
-exec qemu-system-x86_64 ${qemu_args[@]}
+if [ $opt_log -eq 1 ]; then
+  qemu-system-x86_64 ${qemu_args[@]} &> qemu.log
+else
+  qemu-system-x86_64 ${qemu_args[@]}
+fi

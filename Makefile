@@ -58,7 +58,7 @@ image:
 	./scripts/image.sh
 
 qemu:
-	./scripts/qemu.sh --log
+	./scripts/qemu.sh --serial-log
 
 test:
 	./scripts/test.sh
