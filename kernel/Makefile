@@ -15,7 +15,8 @@ SRCDIRS = $(shell find . -type d -not -path './dist/*')
 OUTDIRS = $(patsubst %,$(DISTDIR)/%,$(SRCDIRS))
 
 # C compiler flags
-CFLAGS  = -g -nostdlib -nostartfiles -ffreestanding -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2
+CFLAGS  = -g -nostdlib -nostartfiles -ffreestanding -mcmodel=kernel
+CFLAGS += -fno-pie -mno-red-zone -mno-mmx -mno-sse -mno-sse2
 CFLAGS += -Wno-packed-bitfield-compat # disable useless ABI change warning
 CFLAGS += -Werror # warnings = errors
 
