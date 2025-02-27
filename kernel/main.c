@@ -3,7 +3,7 @@
 /*
 
  * sdx | simple and dirty UNIX
- * written by ngn (https://ngn.tf) (2024)
+ * written by ngn (https://ngn.tf) (2025)
 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,75 +22,52 @@
 
 // clang-format on
 
+#include "boot/multiboot.h"
+#include "boot/boot.h"
+
 #include "core/im.h"
 #include "core/pci.h"
 #include "core/pic.h"
 #include "core/serial.h"
 #include "core/user.h"
 
+#include "mm/pmm.h"
+
 #include "sched/sched.h"
 #include "sched/task.h"
 
-#include "boot/end.h"
-#include "boot/multiboot.h"
-
-#include "mm/pm.h"
-#include "mm/vmm.h"
-
 #include "fs/vfs.h"
-#include "fs/fmt.h"
-
 #include "video.h"
 
 #include "util/panic.h"
 #include "util/printk.h"
 #include "util/asm.h"
 
-#include "errno.h"
-#include "types.h"
-
 void entry() {
   int32_t err = 0;
-  /*
-
-   * here, we initialize video memory in width the framebuffer mode
-   * framebuffer info is obtained from the multiboot data
-   * see boot/multiboot.S
-
-   * also cars 2 is the best cars movie btw
-
-  */
-  if (!video_init(VIDEO_MODE_FRAMEBUFFER))
-    panic("Failed to initialize the framebuffer video mode");
 
   // initialize serial communication ports (UART)
   if ((err = serial_init()) != 0)
     pfail("Failed to initalize the serial communication: %s", strerror(err));
 
-  /*
+  // load multiboot data
+  if ((err = mb_load((void *)BOOT_MB_INFO_VADDR)) != 0)
+    panic("Failed to load multiboot data: %s", strerror(err));
 
-   * obtain the available memory region start and the end address
+  // initialize virtual memory manager
+  if ((err = vmm_init()) != 0)
+    panic("Failed to initialize virtual memory manager: %s", strerror(err));
 
-   * for the start: we check if the page table's end address is larger then
-   * the end address for the kernel, if so, we use the page table's end address
+  // initialize physical memory manager (so we can start mapping & allocating memory)
+  if ((err = pmm_init()) != 0)
+    panic("Failed to initialize physical memory manager: %s", strerror(err));
 
-   * for the end: we check if the last mapped memory address is larger then the
-   * available memory region's end address, if so, we use the region's address
+  // initialize framebuffer video driver
+  if ((err = video_init(VIDEO_MODE_FRAMEBUFFER)) != 0)
+    pfail("Failed to initialize the framebuffer video mode: %s", strerror(err));
 
-  */
-  uint64_t avail_start = pm_end > end_addr ? pm_end : end_addr;
-  uint64_t avail_end   = pm_mapped > mb_mem_avail_limit ? mb_mem_avail_limit : pm_mapped;
-
-  /*
-
-   * paging is done in before switching to long mode
-   * here we are just doing some extra checks and logging
-
-   * see boot/paging.S and boot/multiboot.S
-
-  */
-  if (!pm_init(avail_start, avail_end))
-    panic("Failed to initialize the paging manager");
+  // enable the cursor
+  video_cursor_show();
 
   /*
 
@@ -106,9 +83,9 @@ void entry() {
 
    * initialize the programmable interrupt controller (PIC)
 
-   * we need to enable this before enabling interrupts
-   * otherwise since the vector offset is not set we would get a random
-   * exception interrupt from the PIC
+   * we need to enable this before enabling interrupts otherwise
+   * since the vector offset is not set we would get a random exception
+   * interrupt from the PIC
 
   */
   if (!pic_init())
@@ -125,7 +102,7 @@ void entry() {
     panic("Failed to start the scheduler: %s", strerror(err));
 
   // make current task (us) critikal
-  task_level(current, TASK_LEVEL_CRITIKAL);
+  sched_prio(TASK_PRIO_CR1TIKAL);
 
   // initialize peripheral component interconnect (PCI) devices
   pci_init();

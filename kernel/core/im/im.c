@@ -1,15 +1,13 @@
-#include "boot/gdt.h"
+#include "boot/boot.h"
 #include "core/im.h"
 
 #include "mm/vmm.h"
-#include "mm/pm.h"
+#include "mm/heap.h"
 
 #include "util/printk.h"
 #include "util/panic.h"
 #include "util/list.h"
-#include "util/bit.h"
 #include "util/mem.h"
-#include "util/io.h"
 
 /*
 
@@ -48,11 +46,11 @@ struct im_idtr {
 } __attribute__((packed));
 
 struct im_handler_entry {
-  im_handler_func_t       *func;       // handler function
-  im_handler_prio_t        prio;       // handler function priority
-  uint8_t                  vector;     // selected vector for the handler
-  bool                     is_enabled; // is the handler enabled
-  struct im_handler_entry *next, *pre; // next and previous handler
+  im_handler_func_t       *func;        // handler function
+  im_handler_prio_t        prio;        // handler function priority
+  uint8_t                  vector;      // selected vector for the handler
+  bool                     is_enabled;  // is the handler enabled
+  struct im_handler_entry *next, *prev; // next and previous handler
 };
 
 struct im_handler {
@@ -105,7 +103,7 @@ void im_set_entry(uint8_t vector, uint8_t dpl) {
   struct im_desc *d = &im_idt[vector];
 
   // GDT code segment offset for the CS
-  d->selector = gdt_offset(gdt_desc_code_0_addr);
+  d->selector = gdt_offset(gdt_desc_kernel_code_addr);
 
   /*
 
@@ -133,7 +131,7 @@ void im_add_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t ha
   }
 
   // create a new entry
-  struct im_handler_entry *entry = vmm_alloc(sizeof(struct im_handler_entry));
+  struct im_handler_entry *entry = heap_alloc(sizeof(struct im_handler_entry));
   entry->next                    = NULL;
   entry->vector                  = vector;
   entry->func                    = handler;
@@ -172,24 +170,20 @@ void im_del_handler(uint8_t vector, im_handler_func_t handler) {
   dlist_del(&im_handler.head, &im_handler.tail, entry, struct im_handler_entry);
   im_handler.count--;
 
-  vmm_free(entry);
+  heap_free(entry);
 }
 
 void im_disable_handler(uint8_t vector, im_handler_func_t handler) {
   dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler) {
+    if (cur->vector == vector && cur->func == handler)
       cur->is_enabled = false;
-      break;
-    }
   }
 }
 
 void im_enable_handler(uint8_t vector, im_handler_func_t handler) {
   dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler) {
+    if (cur->vector == vector && cur->func == handler)
       cur->is_enabled = true;
-      break;
-    }
   }
 }
 
@@ -205,9 +199,9 @@ void im_init() {
     d = &im_idt[i];
 
     // setup all the address bits
-    d->address_low  = (wrapper_addr + (wrapper_size * i)) & 0xffff;
-    d->address_mid  = ((wrapper_addr + (wrapper_size * i)) >> 16) & 0xffff;
-    d->address_high = ((wrapper_addr + (wrapper_size * i)) >> 32) & 0xffff;
+    d->address_low  = (wrapper_addr + (wrapper_size * i)) & UINT16_MAX;
+    d->address_mid  = ((wrapper_addr + (wrapper_size * i)) >> 16) & UINT16_MAX;
+    d->address_high = ((wrapper_addr + (wrapper_size * i)) >> 32) & UINT32_MAX;
 
     // set the default entry flags
     im_set_entry(i, 0);
@@ -219,17 +213,26 @@ void im_init() {
   // setup the TSS
   bzero(&im_tss, sizeof(struct tss));
 
-  if ((im_tss.rsp0 = (uint64_t)pm_alloc(1)) == NULL)
-    panic("Failed to allocate memory for the TSS");
+  // single page should be enough for the interrupt stack
+  if ((im_tss.rsp0 = (uint64_t)vmm_map(1, 0, 0)) == NULL)
+    panic("Failed to allocate a stack for the TSS");
 
-  im_tss.rsp0 += PM_PAGE_SIZE;
-  pdebg("IM: Created TSS stack at 0x%x", im_tss.rsp0);
+  // stack starts at the end
+  im_tss.rsp0 += PAGE_SIZE;
+  pdebg("IM: TSS stack @ 0x%p", im_tss.rsp0);
 
   gdt_tss_set(&im_tss, (sizeof(struct tss) - 1));
+}
 
-  // load the IDTR
-  __asm__("lidt (%0)" ::"rm"(&im_idtr));
+void im_enable() {
+  // load the IDTR & TSS, then sti (set interrupt)
+  __asm__("lidt (%0)\n"
+          "ltr %1\n"
+          "sti\n" ::"rm"(&im_idtr),
+      "r"(gdt_offset(gdt_desc_tss_addr)));
+}
 
-  // load the TSS
-  __asm__("ltr %0" ::"r"(gdt_offset(gdt_desc_tss_addr)));
+void *im_stack() {
+  // stack is allocated and the address is calculated in im_init()
+  return (void *)im_tss.rsp0;
 }

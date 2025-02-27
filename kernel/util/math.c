@@ -39,3 +39,15 @@ uint64_t pow(uint64_t n, uint64_t e) {
 
   return r;
 }
+
+uint64_t round_up(uint64_t x, uint64_t f) {
+  if (!f)
+    return x;
+  return (x + f - 1) / f * f;
+}
+
+uint64_t round_down(uint64_t x, uint64_t f) {
+  if (!f)
+    return x;
+  return x / f * f;
+}

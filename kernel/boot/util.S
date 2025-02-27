@@ -1,18 +1,14 @@
-.intel_syntax noprefix
+.type __halt,  @function
+.type __fail,  @function
+.type __cmpn,  @function
+.type __error, @function
 
-// TODO: rewrite in GAS (AT&T) syntax
+.global __cmpn
+.global __fail
+.global __halt
 
 .section .text
 .code32
-
-.type __string_compare, @function
-.type __error,          @function
-.type __fail,           @function
-.type __halt,           @function
-
-.global __string_compare
-.global __fail
-.global __halt
 
 // halts the system forever
 __halt:
@@ -22,7 +18,7 @@ __halt:
     hlt
     jmp .Lentry_halt_forever
 
-/* 
+/*
 
  * accepts one argument, which is the error message
  * the message is provided to __error from util.s which will print it to the screen
@@ -30,77 +26,71 @@ __halt:
 
 */
 __fail:
-  mov eax, [esp+4] // get the error message
-  // no need to preserve eax because this function never returns
+  // no need to preserve any registers because this function never returns
+  mov 4(%esp), %eax // obtain the error message
 
-  push eax     // set is as the first argument
+  push %eax    // set is as the first argument
   call __error // call __error to print it out
-  add esp, 4   // remove the argument from the stack
+  // no need to remove the argument from the stack as well
 
-  call __halt
+  call __halt  // halt forever
 
-// compares two strings
-__string_compare:
-  push ebx // preserve ebx (stores the first string)
-  push ecx // preserve ecx (stores the second string)
-  push edx // preserve edx (stores the string length)
+// compare specific amount of chars from two strings
+__cmpn:
+  push %ebx // preserve ebx (will store the first string)
+  push %ecx // preserve ecx (will store the second string)
+  push %edx // preserve edx (will store the string length)
 
-  xor eax, eax // return value
+  mov $1, %eax // return value
+  mov 16(%esp), %ebx // get the first string in ebx
+  mov 20(%esp), %ecx // get the second string in ecx
+  mov 24(%esp), %edx // and get the length in edx
 
-  mov ebx, [esp+16]
-  mov ecx, [esp+20]
-  mov edx, [esp+24]
+  .Lcmpn_char:
+    mov -1(%ebx,%edx,1), %ah
+    mov -1(%ecx,%edx,1), %al
 
-  .Lstring_compare_char:
-    mov ah, [ebx+edx-1]
-    mov al, [ecx+edx-1]
+    cmp %ah, %al
+    jne .Lcmpn_end
 
-    cmp ah, al
-    jne .Lstring_compare_fail
+    dec %edx
 
-    dec edx
+    test %edx, %edx
+    jne .Lcmpn_char
 
-    test edx, edx
-    jne .Lstring_compare_char
+    xor %eax, %eax // change return value
 
-    xor eax, eax
-    jmp .Lstring_compare_end
-
-  .Lstring_compare_fail:
-    mov eax, 1
-
-  .Lstring_compare_end:
-    pop edx
-    pop ecx
-    pop ebx
+  .Lcmpn_end:
+    pop %edx
+    pop %ecx
+    pop %ebx
 
     ret
 
 // prints a given error message
 __error:
-  push eax
-  mov eax, [esp+8] // get the error message
+  push %eax
+  push %edx
 
-  push edx
-  mov edx, 0x0c    // get the color
+  mov 12(%esp), %eax // get the message
 
-  push edx
-  push eax
-  call __video_write
+  push $0xc // color
+  push %eax // message
+  call __video_write // write to screen
 
-  add esp, 8
+  add $8, %esp // remove args from the stack
 
   // hide the cursor
-  mov dx, 0x3D4
-	mov al, 0xA
-	out dx, al
+  mov $0x3d4, %dx
+	mov $0xa, %al
+	out %al, %dx
 
-	inc dx
-	mov al, 0x20
-	out dx, al
+	inc %dx
+	mov $0x20, %al
+	out %al, %dx
 
   // restore registers and return
-  pop edx
-  pop eax
+  pop %edx
+  pop %eax
 
   ret

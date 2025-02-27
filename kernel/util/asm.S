@@ -1,15 +1,8 @@
 #include "util/asm.h"
 #include "types.h"
 
-.type _get_cr0, @function
-.type _get_cr2, @function
-.type _get_cr3, @function
-.type _get_cr4, @function
-
-.type _msr_read, @function
-.type _msr_write, @function
-
-.type _hang, @function
+.global _end_addr
+.global _start_addr
 
 .global _get_cr0
 .global _get_cr2
@@ -20,6 +13,23 @@
 .global _msr_write
 
 .global _hang
+
+.type _end_addr,   @common
+.type _start_addr, @common
+
+.type _get_cr0, @function
+.type _get_cr2, @function
+.type _get_cr3, @function
+.type _get_cr4, @function
+
+.type _msr_read,  @function
+.type _msr_write, @function
+
+.type _hang, @function
+
+.section .data
+_start_addr: .quad _start
+_end_addr:   .quad _end
 
 .section .text
 .code64

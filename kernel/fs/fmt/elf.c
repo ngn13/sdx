@@ -1,16 +1,15 @@
 #include "fs/fmt.h"
 #include "fs/vfs.h"
-#include "mm/pm.h"
 
 #include "util/printk.h"
+#include "util/math.h"
 #include "util/mem.h"
+
+#include "mm/region.h"
+#include "mm/vmm.h"
 
 #include "errno.h"
 #include "types.h"
-
-#define elf_info(f, ...) pinfo("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
-#define elf_fail(f, ...) pfail("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
-#define elf_debg(f, ...) pdebg("ELF: (0x%x) " f, elf->node, ##__VA_ARGS__)
 
 /*
 
@@ -22,6 +21,10 @@
  * - https://wiki.osdev.org/ELF_Tutorial (this uses ELF32)
 
 */
+
+#define elf_info(f, ...) pinfo("ELF: " f, ##__VA_ARGS__)
+#define elf_fail(f, ...) pfail("ELF: " f, ##__VA_ARGS__)
+#define elf_debg(f, ...) pdebg("ELF: " f, ##__VA_ARGS__)
 
 /*
 
@@ -176,12 +179,11 @@ struct elf_program_header {
 
 */
 struct elf {
-  void             *entry; // entry point
-  void             *addr;  // allocated page address
-  uint64_t          count; // allocated page count
-  vfs_node_t       *node;
-  struct elf_header header;
-  uint32_t          ph_pos;
+  void             *entry;  // entry point for the ELF
+  region_t         *mem;    // memory regions used for loading the ELF
+  vfs_node_t       *node;   // VFS file node to load
+  struct elf_header header; // ELF header
+  uint32_t          ph_pos; // current program header position
 };
 
 #define __elf_read(elf, offset, size, buffer) vfs_read(elf->node, offset, size, buffer)
@@ -243,79 +245,98 @@ int64_t __elf_ph_next(struct elf *elf, struct elf_program_header *header) {
 
 int32_t __elf_load_dyn(struct elf *elf) {
   struct elf_program_header header;
-  void                     *alloc_pos  = NULL;
-  uint64_t                  alloc_size = 0;
-  int64_t                   err        = 0;
 
+  region_t *mem  = NULL;
+  uint8_t   type = 0;
+  void     *pos  = NULL;
+  uint64_t  size = 0;
+  int64_t   err  = 0;
+
+  // loop through the program headers one more time
   while ((err = __elf_ph_next(elf, &header)) > 0) {
-    elf_debg("obtained %u. program header", elf->ph_pos);
-    elf_debg("|- Type: 0x%x", header.type);
-    elf_debg("|- Offset: 0x%x VirtAddr: 0x%x PhysAddr: 0x%x", header.offset, header.vaddr, header.paddr);
-    elf_debg("`- Filesz: 0x%x Memsz: 0x%x Align: 0x%x", header.filesz, header.memsz, header.align);
-
+    // check the header type (only care about LOAD)
     if (header.type != ELF_PH_TYPE_LOAD)
-      continue; // we only care about type LOAD
+      continue;
 
+    // check the size of the header (ignore empty)
     if (header.memsz == 0)
-      continue; // ignore empty
+      continue;
 
-    if (alloc_size > header.vaddr) {
-      elf_debg("invalid program header postioning");
+    elf_debg("obtained %u. program header", elf->ph_pos);
+    pdebg("     |- Type: 0x%x", header.type);
+    pdebg("     |- Offset: 0x%x", header.offset);
+    pdebg("     |- Vaddr: 0x%p", header.vaddr);
+    pdebg("     |- Paddr: 0x%p", header.paddr);
+    pdebg("     |- Filesz: 0x%x", header.filesz);
+    pdebg("     |- Memsz: 0x%x", header.memsz);
+    pdebg("     `- Align: 0x%x", header.align);
+
+    // check the alignment
+    /*if (header.offset != 0 && header.vaddr % header.offset != header.align) {
+      elf_debg("invalid program header alignment");
       return -ENOEXEC;
+    }*/
+
+    // align the size to a page
+    size = vmm_align(header.memsz);
+    type = REGION_TYPE_CODE;
+
+    // see if we can disable R/W permissions for this segment's pages
+    if (!(header.flags & ELF_PH_FLAGS_R) && !(header.flags & ELF_PH_FLAGS_W))
+      type = REGION_TYPE_RDONLY;
+
+    // see if we should disable the execution for this segment's pages
+    else if (!(header.flags & ELF_PH_FLAGS_X))
+      type = REGION_TYPE_DATA;
+
+    // create the new region
+    if ((mem = region_new(type, VMM_VMA_USER, pos, vmm_calc(size))) == NULL) {
+      elf_debg("failed to create new memory region");
+      return -ENOMEM;
     }
 
-    alloc_size += header.vaddr - alloc_size;
-    alloc_size += header.memsz;
+    // map the new memory region
+    if ((err = region_map(mem)) != 0) {
+      elf_debg("failed to map %s memory region @ 0x%p (%u pages): %s",
+          region_name(mem),
+          mem->vaddr,
+          mem->num,
+          strerror(err));
+      return err;
+    }
 
-    for (; alloc_size % PM_PAGE_SIZE != 0; alloc_size++)
-      ;
-  }
+    // add memory region to the list
+    region_add(&elf->mem, mem);
 
-  if ((elf->addr = pm_alloc(elf->count = pm_calc(alloc_size))) == NULL) {
-    elf_debg("failed allocate memory (%u pages) for the program header");
-    return -ENOMEM;
-  }
-
-  elf->ph_pos = 0;
-
-  while ((err = __elf_ph_next(elf, &header)) > 0) {
-    if (header.type != ELF_PH_TYPE_LOAD)
-      continue; // again, we only care about type LOAD
-
-    if (header.memsz == 0)
-      continue; // ignore empty
-
-    alloc_pos = elf->addr + header.vaddr;
+    // set the first position
+    if (NULL == pos)
+      pos = mem->vaddr;
 
     // load filesz bytes from file to the allocated memory
-    elf_debg("offset: %u filesz: %u alloc_pos: 0x%x", header.offset, header.filesz, alloc_pos);
-    if (header.filesz != 0 && (err = __elf_read(elf, header.offset, header.filesz, alloc_pos)) < 0) {
-      elf_debg("failed to load %u. program header from the file: %s", strerror(err));
+    if (header.filesz != 0 && (err = __elf_read(elf, header.offset, header.filesz, pos)) < 0) {
+      elf_debg("failed to load program header from the file: %s", strerror(err));
       return -EIO;
     }
 
     // zero out the rest of the memory
     for (uint64_t i = header.filesz; i < header.memsz; i++)
-      ((uint8_t *)alloc_pos)[i] = 0;
-
-    // see if we can disable r/w permissions for this segment's pages
-    if (!(header.flags & ELF_PH_FLAGS_R) && !(header.flags & ELF_PH_FLAGS_W))
-      pm_clear((uint64_t)alloc_pos, pm_calc(header.memsz), PM_ENTRY_FLAG_RW);
-
-    // see if we should disable the execution for this segment's pages
-    if (!(header.flags & ELF_PH_FLAGS_X))
-      pm_set((uint64_t)alloc_pos, pm_calc(header.memsz), PM_ENTRY_FLAG_XD);
+      ((uint8_t *)pos)[i] = 0;
 
     // see if this section contains the entrypoint
     if (header.vaddr < elf->header.entry && header.vaddr + header.memsz > elf->header.entry)
-      elf->entry = alloc_pos + elf->header.entry;
+      elf->entry = pos + elf->header.entry;
+
+    // move to the next position
+    pos += size;
   }
 
+  // check if we failed to get the next program header
   if (err < 0) {
-    elf_debg("failed to read the %d. program header: %s", elf->ph_pos, err);
+    elf_debg("failed to read the %d. program header: %s", elf->ph_pos, strerror(err));
     return err;
   }
 
+  // check if found the entrypoint
   if (elf->entry == 0) {
     elf_fail("failed to find the entry point");
     return -ENOEXEC;
@@ -324,30 +345,30 @@ int32_t __elf_load_dyn(struct elf *elf) {
   return 0;
 }
 
-int32_t elf_load(vfs_node_t *node, void **entry, void **addr, uint64_t *count) {
-  if (NULL == node || NULL == entry || NULL == addr || NULL == count)
+int32_t elf_load(vfs_node_t *node, fmt_t *fmt) {
+  if (NULL == node || NULL == fmt)
     return -EINVAL;
 
-  struct elf  _elf, *elf = &_elf;
-  const char *err_msg = NULL;
+  struct elf  elf;
   int64_t     err     = 0;
+  const char *err_msg = NULL;
 
-  bzero(elf, sizeof(struct elf));
-  elf->node = node;
+  bzero(&elf, sizeof(struct elf));
+  elf.node = node;
 
-  if ((err = vfs_read(node, 0, sizeof(struct elf_header), &elf->header)) < 0) {
+  if ((err = vfs_read(node, 0, sizeof(struct elf_header), &elf.header)) < 0) {
     elf_fail("failed to read the header: %s", strerror(err));
     return err;
   }
 
-  if ((err_msg = __elf_check(elf)) != NULL) {
+  if ((err_msg = __elf_check(&elf)) != NULL) {
     elf_debg("invalid header: %s", err_msg);
     return -ENOEXEC;
   }
 
-  switch (elf->header.type) {
+  switch (elf.header.type) {
   case ELF_TYPE_DYN:
-    err = __elf_load_dyn(elf);
+    err = __elf_load_dyn(&elf);
     break;
 
   default:
@@ -355,9 +376,8 @@ int32_t elf_load(vfs_node_t *node, void **entry, void **addr, uint64_t *count) {
     return -ENOEXEC;
   }
 
-  *entry = elf->entry;
-  *addr  = elf->addr;
-  *count = elf->count;
+  fmt->entry = elf.entry;
+  fmt->mem   = elf.mem;
 
   return err;
 }

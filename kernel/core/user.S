@@ -1,9 +1,6 @@
 #include "sched/task.h"
-#include "core/user.h"
-#include "mm/pm.h"
-
 #include "util/stack.S"
-#include "errno.h"
+#include "mm/vmm.h"
 
 .section .text
 .code64
@@ -25,22 +22,20 @@ _user_handler:
    * so lets start by saving those
 
   */
-  push_all2
+  push_all_save_ret
 
   // save the syscall number
   mov %rax, %r9
 
-  // also first 3 arguments  needs to preserved for the handler call
+  // also first 3 arguments needs to preserved for the handler call
   mov %rdi, %r12
   mov %rsi, %r11
   mov %rdx, %r10
 
   // now lets get the kernel stack
-  mov $current, %rdi
-  mov (%rdi), %rdi
-  mov $TASK_RING_KERNEL, %rsi
+  mov task_current, %rdi
+  mov $VMM_VMA_KERNEL, %rsi
   call task_stack_get
-  add $(TASK_STACK_PAGE_COUNT*PM_PAGE_SIZE), %rax
 
   // push the current stack position to the new stack
   sub $8, %rax
@@ -71,9 +66,9 @@ _user_handler:
     mov %r11, %rsi
     mov %r10, %rdx
 
-    call %r13
+    call *%r13
 
   .Luser_handler_ret:
     pop %rsp // switch back to the old stack
-    pop_all2 // restore all the registers
+    pop_all_save_ret // restore all the registers
     sysretq // return from the syscall

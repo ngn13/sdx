@@ -1,96 +1,123 @@
+#include "mm/region.h"
 #include "sched/sched.h"
 #include "sched/task.h"
-#include "sched/signal.h"
-#include "sched/stack.h"
-#include "sched/mem.h"
-
-#include "mm/vmm.h"
-#include "mm/pm.h"
-
-#include "boot/gdt.h"
 
 #include "util/string.h"
 #include "util/list.h"
 #include "util/mem.h"
 
+#include "mm/vmm.h"
+#include "mm/heap.h"
+
 #include "types.h"
 #include "errno.h"
 
-task_t *task_alloc() {
-  task_t *new = vmm_alloc(sizeof(task_t));
-  bzero(new, sizeof(task_t));
-  return new;
+task_t *task_new() {
+  task_t *task_new = heap_alloc(sizeof(task_t));
+  int32_t err      = 0;
+
+  // clear the task structure
+  bzero(task_new, sizeof(task_t));
+
+  // use the current VMM
+  sched_debg("using the current VMM for the new task 0x%p", task_new);
+  task_new->vmm = vmm_get();
+
+  // allocate a new stack for the new task
+  sched_debg("allocating a new stack for the new task 0x%p", task_new);
+  if ((err = task_stack_alloc(task_new)) != 0) {
+    sched_fail("failed to allocate a new stack for the tasK 0x%p: %s", task_new, strerror(err));
+    heap_free(task_new);
+    return NULL;
+  }
+
+  // return the new task
+  return task_new;
 }
 
-int32_t task_free(task_t *task) {
-  if (NULL == task)
-    return -EINVAL;
+task_t *task_copy() {
+  task_t   *copy = heap_alloc(sizeof(task_t));
+  region_t *cur = NULL, *new = NULL;
+  int32_t   err = 0;
 
-  task_mem_clear(task);    // free the task's memory regions
-  task_signal_clear(task); // free the task's signal queue
-  task_stack_free(task);   // free the task's stack
+  // clear the stack structure
+  bzero(copy, sizeof(task_t));
+
+  // create a new VMM for the task
+  sched_debg("creating a new VMM for the task 0x%p", task_new);
+  copy->vmm = vmm_new();
+
+  // copy the task's memory regions
+  for (cur = current->mem; cur != NULL; cur = cur->next) {
+    // copy the memory region
+    if ((new = region_copy(cur)) == NULL) {
+      sched_fail("failed to copy the %s memory region (0x%p)", region_name(cur), cur->vaddr);
+      return NULL;
+    }
+
+    // add new memory region to the task
+    sched_debg("adding %s memory region @ 0x%p (%u pages)", region_name(cur), cur->vaddr, cur->num);
+    task_mem_add(copy, new);
+  }
+
+  // copy the registers
+  sched_debg("copying registers from current task");
+  memcpy(&copy->regs, &task_current->regs, sizeof(task_regs_t));
+
+  // return the copied task
+  return copy;
+}
+
+void task_free(task_t *task) {
+  sched_debg("freeing the task 0x%p", task);
+
+  // free the memory regions
+  region_each(&task->mem) {
+    sched_debg("freeing %s memory region @ 0x%p (%u pages)", region_name(cur), cur->paddr, cur->num);
+    region_free(cur);
+  }
+
+  // clear the signal & wait queue
+  task_signal_clear(task);
+  task_waitq_clear(task);
+
+  // free the VMM
+  vmm_free(task->vmm);
 
   // free the task structure
-  vmm_free(task);
+  heap_free(task);
+}
 
+int32_t task_rename(task_t *task, const char *name) {
+  if (NULL == task || NULL == name)
+    return -EINVAL;
+
+  strncpy(task->name, name, NAME_MAX + 1);
   return 0;
 }
 
-int32_t task_update(task_t *task, const char *name, uint8_t ring, void *entry) {
-  if (NULL == task || NULL == name || !__task_is_valid_ring(ring))
-    return -EINVAL;
+int32_t task_switch(task_t *task) {
+  int32_t err = 0;
 
-  task_stack_alloc(task);  // allocate a user & kernel stack
-  task_signal_clear(task); // free the task's signal queue
-  task_mem_clear(task);    // free the task's memory regions
+  if (vmm_get() == task->vmm)
+    return 0;
 
-  // set the required values
-  strncpy(task->name, name, NAME_MAX + 1);
-  task->state     = TASK_STATE_BUSY;
-  task->prio      = TASK_PRIO_DEFAULT;
-  task->min_ticks = TASK_TICKS_DEFAULT;
-  task->ring      = ring;
+  if (task->old) {
+    vmm_sync(task->vmm);
+    task->old = false;
+  }
 
-  // update the registers
-  bzero(&task->regs, sizeof(task_regs_t));
+  if ((err = vmm_switch(task->vmm)) != 0) {
+    sched_fail("failed to switch to the task VMM: %s", strerror(err));
+    return err;
+  }
 
-  /*
-
-   * bit 1 = reserved, 9 = interrupt enable
-   * https://en.wikipedia.org/wiki/FLAGS_register
-
-  */
-  task->regs.rflags = ((1 << 1) | (1 << 9));
-  task->regs.rip    = (uint64_t)entry; // set the instruction pointer to the given entry address
-
-  switch (task->ring) {
-  case TASK_RING_KERNEL:
-    task->regs.cs  = gdt_offset(gdt_desc_code_0_addr);
-    task->regs.ss  = gdt_offset(gdt_desc_data_0_addr);
-    task->regs.rsp = (uint64_t)task->stack.kernel + pm_size(TASK_STACK_PAGE_COUNT);
-    break;
-
-  case TASK_RING_USER:
-    task->regs.cs  = gdt_offset(gdt_desc_code_3_addr);
-    task->regs.ss  = gdt_offset(gdt_desc_data_3_addr);
-    task->regs.rsp = (uint64_t)task->stack.user + pm_size(TASK_STACK_PAGE_COUNT);
-
-    /*
-
-     * ORed with 3 to set the RPL to 3
-     * see https://wiki.osdev.org/Segment_Selector
-
-    */
-    task->regs.cs |= 3;
-    task->regs.ss |= 3;
-
-    break;
+  region_each(&task->mem) {
+    if ((err = region_map(cur)) != 0) {
+      sched_fail("failed to map the %s memory region (0x%p)", region_name(cur), cur->vaddr);
+      return err;
+    }
   }
 
   return 0;
-}
-
-task_t *task_copy(task_t *task) {
-  // TODO: implement
-  return NULL;
 }

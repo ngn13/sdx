@@ -1,24 +1,24 @@
+#include "fs/fs.h"
 #include "fs/vfs.h"
-#include "mm/vmm.h"
 
 #include "util/mem.h"
-#include "util/panic.h"
 #include "util/printk.h"
 
+#include "mm/heap.h"
 #include "errno.h"
 
 vfs_node_t *vfs_root = NULL;
 #define vfs_node_foreach(node) for (node = node->child; node != NULL; node = node->sibling)
 
 vfs_node_t *vfs_node_new(char *name, fs_t *fs) {
-  vfs_node_t *new_node  = vmm_alloc(sizeof(vfs_node_t));
+  vfs_node_t *new_node  = heap_alloc(sizeof(vfs_node_t));
   uint64_t    name_size = NULL == name ? 0 : strlen(name);
 
   if (name_size > NAME_MAX)
     return NULL;
 
   if (NULL == new_node) {
-    pfail("VFS: failed to allocate memory for a new node");
+    vfs_fail("failed to allocate memory for a new node");
     return NULL;
   }
 
@@ -26,6 +26,11 @@ vfs_node_t *vfs_node_new(char *name, fs_t *fs) {
   memcpy(new_node->name, name, name_size);
   new_node->name[name_size] = 0;
   new_node->fs              = fs;
+
+  vfs_debg("allocated a new node");
+  pdebg("     |- Address: 0x%p", new_node);
+  pdebg("     |- Filesystem: 0x%p (%s)", fs, fs_name(fs));
+  pdebg("     `- Name: %s", new_node->name);
 
   return new_node;
 }
@@ -104,7 +109,7 @@ int32_t vfs_node_free(vfs_node_t *node) {
   }
 
 free:
-  vmm_free(node);
+  heap_free(node);
   return 0;
 }
 

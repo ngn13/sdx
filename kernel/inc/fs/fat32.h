@@ -1,7 +1,7 @@
 #pragma once
 #include "fs/fs.h"
-#include "types.h"
 #include "util/printk.h"
+#include "types.h"
 
 /*
 
@@ -10,8 +10,8 @@
 
 */
 
-#define fat32_fail(f, ...) pfail("FAT32: (0x%x) " f, fs->part, ##__VA_ARGS__)
-#define fat32_debg(f, ...) pdebg("FAT32: (0x%x) " f, fs->part, ##__VA_ARGS__)
+#define fat32_fail(f, ...) pfail("FAT32: " f, ##__VA_ARGS__)
+#define fat32_debg(f, ...) pdebg("FAT32: " f, ##__VA_ARGS__)
 
 struct fat32_data {
   uint8_t  cluster_sector_count; // number of sectors per cluster
@@ -85,7 +85,7 @@ int64_t  fat32_entry_get(fs_t *fs, uint64_t cluster, uint64_t offset, int64_t si
 int32_t  fat32_entry_from(fs_t *fs, uint64_t cluster, char *name, struct fat32_dir_entry *entry);
 
 // fs/fat32/fat32.c
-bool    fat32_new(fs_t *fs);
+int32_t fat32_new(fs_t *fs);
 int32_t fat32_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode);
 int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer);
 void    fat32_free(fs_t *fs);

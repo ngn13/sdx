@@ -1,286 +1,498 @@
+#include "sched/sched.h"
+#include "sched/task.h"
+
+#include "mm/paging.h"
 #include "mm/vmm.h"
-#include "mm/pm.h"
+#include "mm/pmm.h"
 
-#include "util/math.h"
-#include "util/mem.h"
-#include "util/panic.h"
+#include "util/string.h"
 #include "util/printk.h"
+#include "util/mem.h"
+#include "util/bit.h"
+#include "util/asm.h"
 
-bool vmm_reg_check(vmm_reg_t r) {
-  if (NULL == r)
-    return false;
+#include "types.h"
+#include "errno.h"
 
-  if (vmm_reg_len(r) <= 0)
-    return false;
+#define vmm_fail(f, ...) pfail("VMM: " f, ##__VA_ARGS__)
+#define vmm_warn(f, ...) pwarn("VMM: " f, ##__VA_ARGS__)
+#define vmm_debg(f, ...) pdebg("VMM: " f, ##__VA_ARGS__)
 
-  return true;
-}
+// virtual memory areas
+#define VMM_VMA_USER_START (0x0000000000000000 + PAGE_SIZE) // 0x0 can be interpreted with NULL
+#define VMM_VMA_USER_END   (0x00007fffffffffff)
 
-bool vmm_reg_clear(vmm_reg_t r) {
-  if (!vmm_reg_check(r))
-    return false;
+#define VMM_VMA_KERNEL_START (0xffff800000000000)
+#define VMM_VMA_KERNEL_END   (BOOT_KERNEL_START_VADDR)
 
-  for (uint64_t i = 0; i < vmm_reg_len(r); i++)
-    ((char *)vmm_reg_addr(r))[i] = 0;
+// some helper macros
+#define vmm_vma_does_contain(addr)                                                                                     \
+  ((VMM_VMA_KERNEL_END > addr && addr >= VMM_VMA_KERNEL_START) ||                                                      \
+      (VMM_VMA_USER_END > addr && addr >= VMM_VMA_USER_START))
 
-  return true;
-}
+#define vmm_entry_to_addr(entry)                                                                                       \
+  ((uint64_t)(bit_get((uint64_t)(entry) & PTE_FLAGS_CLEAR, 47)                                                         \
+                  ? ((uint64_t)(entry) & PTE_FLAGS_CLEAR) | ((uint64_t)0xffff << 48)                                   \
+                  : ((uint64_t)(entry) & PTE_FLAGS_CLEAR) & ~((uint64_t)0xffff << 48)))
 
-struct vmm_header {
-  uint16_t magic   : 15; // stores the magic value (signature)
-  uint8_t  is_free : 1;  // stores if the region described by the header is free or not
-  uint64_t size;         // stores the size of the regiona
-} __attribute__((packed));
+#define vmm_entry_to_flags(entry) (((uint64_t)(entry) & ~(PTE_FLAGS_CLEAR)) & ~(PTE_FLAG_A | PTE_FLAG_D))
 
-#define VMM_HEADER_FREE  1
-#define VMM_HEADER_USED  0
-#define VMM_HEADER_MAGIC 20249 // the 15 bit magic value for the header
-//
-#define vmm_header_verify(h) (h->magic == VMM_HEADER_MAGIC) // checks a header pointer using the magic value
-#define vmm_header_size()    sizeof(struct vmm_header)      // returns the size of the header
-#define vmm_header(p)        ((struct vmm_header *)(p))     // converts a value to vmm_header pointer
+#define vmm_indexes_to_addr(pml4_index, pdpt_index, pd_index, pt_index)                                                \
+  ((uint64_t)pml4_index << 39 | (uint64_t)pdpt_index << 30 | (uint64_t)pd_index << 21 | (uint64_t)pt_index << 12 |     \
+      (((((uint64_t)pml4_index << 39) >> 47) & 1) ? 0xffffL << 48 : 0))
 
-struct vmm_state {
-  uint64_t start; // start address of the currently allocated page
-  uint64_t end;   // end address of the currently allocated page
-  uint64_t cur;   // start address of the currently available memory
-} vmm_st;
+#define vmm_invlpg(vaddr) __asm__("invlpg %0\n" ::"m"(*(uint64_t *)vaddr))
 
-bool vmm_init() {
-  bzero(&vmm_st, sizeof(vmm_st));
-  return true;
-}
+// table macros
+#define vmm_pml4_vaddr()      ((uint64_t *)vmm_indexes_to_addr(510, 510, 510, 510))
+#define vmm_pml4_index(vaddr) ((vaddr >> 39) & 0x1FF)
+#define vmm_pml4_entry(vaddr) (vmm_pml4_vaddr()[vmm_pml4_index(vaddr)])
 
-// allocates "size" amounts of memory
-void *vmm_alloc(uint64_t size) {
-  // minimum size is 1
-  if (size == 0)
+#define vmm_pdpt_vaddr(vaddr) ((uint64_t *)vmm_indexes_to_addr(510, 510, 510, vmm_pml4_index(vaddr)))
+#define vmm_pdpt_paddr(vaddr) (vmm_entry_to_addr(vmm_pml4_entry(vaddr)))
+#define vmm_pdpt_index(vaddr) ((vaddr >> 30) & 0x1FF)
+#define vmm_pdpt_entry(vaddr) (vmm_pdpt_vaddr(vaddr)[vmm_pdpt_index(vaddr)])
+
+#define vmm_pd_vaddr(vaddr) ((uint64_t *)vmm_indexes_to_addr(510, 510, vmm_pml4_index(vaddr), vmm_pdpt_index(vaddr)))
+#define vmm_pd_paddr(vaddr) (vmm_entry_to_addr(vmm_pdpt_entry(vaddr)))
+#define vmm_pd_index(vaddr) ((vaddr >> 21) & 0x1FF)
+#define vmm_pd_entry(vaddr) (vmm_pd_vaddr(vaddr)[vmm_pd_index(vaddr)])
+
+#define vmm_pt_vaddr(vaddr)                                                                                            \
+  ((uint64_t *)vmm_indexes_to_addr(510, vmm_pml4_index(vaddr), vmm_pdpt_index(vaddr), vmm_pd_index(vaddr)))
+#define vmm_pt_paddr(vaddr) (vmm_entry_to_addr(vmm_pd_entry(vaddr)))
+#define vmm_pt_index(vaddr) ((vaddr >> 12) & 0x1FF)
+#define vmm_pt_entry(vaddr) (vmm_pt_vaddr(vaddr)[vmm_pt_index(vaddr)])
+
+uint64_t *__vmm_entry_from_vaddr(uint64_t vaddr) {
+  uint64_t pd_entry = 0;
+
+  // check PML4, PDPT & PD entries
+  if (vmm_pml4_entry(vaddr) == 0 || vmm_pdpt_entry(vaddr) == 0 || (pd_entry = vmm_pd_entry(vaddr)) == 0)
     return NULL;
 
-  uint64_t available = vmm_st.cur - vmm_st.start; // available memory size
-  uint64_t old_start = vmm_st.start;              // save the start address
+  // check if the PD entry is 2 MiB page entry
+  if (pd_entry & PTE_FLAG_PS)
+    return &vmm_pd_entry(vaddr);
 
-  uint64_t required_pages = div_ceil(size, PM_PAGE_SIZE);             // required page count for the allocation
-  uint64_t min_pages      = div_ceil(size - available, PM_PAGE_SIZE); // min page count for the allocation
-
-  // lets see if a have any available page(s)
-  if (vmm_st.start == 0 && vmm_st.end == 0) {
-    // if not let's allocate enough pages
-  new_pages:
-    if ((vmm_st.start = (uint64_t)pm_alloc(required_pages)) == 0) {
-      printk(KERN_FAIL, "VMM: cannot allocate %l memory, failed to allocate %l pages", size, required_pages);
-      return NULL;
-    }
-    vmm_st.cur = vmm_st.end = vmm_st.start + (required_pages * PM_PAGE_SIZE);
-    goto alloc;
-  }
-
-  // is the available memory enough for the size?
-  if (available >= size)
-    goto alloc;
-
-  // if not lets allocate more pages for the rest of the size
-  if ((vmm_st.start = (uint64_t)pm_alloc(min_pages)) == 0) {
-    vmm_st.start = old_start; // restore the old start address
-    printk(KERN_FAIL, "VMM: cannot allocate %l memory, failed to allocate %l pages", size, min_pages);
-    return NULL;
-  }
-
-  // if the allocated pages are not contiguous with the current allocated pages, allocate completely new ones
-  if (old_start - (min_pages * PM_PAGE_SIZE) != vmm_st.start) {
-    pm_free((void *)vmm_st.start, min_pages);
-    goto new_pages;
-  }
-
-alloc:
-  // cur now points to the start of the header
-  vmm_st.cur -= size + vmm_header_size();
-
-  // initialize the header
-  vmm_header(vmm_st.cur)->is_free = VMM_HEADER_USED;
-  vmm_header(vmm_st.cur)->magic   = VMM_HEADER_MAGIC;
-  vmm_header(vmm_st.cur)->size    = size;
-
-  // return the allocated memory pointer
-  return (void *)(vmm_st.cur + vmm_header_size());
+  // check the PT entry
+  return vmm_pt_entry(vaddr) == 0 ? NULL : &vmm_pt_entry(vaddr);
 }
 
-bool __vm_free_is_page_free(void *page) {
-  struct vmm_header *h = vmm_header(page);
-  while (vmm_header_verify(h) && h != page + PM_PAGE_SIZE) {
-    if (h->is_free != VMM_HEADER_FREE)
+uint64_t __vmm_attr_to_flags(uint32_t attr, bool for_page_table) {
+  uint64_t flags = PTE_FLAGS_DEFAULT;
+
+  if (attr & VMM_ATTR_USER)
+    flags |= PTE_FLAG_US;
+
+  if (for_page_table)
+    return flags;
+
+  if (!(attr & VMM_ATTR_SAVE))
+    flags |= PTE_FLAG_PMM;
+
+  if (attr & VMM_ATTR_NO_EXEC)
+    flags |= PTE_FLAG_XD;
+
+  if (attr & VMM_ATTR_NO_CACHE)
+    flags |= PTE_FLAG_PCD;
+
+  if (attr & VMM_ATTR_RDONLY)
+    flags &= ~(PTE_FLAG_RW);
+
+  return flags;
+}
+
+bool __vmm_is_table_free(uint64_t *table_vaddr) {
+  for (uint16_t i = 0; i < PTE_COUNT; i++)
+    if (table_vaddr[i] != 0)
       return false;
-    // move onto next header
-    h += vmm_header_size();
-    h += h->size;
-  }
   return true;
 }
 
-void __vm_free_rewind() {
-  if (vmm_st.cur == vmm_st.end) {
-    if (!__vm_free_is_page_free((void *)(vmm_st.end - PM_PAGE_SIZE)))
-      return;
+int32_t __vmm_alert_tasks() {
+  void   *vmm  = vmm_get();
+  task_t *task = NULL;
 
-    vmm_st.end -= PM_PAGE_SIZE;
-    pm_free((void *)vmm_st.end, 1);
-
-    if (vmm_st.end == vmm_st.start)
-      bzero(&vmm_st, sizeof(vmm_st));
-    return;
+  while (NULL != (task = sched_next(task))) {
+    if (vmm != task->vmm)
+      task->old = true;
   }
 
-  struct vmm_header *h = vmm_header(vmm_st.cur);
-
-  if (!vmm_header_verify(h))
-    return panic("Allocated VMM region headers are corrupted");
-
-  if (!h->is_free)
-    return;
-
-  vmm_st.cur += vmm_header_size();
-  vmm_st.cur += h->size;
-
-  // recursive call to rewind back as far as possible
-  __vm_free_rewind();
+  return 0;
 }
 
-void vmm_free(void *mem) {
-  // make sure the pointer points to a valid memory address
-  if (NULL == mem)
-    return;
-
-  struct vmm_header *h = vmm_header(mem - vmm_header_size());
-
-  // if provided memory address does not contain a header,
-  // we can just return as the address does not point to a region
-  if (!vmm_header_verify(h) || h->is_free == VMM_HEADER_FREE)
-    return;
-
-  h->is_free = VMM_HEADER_FREE;
-
-  if ((uint64_t)h == vmm_st.cur) {
-    vmm_st.cur += vmm_header_size();
-    vmm_st.cur += h->size;
-  }
-
-  __vm_free_rewind();
-}
-
-void *__vmm_realloc_cur_shrink(struct vmm_header *h, uint64_t size) {
-  uint64_t diff = h->size - size, ti = 0;
-  uint64_t new_size = size + vmm_header_size();
-  char     temp[diff];
-
-  vmm_st.cur += diff;
-
-  for (uint64_t i = 0; i < new_size; i++) {
-    if (ti >= diff)
-      ti = 0;
-
-    if (i < diff) {
-      temp[ti++]              = ((char *)vmm_st.cur)[i];
-      ((char *)vmm_st.cur)[i] = ((char *)h)[i];
-      continue;
-    }
-
-    memswap(&((char *)vmm_st.cur)[i], &temp[ti++]);
-  }
-
-  // change region size in the header
-  vmm_header(vmm_st.cur)->size -= diff;
-
-  return (void *)(vmm_st.cur + vmm_header_size());
-}
-
-void *__vmm_realloc_cur(struct vmm_header *h, uint64_t size) {
-  if (size < h->size)
-    return __vmm_realloc_cur_shrink(h, size);
-
-  uint64_t available = vmm_st.cur - vmm_st.start; // available memory size
-  uint64_t old_size  = h->size + vmm_header_size();
-  uint64_t diff      = size - h->size;
-
-  // is the memory we have is enough for the reallocation?
-  if (available >= diff)
-    goto realloc;
-
-  uint64_t old_start  = vmm_st.start;
-  uint64_t page_count = div_ceil(diff, PM_PAGE_SIZE);
-
-  // if not lets we can allocate more pages for the rest of the size
-  if ((vmm_st.start = (uint64_t)pm_alloc(page_count)) == 0) {
-    vmm_st.start = old_start; // restore the old start address
-    printk(KERN_FAIL, "VMM: cannot allocate %l more memory, failed to allocate %l new pages", diff, page_count);
-    return NULL;
-  }
-
-  // if the allocated pages are not contiguous with the current allocated pages, we might just reallocate
-  // the whole entire thing
-  if (old_start - (page_count * PM_PAGE_SIZE) != vmm_st.start) {
-    pm_free((void *)vmm_st.start, page_count);
-    return NULL;
-  }
-
-realloc:
-  vmm_st.cur -= diff;
-
-  for (uint64_t i = 0; i < old_size; i++)
-    ((char *)vmm_st.cur)[i] = ((char *)h)[i];
-
-  // expand the size defined in the header
-  vmm_header(vmm_st.cur)->size += diff;
-
-  return (void *)(vmm_st.cur + vmm_header_size());
-}
-
-void *vmm_realloc(void *mem, uint64_t size) {
-  // minimum size is 1
-  if (size == 0)
-    return NULL;
-
-  // we need a valid memory address, if it's NULL just use vmm_alloc to allocate new memory
-  if (NULL == mem)
-    return vmm_alloc(size);
-
-  // stores the allocation header for "mem"
-  struct vmm_header *h = vmm_header(mem - vmm_header_size());
-
-  // check if the provided memory address contains a valid
-  // allocated memory region header
-  if (!vmm_header_verify(h) || h->is_free == VMM_HEADER_FREE)
-    return NULL;
-
-  // sir why the fuck did you do that
-  if (h->size == size)
-    return mem;
-
+int32_t vmm_init() {
   /*
 
-   * we might be able to just expand the region if we are currently
-   * pointing to the allocated region, if this works then we will use the same region
-   * so we return the size however the size would be expanded
+   * enable the XD page flag (bit 11 on EFER)
+
+   * for more information see:
+   * https://wiki.osdev.org/Paging#Page_Map_Table_Entries
+   * https://wiki.osdev.org/CPU_Registers_x86-64#IA32_EFER
 
   */
-  if ((uint64_t)h == vmm_st.cur) {
-    void *cur_res = __vmm_realloc_cur(h, size);
-    if (NULL != cur_res)
-      return cur_res;
+  uint64_t efer = _msr_read(MSR_EFER);
+  _msr_write(MSR_EFER, efer | (1 << 11));
+
+  return 0;
+}
+
+int32_t vmm_sync(void *vmm) {
+  uint64_t pml4_paddr = (uint64_t)vmm, *pml4_vaddr = NULL;
+  vmm_debg("syncing PML4 @ 0x%p", pml4_paddr);
+
+  // temporarily map old PML4
+  if ((pml4_vaddr = vmm_map_paddr(pml4_paddr, 1, VMM_ATTR_SAVE)) == NULL) {
+    vmm_warn("failed to map the old PML4 @ 0x%p to sync", pml4_paddr);
+    return -EFAULT;
   }
 
-  // stores the amount of memory that will be copied to new memory
-  uint64_t copy_size = size > h->size ? h->size : size;
-  void    *new_mem   = NULL; // new memory
-  uint64_t i         = 0;    // counter
+  // clean the user VMA contents
+  bzero(pml4_vaddr, vmm_pml4_index(VMM_VMA_USER_END) * PTE_SIZE);
 
-  if ((new_mem = vmm_alloc(size)) == NULL) {
-    printk(KERN_FAIL, "VMM: failed to reallocate memory region %p:%l", mem, size);
+  // copy the current PML4's kernel VMA contents
+  memcpy(pml4_vaddr + vmm_pml4_index(VMM_VMA_KERNEL_START),
+      vmm_pml4_vaddr() + vmm_pml4_index(VMM_VMA_KERNEL_START),
+      (PTE_COUNT - vmm_pml4_index(VMM_VMA_KERNEL_START)) * PTE_SIZE);
+
+  // fix the recursive paging entry
+  pml4_vaddr[510] = (uint64_t)pml4_paddr | PTE_FLAGS_DEFAULT;
+
+  // unmap the PML4
+  return vmm_unmap(pml4_vaddr, 1, VMM_ATTR_SAVE);
+}
+
+void *vmm_new() {
+  uint64_t pml4_paddr = 0;
+
+  // allocate a new PML4
+  if ((pml4_paddr = pmm_alloc(1, 0)) == 0) {
+    vmm_warn("failed to allocate a new PML4");
     return NULL;
   }
 
-  for (; i < copy_size; i++)
-    ((char *)new_mem)[i] = ((char *)mem)[i];
+  // sync the kernel VMA with the current one
+  if (vmm_sync((void *)pml4_paddr) != 0) {
+    vmm_warn("failed to sync new PML4 @ 0x%p", pml4_paddr);
+    pmm_free(pml4_paddr, 1);
+    return NULL;
+  }
 
-  vmm_free(mem);
-  return new_mem;
+  return (void *)pml4_paddr;
+}
+
+void *vmm_get() {
+  void *vmm;
+
+  __asm__("mov %%cr3, %%rax\n"
+          "mov %%rax, %0\n" ::"m"(vmm)
+      : "%rax");
+
+  return vmm;
+}
+
+int32_t vmm_switch(void *vmm) {
+  if (NULL == vmm)
+    return -EINVAL;
+
+  vmm_debg("switching to the PML4 @ 0x%p", vmm);
+
+  __asm__("mov %0, %%rax\n"
+          "mov %%rax, %%cr3\n" ::"m"(vmm)
+      : "%rax");
+
+  return 0;
+}
+
+int32_t vmm_set(void *vaddr, uint64_t num, uint64_t flags) {
+  uint64_t *entry = NULL;
+
+  if (NULL == (entry = __vmm_entry_from_vaddr((uint64_t)vaddr)))
+    return -EFAULT;
+
+  *entry |= flags;
+  return 0;
+}
+
+int32_t vmm_clear(void *vaddr, uint64_t num, uint64_t flags) {
+  uint64_t *entry = NULL;
+
+  if (NULL == (entry = __vmm_entry_from_vaddr((uint64_t)vaddr)))
+    return -EFAULT;
+
+  *entry &= ~(flags);
+  return 0;
+}
+
+uint8_t vmm_vma(void *vaddr) {
+  if (VMM_VMA_KERNEL_START >= (uint64_t)vaddr && VMM_VMA_KERNEL_END > (uint64_t)vaddr)
+    return VMM_VMA_KERNEL;
+  return VMM_VMA_USER;
+}
+
+uint64_t vmm_resolve(void *vaddr) {
+  uint64_t *entry = NULL;
+
+  if (NULL == (entry = __vmm_entry_from_vaddr((uint64_t)vaddr)))
+    return 0;
+
+  if (*entry & PTE_FLAG_PS)
+    return vmm_entry_to_addr(*entry) | ((uint64_t)vaddr & 0x1fffff);
+
+  return vmm_entry_to_addr(*entry) | ((uint64_t)vaddr & 0xfff);
+}
+
+int32_t vmm_unmap(void *_vaddr, uint64_t num, uint32_t attr) {
+  uint64_t vaddr = (uint64_t)_vaddr, *entry = NULL;
+  int32_t  err = 0;
+
+  vmm_debg("unmapping %u pages from 0x%p", num, vaddr);
+
+  for (; num > 0; num--, vaddr += PAGE_SIZE) {
+    if (NULL == (entry = __vmm_entry_from_vaddr(vaddr))) {
+      vmm_warn("attempt to unmap an already unmapped page (0x%p)", vaddr);
+      return -EFAULT;
+    }
+
+    if (*entry & PTE_FLAG_PMM && !(attr & VMM_ATTR_SAVE) && (err = pmm_free(vmm_entry_to_addr(*entry), 1)) != 0) {
+      vmm_warn("failed to free the physical page @ 0x%p", vmm_entry_to_addr(*entry));
+      return err;
+    }
+
+    // unmap the page from PT
+    *entry = 0;
+    vmm_invlpg(vaddr);
+
+    // free & unmap the PT if it's empty
+    if (__vmm_is_table_free(vmm_pt_vaddr(vaddr))) {
+      if ((err = pmm_free(vmm_pt_paddr(vaddr), 1)) != 0)
+        vmm_warn("failed to free PT @ 0x%p: %s", vmm_pt_paddr(vaddr), strerror(err));
+      *(&vmm_pd_entry(vaddr)) = 0;
+    }
+
+    // free & unmap the PD if it's empty
+    if (__vmm_is_table_free(vmm_pd_vaddr(vaddr))) {
+      if ((err = pmm_free(vmm_pd_paddr(vaddr), 1)) != 0)
+        vmm_warn("failed to free PD @ 0x%p: %s", vmm_pd_paddr(vaddr), strerror(err));
+      *(&vmm_pdpt_entry(vaddr)) = 0;
+    }
+
+    // free & unmap the PDPT if it's empty
+    if (__vmm_is_table_free(vmm_pdpt_vaddr(vaddr))) {
+      if ((err = pmm_free(vmm_pdpt_paddr(vaddr), 1)) != 0)
+        vmm_warn("failed to free PDPT @ 0x%p: %s", vmm_pdpt_paddr(vaddr), strerror(err));
+      *(&vmm_pml4_entry(vaddr)) = 0;
+
+      // we modified PML4, other tasks should sync before switching
+      __vmm_alert_tasks();
+    }
+  }
+
+  return 0;
+}
+
+void *__vmm_map_to_paddr_internal(uint64_t paddr, uint64_t vaddr, uint64_t num, uint32_t attr) {
+  uint64_t *entry = NULL, start = vaddr, flags = __vmm_attr_to_flags(attr, true);
+  bool      invalidate = false;
+  int32_t   err        = 0;
+
+  vmm_debg("mapping %u pages from 0x%p to 0x%p", num, paddr, vaddr);
+
+  for (; num > 0; num--, vaddr += PAGE_SIZE, paddr += PAGE_SIZE) {
+    // get (or create if not exists) PDPT
+    if (*(entry = &vmm_pml4_entry(vaddr)) == 0) {
+      vmm_debg("allocated a new PDPT @ 0x%p for mapping 0x%p", *entry = pmm_alloc(1, 0), vaddr);
+      *entry |= flags;
+      __vmm_alert_tasks();
+      bzero(vmm_pdpt_vaddr(vaddr), PAGE_SIZE);
+    }
+
+    // update the flags of the entry
+    else {
+      if (vmm_entry_to_flags(*entry) != flags)
+        __vmm_alert_tasks(); // we modified PML4, other tasks should sync
+      *entry |= flags;
+    }
+
+    // get (or create if not exists) PD
+    if (*(entry = &vmm_pdpt_entry(vaddr)) == 0) {
+      vmm_debg("allocated a new PD @ 0x%p for mapping 0x%p", *entry = pmm_alloc(1, 0), vaddr);
+      *entry |= flags;
+      bzero(vmm_pd_vaddr(vaddr), PAGE_SIZE);
+    }
+
+    // update the flags of the entry
+    else
+      *entry |= flags;
+
+    // get (or create if not exists) PT
+    if (*(entry = &vmm_pd_entry(vaddr)) == 0) {
+      vmm_debg("allocated a new PT @ 0x%p for mapping 0x%p", *entry = pmm_alloc(1, 0), vaddr);
+      *entry |= flags;
+      bzero(vmm_pt_vaddr(vaddr), PAGE_SIZE);
+    }
+
+    // update the flags of the entry
+    else
+      *entry |= flags;
+
+    // get the page entry from PT
+    entry      = &vmm_pt_entry(vaddr);
+    invalidate = *entry != 0;
+
+    // add the entry with the flags
+    *entry = paddr | __vmm_attr_to_flags(attr, false);
+
+    // invalidate TLB cache for the page if vaddr was already mapped
+    if (invalidate)
+      vmm_invlpg(vaddr);
+  }
+
+  return (void *)start;
+}
+
+void *__vmm_map_to_vaddr_internal(uint64_t vaddr, uint64_t num, uint64_t align, uint32_t attr) {
+  uint64_t paddr = NULL;
+
+  if (NULL == (paddr = pmm_alloc(num, align))) {
+    vmm_debg("failed to allocate %u physical pages", num);
+    return NULL;
+  }
+
+  return __vmm_map_to_paddr_internal(paddr, vaddr, num, attr);
+}
+
+uint64_t __vmm_find_contiguous(uint64_t num, uint64_t align, uint32_t attr) {
+  uint64_t pos = 0, start = 0, cur = 0;
+
+  if (attr & VMM_ATTR_USER)
+    pos = VMM_VMA_USER_START;
+  else
+    pos = VMM_VMA_KERNEL_START;
+
+  for (; num > cur; pos += PAGE_SIZE) {
+    // first page, so our first allocation will be the start address
+    if (cur == 0) {
+      // make sure the start address is aligned
+      if (align != 0 && pos % align != 0)
+        continue;
+
+      // set the start address
+      start = pos;
+    }
+
+    /*
+
+     * if the address is mapped allocation is no longer contiguous
+     * and we should find a new start address, so reset cur
+
+    */
+    if (__vmm_entry_from_vaddr(pos) != NULL)
+      cur = 0;
+    else
+      cur++;
+  }
+
+  if (cur != num) {
+    vmm_debg("not enough memory for %u contiguous pages", num);
+    return 0;
+  }
+
+  return start;
+}
+
+void *vmm_map(uint64_t num, uint64_t align, uint32_t attr) {
+  uint64_t vaddr = 0;
+
+  if ((vaddr = __vmm_find_contiguous(num, align, attr)) == 0)
+    return NULL;
+
+  return __vmm_map_to_vaddr_internal(vaddr, num, align, attr);
+}
+
+void *vmm_map_paddr(uint64_t paddr, uint64_t num, uint32_t attr) {
+  uint64_t vaddr = 0, pos = 0;
+
+  if ((vaddr = __vmm_find_contiguous(num, 0, attr)) == 0)
+    return NULL;
+
+  if (paddr % PAGE_SIZE != 0) {
+    vmm_debg("attempt to map %u pages to an invalid physical address (0x%p)", num, paddr);
+    return NULL;
+  }
+
+  /*for (pos = paddr; pos < paddr + num * VMM_PAGE_SIZE; pos += VMM_PAGE_SIZE) {
+    if (pmm_is_allocated(pos))
+      vmm_debg("mapping paddr 0x%p, which is not a free page", pos);
+  }*/
+
+  return __vmm_map_to_paddr_internal(paddr, vaddr, num, attr);
+}
+
+void *vmm_map_vaddr(uint64_t vaddr, uint64_t num, uint64_t align, uint32_t attr) {
+  uint64_t vaddr_pos = vaddr, cur = 0;
+
+  for (; num > cur; cur++, vaddr_pos += PAGE_SIZE) {
+    // make sure the virutal address is in one of the VMAs
+    if (!vmm_vma_does_contain(vaddr_pos))
+      break;
+
+    /*
+
+     * we cannot map to a virutal address that is already mapped
+     * unless REUSE attribute is used
+
+    */
+    if (!(attr & VMM_ATTR_REUSE) && __vmm_entry_from_vaddr(vaddr_pos) != NULL)
+      break;
+  }
+
+  if (cur != num) {
+    vmm_fail("cannot map %u pages to 0x%p", num, vaddr);
+    return NULL;
+  }
+
+  return __vmm_map_to_vaddr_internal(vaddr, num, align, attr);
+}
+
+void *vmm_map_exact(uint64_t paddr, uint64_t vaddr, uint64_t num, uint32_t attr) {
+  uint64_t  vaddr_pos = vaddr, paddr_pos = paddr, cur = 0;
+  uint64_t *entry = NULL;
+
+  for (; num > cur; cur++, vaddr_pos += PAGE_SIZE, paddr_pos += PAGE_SIZE) {
+    // make sure the virtual address is valid
+    if (!vmm_vma_does_contain(vaddr_pos))
+      break;
+
+    // no entry? page is available, continue
+    if ((entry = __vmm_entry_from_vaddr(vaddr_pos)) == NULL)
+      continue;
+
+    /*
+
+     * check if vaddr is already mapped to the paddr
+
+     * if so move to the next page, and increment vaddr,
+     * and decrement num, so we don't waste time mapping
+     * it again
+
+    */
+    if (cur == 0 && entry != NULL && vmm_entry_to_addr(*entry) == paddr_pos) {
+      vaddr += PAGE_SIZE;
+      paddr += PAGE_SIZE;
+      num--;
+    }
+
+    // if REUSE is not set, we cannot remap an already mapped vaddr
+    if (!(attr & VMM_ATTR_REUSE) && entry != NULL)
+      break;
+  }
+
+  if (cur != num) {
+    vmm_fail("cannot map %u pages from 0x%p to 0x%p", num, paddr, vaddr);
+    return NULL;
+  }
+
+  return __vmm_map_to_paddr_internal(paddr, vaddr, num, attr);
 }

@@ -1,5 +1,9 @@
-#include "sched/stack.h"
-#include "mm/pm.h"
+#include "sched/sched.h"
+#include "sched/task.h"
+
+#include "mm/region.h"
+#include "mm/paging.h"
+#include "mm/vmm.h"
 
 #include "util/string.h"
 #include "util/mem.h"
@@ -13,26 +17,30 @@ int32_t task_stack_alloc(task_t *task) {
    * we have two stacks, one for ring 3 (userland) and one for ring 0 (kernel)
    * we switch between them while switching between rings (syscalls)
 
+   * this function allocates both of these stacks and adds them to the memory
+   * region list of the task
+
   */
+  region_t *kernel_stack = region_new(REGION_TYPE_STACK, VMM_VMA_KERNEL, NULL, TASK_STACK_PAGE_COUNT);
+  region_t *user_stack   = region_new(REGION_TYPE_STACK, VMM_VMA_USER, NULL, TASK_STACK_PAGE_COUNT);
+  int32_t   err          = 0;
 
-  // allocate new kernel & user stack if not already allocated
-  if (NULL == task->stack.kernel && (task->stack.kernel = pm_alloc(TASK_STACK_PAGE_COUNT)) == NULL)
-    return -ENOMEM;
+  if ((err = region_map(kernel_stack)) != 0) {
+    sched_fail("failed to map kernel stack region for 0x%p: %s", task, strerror(err));
+    return err;
+  }
 
-  if (NULL == task->stack.user && (task->stack.user = pm_alloc(TASK_STACK_PAGE_COUNT)) == NULL)
-    return -ENOMEM;
+  if ((err = region_map(user_stack)) != 0) {
+    sched_fail("failed to map user stack region for 0x%p: %s", task, strerror(err));
+    return err;
+  }
 
-  // disable execution for the stack pages
-  pm_set((uint64_t)task->stack.kernel, TASK_STACK_PAGE_COUNT, PM_ENTRY_FLAG_XD);
-  pm_set((uint64_t)task->stack.user, TASK_STACK_PAGE_COUNT, PM_ENTRY_FLAG_XD);
-
-  // allow userland access to user stack
-  pm_set_all((uint64_t)task->stack.user, TASK_STACK_PAGE_COUNT, PM_ENTRY_FLAG_US);
-
+  task_mem_add(task, kernel_stack);
+  task_mem_add(task, user_stack);
   return 0;
 }
 
-uint64_t task_stack_copy(task_t *task, void *val, uint64_t size) {
+uint64_t task_stack_add(task_t *task, void *val, uint64_t size) {
   // copy the value to the stack
   task->regs.rsp -= size;
   memcpy((void *)task->regs.rsp, val, size);
@@ -44,7 +52,7 @@ uint64_t task_stack_copy(task_t *task, void *val, uint64_t size) {
   return size;
 }
 
-int32_t task_stack_copy_list(task_t *task, char *list[], uint64_t limit, void **stack) {
+int32_t task_stack_add_list(task_t *task, char *list[], uint64_t limit, void **stack) {
   /*
 
    * this function is used to copy the argv and envp to the
@@ -64,7 +72,6 @@ int32_t task_stack_copy_list(task_t *task, char *list[], uint64_t limit, void **
    * argv/envp pointer --'
 
   */
-
   uint64_t len = 0, total = 0, i = 0;
   char   **cur = NULL;
 
@@ -83,33 +90,22 @@ int32_t task_stack_copy_list(task_t *task, char *list[], uint64_t limit, void **
     if ((total += len = strlen(list[i]) + 1) > limit)
       return -E2BIG;
 
-    task_stack_copy(task, list[i], len);
+    task_stack_add(task, list[i], len);
 
     *cur = (void *)task->regs.rsp;
     cur++;
   }
 
+  // end pointer list with a NULL pointer
   *cur = NULL;
   return 0;
 }
 
-void task_stack_free(task_t *task) {
-  // free the task's stacks
-  pm_free(task->stack.kernel, TASK_STACK_PAGE_COUNT);
-  pm_free(task->stack.user, TASK_STACK_PAGE_COUNT);
-}
+void *task_stack_get(task_t *task, uint8_t vma) {
+  region_t *stack = task_mem_find(task, REGION_TYPE_STACK, vma);
 
-uint64_t task_stack_get(task_t *task, uint8_t ring) {
-  if (NULL == task)
-    return 0;
+  if (NULL == stack)
+    return NULL;
 
-  switch (ring) {
-  case TASK_RING_KERNEL:
-    return (uint64_t)task->stack.kernel;
-
-  case TASK_RING_USER:
-    return (uint64_t)task->stack.user;
-  }
-
-  return 0;
+  return stack->vaddr + stack->num * PAGE_SIZE;
 }

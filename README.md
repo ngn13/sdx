@@ -100,8 +100,8 @@ make debug
 ```
 
 ### contributing
-if you want to help me check off some of the shit on the roadmap or if you just want to make fun of my dogshit code or
-if you want to discuss about the [best cars moive](kernel/main.c#L60) feel free to create an issue/PR
+if you want to help me check off some of the shit on the roadmap or if you just want to make fun of my dogshit code or feel
+free to create an issue/PR
 
 ### resources
 here is an awesome list of resources/documentation that i use (ill keep extending this as i find more resources),

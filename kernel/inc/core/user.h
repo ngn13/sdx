@@ -14,8 +14,9 @@ int32_t _user_handler(); // syscall handler function
 int32_t user_setup();    // setup user syscalls
 
 // system call handlers
-int32_t user_exit(int32_t code);
-int32_t user_fork();
+void    user_exit(int32_t code);
+pid_t   user_fork();
 int32_t user_exec(char *path, char *argv[], char *envp[]);
+pid_t   user_wait(int32_t *status);
 
 #endif

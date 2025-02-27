@@ -25,6 +25,7 @@ opt_gtk=1     # using GTK display, switch to nographic option with --no-gtk
 opt_display=1 # video display is enabled, disable video display with --no-display
 
 qemu_args=(
+  -s
   -d int,cpu_reset
   -no-shutdown
   -no-reboot
@@ -58,7 +59,8 @@ if [ $opt_log -eq 0 ]; then
 else
   qemu_args+=(
     -chardev stdio,id=char0,mux=on,logfile="${SERIALLOG}",signal=off
-    -serial chardev:char0 -mon chardev=char0
+    -serial chardev:char0
+    #-mon chardev=char0
   )
 fi
 

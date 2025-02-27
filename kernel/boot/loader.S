@@ -1,169 +1,72 @@
-.intel_syntax noprefix
+#include "boot/boot.h"
 
-// TODO: rewrite in GAS (AT&T) syntax
-
-.equ STACK_SIZE, 0x10000
+.type __entry, @function
+.global __entry
 
 .section .data
-  cpu_vendor:         .string "not detected"
-
-  // supported CPU vendor IDs
-  cpu_vendor_supported: .string "AuthenticAMDAMDisbetter!GenuineIntelTCGTCGTCGTCG KVMKVMKVM  VMwareVMwareVBoxVBoxVBox"
-
-  // error messages
-  err_no_cpuid:   .string "HALTING: Your CPU is not supported (no CPUID)"
-  err_bad_vendor: .string "HALTING: Your CPU is not supported (unknown vendor)"
-  err_no_magic:   .string "HALTING: Magic number is not set (did you boot with GRUB multiboot2?)"
-  err_no_long:    .string "HALTING: Your CPU is not supported (no long mode, are you on x64?)"
-  err_no_msr:     .string "HALTING: Your CPU is not supported (no MSR)"
+// error messages
+err_no_cpuid:  .string "HALTING: Your CPU is not supported (no CPUID)"
+err_no_long:   .string "HALTING: Your CPU is not supported (no long mode, are you on x64?)"
+err_no_msr:    .string "HALTING: Your CPU is not supported (no MSR)"
 
 .section .bss
-  // simple stack
-  .align 16
-  .skip STACK_SIZE
-  stack:
+// simple stack
+.align 16
+.fill BOOT_STACK_SIZE, 1, 0
+stack:
 
 .section .text
 .code32
 
-.type __entry,        @function
-.type __entry_fail,   @function
-.type __check_vendor, @function
-
-.global __entry
-
-// checks if the CPU vendor is supported
-__check_vendor:
-  push eax // stores the return value
-  push ebx // stores the supported vendor string
-  push ecx // stores the CPU vendor string
-  push edx // stores the current char at esi index
-  push esi // stores the index for ebx
-  push edi // stores the current CPU vendor string
-
-  lea ebx, cpu_vendor_supported
-  lea ecx, cpu_vendor
-  xor edx, edx
-  xor esi, esi
-
-  .Lcheck_vendor_next:
-    lea edi, [ebx+esi]
-
-    push 12  // vendor string length
-    push edi // supported vendor string (offset by current position)
-    push ecx // CPU vendor string
-
-    call __string_compare
-
-    add esp, 12
-
-    test eax, eax
-    je .Lcheck_vendor_ok
-
-    add esi, 12
-    mov dh, [ebx+esi]
-
-    test dh, dh
-    je .Lcheck_vendor_fail
-
-    jmp .Lcheck_vendor_next
-
-  .Lcheck_vendor_fail:
-    lea ecx, err_bad_vendor
-    push ecx
-    call __fail
-
-  .Lcheck_vendor_ok:
-    pop edi
-    pop esi
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
-    ret
-
 // kernel loader entry point
 __entry:
   // load the stack
-  lea esp, [stack + STACK_SIZE]
+  mov $(stack - BOOT_KERNEL_ADDR), %esp
 
   /*
 
-   * verify the multiboot magic number
    * we have to make sure we are booted with GRUB multiboot2
-   * otherwise the kernel will NOT work without the multiboot data
-
-   * the hex value is the bootloader magic value, see the multiboot2
-   * specification for details:
-   * https://www.gnu.org/software/grub/manual/multiboot2/multiboot.html
+   * we push eax as the first arg, which should have the  multiboot2 magic value
+   * then we push ebx as the second arg, which should point to the boot info
 
   */
-  mov ecx, 0x36d76289
-  cmp eax, ecx
-  jne .Lentry_fail_magic
+  push %eax
+  push %ebx
+  call __mb_check
 
-  // now lets save the multiboot data
-  push ebx
-
-  // initalize video memory (pass the multiboot data as the first argument)
+  // initalize temporary framebuffer video driver (pass the multiboot data as the first argument)
   call __video_init
 
   // obtain the kernel binary end address
-  call __end_get_addr
+  //call __end_get_addr
 
-  // detect if CPUID is available
-  pushfd
-  pop eax
-  mov ecx, eax
+  // check if CPUID is available
+  pushfl
+  pop %eax
+  mov %eax, %ecx
 
-  // https://en.wikipedia.org/wiki/FLAGS_register
-  // 21 (ID): Able to use CPUID instruction (Pentium+)
-  xor eax, 1 << 21
+  /*
 
-  push eax
-  popfd
+   * 21 (ID): Able to use CPUID instruction (Pentium+)
+   * https://en.wikipedia.org/wiki/FLAGS_register
 
-  pushfd
-  pop eax
+  */
+  xor $(1 << 21), %eax
 
-  push ecx
-  popfd
+  push %eax
+  popfl
 
-  xor eax, ecx
+  pushfl
+  pop %eax
+
+  push %ecx
+  popfl
+
+  xor %ecx, %eax
   je .Lentry_fail_cpuid
 
-  // obtain and check CPU vendor name
-  xor eax, eax
-  cpuid
-
-  push ecx
-  push edx
-  push ebx
-
-  xor eax, eax
-  lea ebx, cpu_vendor
-  xor ecx, ecx
-  xor edx, edx
-
-  .Lentry_read_vendor:
-    pop eax
-
-    mov byte [ebx+ecx-1], al
-    mov byte [ebx+ecx], ah
-
-    shr eax, 16
-
-    mov byte [ebx+ecx+1], al
-    mov byte [ebx+ecx+2], ah
-
-    add ecx, 4
-
-    inc edx
-    cmp dl, 3
-
-    jne .Lentry_read_vendor
-
-  call __check_vendor
+  // check CPU vendor ID (obtained with CPUID, see vendor.S)
+  call __vendor_check
 
   /*
 
@@ -180,9 +83,9 @@ __entry:
    * which will check in a minute
 
   */
-  mov eax, 1
+  mov $1, %eax
   cpuid
-  test edx, 1 << 5
+  test $(1 << 5), %edx
   je .Lentry_fail_msr
 
   /*
@@ -197,110 +100,113 @@ __entry:
    * and for the long mode check we need at least 0x80000001
 
   */
-  mov eax, 0x80000000
+  mov $0x80000000, %eax
   cpuid
-  cmp eax, 0x80000001
+  cmp $0x80000001, %eax
   jb .Lentry_fail_long
 
   // check if long mode is available
-  mov eax, 0x80000001
+  mov $0x80000001, %eax
   cpuid
-  test edx, 1 << 29
+  test $(1 << 29), %edx
   je .Lentry_fail_long
 
   // fast A20 (should work on all supported vendors)
-  in al, 0x92
-  or al, 2
-  out 0x92, al
+  in $0x92, %al
+  or $2, %al
+  out %al, $0x92
 
-  // setup paging (also passing multiboot data as the first argument)
-  call __pm_get
-  mov cr3, eax
+  // setup paging
+  call __paging_setup
+  mov %eax, %cr3
 
-  mov eax, cr4
-  or eax, 1 << 5
-  mov cr4, eax
+  // enable PAE
+  mov %cr4, %eax
+  or $(1 << 5), %eax
+  mov %eax, %cr4
 
   // switch to long mode (compatibility)
-  mov ecx, 0xC0000080
+  mov $0xC0000080, %ecx
   rdmsr
-  or eax, 1 << 8
+  or $(1 << 8), %eax
   wrmsr
 
   // enable paging
-  mov eax, cr0
-  or eax, 1 << 31 | 1 << 0
-  mov cr0, eax
+  mov %cr0, %eax
+  or $(1 << 31 | 1 << 0), %eax
+  mov %eax, %cr0
 
   // setup GDT
   cli
-  lgdt gdt_pointer
+  lgdt (gdt_pointer - BOOT_KERNEL_ADDR)
+
+  // load code segment offset to eax
+  movl $(gdt_desc_kernel_code - BOOT_KERNEL_ADDR), %eax
+  movl $(gdt_start - BOOT_KERNEL_ADDR), %ebx
+  sub %ebx, %eax
 
   // long jump to 64 bit mode (there's no other way to change cs)
-  mov eax, gdt_desc_code_0_addr
-  mov ebx, gdt_start_addr
-  sub eax, ebx
-  push eax
-
-  lea eax, __entry64
-  push eax
-
-  // jmp 0x8:__entry64
+  push %eax
+  push $(__entry64_lower - BOOT_KERNEL_ADDR)
+  // jmp 0x8:__entry64_lower
   retf
 
-.Lentry_fail_magic:
-  lea eax, err_no_magic
-  jmp .Lentry_fail_call
-
 .Lentry_fail_cpuid:
-  lea eax, err_no_cpuid
-  jmp .Lentry_fail_call
+  push $(err_no_cpuid - BOOT_KERNEL_ADDR)
+  call __fail
 
 .Lentry_fail_long:
-  lea eax, err_no_long
-  jmp .Lentry_fail_call
+  push $(err_no_long - BOOT_KERNEL_ADDR)
+  call __fail
 
 .Lentry_fail_msr:
-  lea eax, err_no_msr
-  jmp .Lentry_fail_call
-
-.Lentry_fail_call:
-  push eax
+  push $(err_no_msr - BOOT_KERNEL_ADDR)
   call __fail
 
 .code64
-__entry64:
-  // load the data segment offset
-  mov eax, gdt_desc_data_0_addr
-  mov ebx, gdt_start_addr
-  sub eax, ebx
+__entry64_lower:
+  // load the data segment offset to eax
+  movl $(gdt_desc_kernel_data - BOOT_KERNEL_ADDR), %eax
+  sub %ebx, %eax
 
   // load the data segment
-  mov ds, ax
-  mov es, ax
-  mov fs, ax
-  mov gs, ax
-  mov ss, ax
+  mov %ax, %ds
+  mov %ax, %es
+  mov %ax, %fs
+  mov %ax, %gs
+  mov %ax, %ss
 
-  // load the video memory address + multiboot data address
-  pop rsi
+  // jump to the higher half
+  movabs $__entry64, %rax
+  jmp *%rax
 
-  // clear the stack
-  lea edi, [stack + STACK_SIZE]
-  xor eax, eax
-  mov ecx, STACK_SIZE
-  rep stosd
+__entry64:
+  /*
+
+   * clear the stack, to do so we use the stos (store string) instruction
+   * which writes %al to %rdi %rcx times (incrementing %rdi by one byte each time)
+
+  */
+  mov $(stack - BOOT_STACK_SIZE), %rdi
+  mov $BOOT_STACK_SIZE, %rcx
+  xor %al, %al
+  rep stosb
 
   // reset stack
-  xor rbp, rbp
-  lea rsp, [stack + STACK_SIZE]
+  xor %rbp, %rbp
+  movabs $stack, %rsp
 
-  // pass multiboot data address as the first argument
-  // and video memory address as the second
-  shrd rdi, rsi, 32
-  shr rsi, 32
-  shr rdi, 32
+  // remove lower half mappings
+  call __paging_clean
+
+  // update the GDT pointer
+  call __gdt_update_pointer
+
+  // reload GDT
+  lgdt gdt_pointer
 
   // call kernel entry, should never return
   call entry
-  call __halt
+
+  // if we somehow do return, just halt
+  jmp __halt

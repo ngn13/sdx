@@ -1,13 +1,21 @@
 #include "boot/multiboot.h"
+#include "mm/vmm.h"
 
 #include "util/io.h"
 #include "util/mem.h"
+#include "util/math.h"
 
 #include "video.h"
+#include "errno.h"
 
 struct fb_data {
+  uint32_t width, height;
+#define FB_SUPPORTED_CHAR_SIZE      2
+#define FB_SUPPORTED_CHAR_SIZE_BITS (FB_SUPPORTED_CHAR_SIZE * 8)
+  uint8_t  char_size;
   uint32_t x, y;
   uint8_t  color;
+  uint64_t addr;
 } fb_data;
 
 typedef uint8_t fb_data_color[2];
@@ -25,29 +33,53 @@ uint8_t fb_color_map[] = {
     0xc, // VIDEO_LIGHT_RED
 };
 
-#define FB_WIDTH     mb_fb_width
-#define FB_HEIGHT    mb_fb_height
-#define FB_CHAR_SIZE mb_fb_size
-#define FB_ADDR      ((uint64_t)mb_fb_addr)
-
-#define __fb_pos()         ((fb_data.y * (FB_WIDTH * FB_CHAR_SIZE)) + (fb_data.x * FB_CHAR_SIZE))
-#define __fb_cursor_pos()  ((fb_data.y * FB_WIDTH) + fb_data.x)
+#define __fb_pos()         ((fb_data.y * (fb_data.width * fb_data.char_size)) + (fb_data.x * fb_data.char_size))
+#define __fb_cursor_pos()  ((fb_data.y * fb_data.width) + fb_data.x)
 #define __fb_color_count() (sizeof(fb_color_map) / sizeof(uint8_t))
 #define __fb_color(i)      (i > __fb_color_count()) || i < 0 ? 0 : fb_color_map[i]
-#define __fail_return(x)                                                                                               \
+#define __fb_buf8()        ((uint8_t *)fb_data.addr)
+#define __fb_buf16()       ((uint16_t *)fb_data.addr)
+#define __fail_return(x, err)                                                                                          \
   if (!x)                                                                                                              \
-  return false
+    return err;
 
-bool fb_init() {
+int32_t fb_init() {
+  struct multiboot_tag_framebuffer_common *tag = mb_get(MULTIBOOT_TAG_TYPE_FRAMEBUFFER);
+
+  if (NULL == tag) {
+    video_debg("failed to find a framebuffer tag");
+    return -EINVAL;
+  }
+
+  if (tag->framebuffer_bpp != FB_SUPPORTED_CHAR_SIZE_BITS) {
+    video_debg("framebuffer BPP size is invalid: %u", tag->framebuffer_bpp);
+    return -EINVAL;
+  }
+
   bzero(&fb_data, sizeof(struct fb_data));
-  return true;
+  fb_data.addr      = tag->framebuffer_addr;
+  fb_data.width     = tag->framebuffer_width;
+  fb_data.height    = tag->framebuffer_height;
+  fb_data.char_size = FB_SUPPORTED_CHAR_SIZE;
+
+  video_debg("framebuffer located at physical address 0x%x (%ux%u)", fb_data.addr, fb_data.width, fb_data.height);
+
+  uint64_t fb_page_count = vmm_calc(fb_data.width * fb_data.height);
+
+  if ((fb_data.addr = (uint64_t)vmm_map_paddr(fb_data.addr, fb_page_count, VMM_ATTR_NO_CACHE)) == 0) {
+    video_fail("failed to map %u pages for the framebuffer to kernel VMA", fb_page_count);
+    return -EFAULT;
+  }
+
+  video_debg("mapped framebuffer to 0x%p with %u pages", fb_data.addr, fb_page_count);
+  return 0;
 }
 
 void fb_clear() {
-  uint64_t max = FB_WIDTH * FB_HEIGHT;
+  uint64_t max = fb_data.width * fb_data.height;
 
   for (uint32_t i = 0; i < max; i++)
-    ((short *)FB_ADDR)[i] = 0;
+    __fb_buf16()[i] = 0;
 
   // move the cursor to top
   fb_data.x = 0;
@@ -55,20 +87,20 @@ void fb_clear() {
 }
 
 void __fb_scroll() {
-  if (fb_data.y < FB_HEIGHT)
+  if (fb_data.height > fb_data.y)
     return;
 
   uint32_t line = 0, i = 0;
 
-  for (; line < FB_HEIGHT; line++) {
-    if (line == FB_HEIGHT - 1) {
-      /*for (i = line * FB_WIDTH; i < (line + 1) * FB_WIDTH; i++)
-        ((short *)FB_ADDR)[i] = 0;
-      continue;*/
+  for (; line < fb_data.height; line++) {
+    // clear the last line
+    if (line == fb_data.height - 1) {
+      bzero(&__fb_buf16()[line * fb_data.width], fb_data.width * fb_data.char_size);
+      continue;
     }
 
-    for (i = line * FB_WIDTH; i < (line + 1) * FB_WIDTH; i++)
-      ((short *)FB_ADDR)[i] = ((short *)FB_ADDR)[i + FB_WIDTH];
+    for (i = line * fb_data.width; i < (line + 1) * fb_data.width; i++)
+      __fb_buf16()[i] = __fb_buf16()[i + fb_data.width];
   }
 
   fb_data.y--;
@@ -79,36 +111,45 @@ bool __fb_cursor_update() {
   __fb_scroll();
   uint32_t pos = __fb_cursor_pos();
 
+  /*
+
+   * set the char's color to current color if there isn't any char
+   * at the current position of the cursor (so we are setting the
+   * cursor's color)
+
+  */
+  if ((__fb_buf16()[pos] & ~(UINT8_MAX << 8)) == 0)
+    __fb_buf16()[pos] = fb_data.color << 8; // fix cursor color
+
+  __fail_return(out8(0x3D4, 0x0F), false);
+  __fail_return(out8(0x3D5, (uint8_t)(pos & 0xFF)), false);
+
+  __fail_return(out8(0x3D4, 0x0E), false);
+  __fail_return(out8(0x3D5, (uint8_t)((pos >> 8) & 0xFF)), false);
+
+  return true;
+}
+
+int32_t fb_cursor_hide() {
+  __fail_return(out8(0x3d4, 0x0a), -EFAULT);
+  __fail_return(out8(0x3d5, 0x20), -EFAULT);
+
+  return 0;
+}
+
+int32_t fb_cursor_show() {
+  __fail_return(out8(0x3D4, 0x0A), -EFAULT);
+  __fail_return(out8(0x3D5, (in8(0x3D5) & 0xC0) | 0), -EFAULT);
+
+  __fail_return(out8(0x3D4, 0x0B), -EFAULT);
+  __fail_return(out8(0x3D5, (in8(0x3D5) & 0xE0) | 15), -EFAULT);
+
+  return 0;
+}
+
+int32_t fb_cursor_get_pos(uint32_t *x, uint32_t *y) {
+  /*uint32_t pos = 0;
   __fail_return(out8(0x3D4, 0x0F));
-  __fail_return(out8(0x3D5, (uint8_t)(pos & 0xFF)));
-
-  __fail_return(out8(0x3D4, 0x0E));
-  __fail_return(out8(0x3D5, (uint8_t)((pos >> 8) & 0xFF)));
-
-  return true;
-}
-
-bool fb_cursor_hide() {
-  __fail_return(out8(0x3d4, 0x0a));
-  __fail_return(out8(0x3d5, 0x20));
-
-  return true;
-}
-
-bool fb_cursor_show() {
-  __fail_return(out8(0x3D4, 0x0A));
-  __fail_return(out8(0x3D5, (in8(0x3D5) & 0xC0) | 0));
-
-  __fail_return(out8(0x3D4, 0x0B));
-  __fail_return(out8(0x3D5, (in8(0x3D5) & 0xE0) | 1));
-
-  return true;
-}
-
-bool fb_cursor_get_pos(uint32_t *x, uint32_t *y) {
-  uint32_t pos = 0;
-
-  /*__fail_return(out8(0x3D4, 0x0F));
   pos |= in8(0x3D5);
 
   __fail_return(out8(0x3D4, 0x0E));
@@ -120,20 +161,20 @@ bool fb_cursor_get_pos(uint32_t *x, uint32_t *y) {
   *x = fb_data.x;
   *y = fb_data.x;
 
-  return true;
+  return 0;
 }
 
-bool fb_cursor_set_pos(uint32_t x, uint32_t y) {
-  if (x > FB_WIDTH) {
-    x = 0;
+int32_t fb_cursor_set_pos(uint32_t x, uint32_t y) {
+  while (x > fb_data.width) {
+    x -= fb_data.width;
     y++;
   }
 
   fb_data.x = x;
-  fb_data.y = y > FB_HEIGHT ? 0 : y;
+  fb_data.y = y;
 
   __fb_cursor_update();
-  return true;
+  return 0;
 }
 
 void fb_write(uint8_t c) {
@@ -153,10 +194,10 @@ void fb_write(uint8_t c) {
 
   uint32_t pos = __fb_pos();
 
-  ((char *)FB_ADDR)[pos++] = c;
-  ((char *)FB_ADDR)[pos]   = fb_data.color;
+  __fb_buf8()[pos++] = c;
+  __fb_buf8()[pos]   = fb_data.color;
 
-  if (++fb_data.x > FB_WIDTH - 1) {
+  if (++fb_data.x > fb_data.width - 1) {
     fb_data.y++;
     fb_data.x = 0;
   }
@@ -194,6 +235,7 @@ void fb_bg_set(video_color_t c) {
 }
 
 video_driver_t video_fb = {
+    .name = "fb",
     .init = fb_init,
 
     .clear = fb_clear,

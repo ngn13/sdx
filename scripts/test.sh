@@ -15,13 +15,14 @@ if [ ! -f "${SERIALLOG}" ]; then
 fi
 
 matches=(
-  'Serial: enumerated \d+ ports'                                      # test 1: serial
-  'PCI: enumerated \d+ devices'                                       # test 2: PCI
-  'PM: extended paged memory to 0[xX][0-9a-fA-F]+'                    # test 3: PM
-  'AHCI: \(0[xX][0-9a-fA-F]+\) HBA supports version'                  # test 4: AHCI
-  'Disk: \(0[xX][0-9a-fA-F]+\) loaded \d+ GPT partitions'             # test 5: GPT
-  'VFS: \(0[xX][0-9a-fA-F]+:0[xX][0-9a-fA-F]+\) mounted node to root' # test 6: mount
-  'User: \(/init:1:user_exec\) new executable is ready'               # test 7: init
+  'Serial: enumerated \d+ ports'                                         # test 1: serial
+  'PMM: bitmapping 0[xX][0-9a-fA-F]+ - 0[xX][0-9a-fA-F]+ with \d+ bytes' # test 2: PMM
+  'Sched: created the main task: 0[xX][0-9a-fA-F]+'                      # test 3: scheduler
+  'PCI: enumerated \d+ devices'                                          # test 4: PCI
+  'AHCI: HBA at 0[xX][0-9a-fA-F]+ supports version'                      # test 5: AHCI
+  'Disk: loaded \d+ GPT partitions'                                      # test 6: GPT
+  'VFS: mounted node 0[xX][0-9a-fA-F]+ to root'                          # test 7: mount
+  'User: \(1:user_exit\) exiting with code: 0'                           # test 8: init
 )
 
 _test_match() {

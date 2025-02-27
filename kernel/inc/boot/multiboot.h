@@ -19,6 +19,12 @@
 #define MULTIBOOT_SEARCH       32768
 #define MULTIBOOT_HEADER_ALIGN 8
 
+// The magic field should contain this
+#define MULTIBOOT2_HEADER_MAGIC 0xe85250d6
+
+// This should be in %eax
+#define MULTIBOOT2_BOOTLOADER_MAGIC 0x36d76289
+
 // Alignment of multiboot modules
 #define MULTIBOOT_MOD_ALIGN 0x00001000
 
@@ -283,14 +289,7 @@ struct multiboot_tag_load_base_addr {
   uint32_t load_base_addr;
 };
 
-// see boot/multiboot.S
-extern uint32_t mb_fb_addr;
-extern uint32_t mb_fb_width;
-extern uint32_t mb_fb_height;
-extern uint8_t  mb_fb_size;
-
-extern uint64_t mb_mem_avail_limit;
-extern uint32_t mb_mem_avail_addr;
-extern uint32_t mb_mem_avail_len;
+int32_t mb_load(void *data);   // load the multiboot data
+void   *mb_get(uint32_t type); // find and extract a tag from the multiboot data
 
 #endif

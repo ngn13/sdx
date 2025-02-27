@@ -1,13 +1,16 @@
 #include "fs/fs.h"
-#include "mm/vmm.h"
+#include "mm/heap.h"
 
+#include "types.h"
 #include "util/printk.h"
 #include "util/string.h"
 
 #include "config.h"
 #include "errno.h"
 
-#define fs_debg(f, ...) pdebg("FS: (0x%x) " f, fs, ##__VA_ARGS__)
+#define fs_debg(f, ...) pdebg("FS: " f, ##__VA_ARGS__)
+#define fs_info(f, ...) pinfo("FS: " f, ##__VA_ARGS__)
+#define fs_fail(f, ...) pfail("FS: " f, ##__VA_ARGS__)
 
 const char *fs_type_name(fs_type_t type) {
   switch (type) {
@@ -20,8 +23,10 @@ const char *fs_type_name(fs_type_t type) {
 }
 
 fs_t *fs_new(fs_type_t type, disk_part_t *part) {
-  bool  ret = false, should_detect = false;
-  fs_t *new_fs = vmm_alloc(sizeof(fs_t));
+  fs_t   *new_fs        = heap_alloc(sizeof(fs_t));
+  bool    should_detect = false;
+  int32_t err           = 0;
+
   new_fs->part = part;
 
   if ((should_detect = (type == FS_TYPE_DETECT)))
@@ -33,28 +38,31 @@ try_type:
   case FS_TYPE_FAT32:
 #ifdef CONFIG_FS_FAT32
 #include "fs/fat32.h"
-    ret = fat32_new(new_fs);
+    err = fat32_new(new_fs);
 #else
-    ret = false;
+    err = -ENOSYS;
 #endif
     break;
 
   // unknown
   default:
-    pfail("FS: no available filesystem found (Part: 0x%x)", part);
-    vmm_free(new_fs);
+    fs_fail("no available filesystem for partition 0x%p", part);
+    heap_free(new_fs);
     return NULL;
   }
 
-  if (ret) {
+  if (err == 0) {
     new_fs->type = type;
-    pdebg("FS: (0x%x) created a new filesystem (Type: %s Part: 0x%x)", new_fs, fs_name(new_fs), new_fs->part);
+    fs_debg("created a new filesystem");
+    pdebg("    |- Filesystem: 0x%p", new_fs);
+    pdebg("    |- Partition: 0x%p", new_fs->part);
+    pdebg("    `- Type: %s", fs_name(new_fs));
     return new_fs;
   }
 
   if (!should_detect) {
-    pfail("FS: failed to create a %s filesystem", fs_type_name(type));
-    vmm_free(new_fs);
+    fs_fail("failed to create a %s filesystem: %s", fs_type_name(type), strerror(err));
+    heap_free(new_fs);
     return NULL;
   }
 
@@ -69,10 +77,10 @@ int32_t fs_is_rootfs(fs_t *fs) {
   /*
 
    * you might be wondering: what does it take to be a (possible) rootfs?
-
    * well, just having the "init" file in the root directory
-   * "init" file's name and stuff defined in fs/fs.h
-   * and this code just checks for that file
+
+   * "init" file's name and stuff defined in fs/fs.h and this code just
+   * checks for that file
 
   */
   int32_t    err = 0;
@@ -94,7 +102,7 @@ int32_t fs_is_rootfs(fs_t *fs) {
 }
 
 void fs_free(fs_t *fs) {
-  pdebg("FS: (0x%x) freeing a filesystem (Type: %s Part: 0x%x)", fs, fs_name(fs), fs->part);
+  fs_debg("freeing filesystem 0x%p", fs);
   fs->free(fs);
-  vmm_free(fs);
+  heap_free(fs);
 }

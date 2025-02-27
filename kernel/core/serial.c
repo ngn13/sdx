@@ -1,7 +1,7 @@
 #include "core/serial.h"
-#include "util/io.h"
-#include "util/mem.h"
+
 #include "util/printk.h"
+#include "util/io.h"
 
 #include "types.h"
 #include "errno.h"
