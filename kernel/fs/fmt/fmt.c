@@ -1,7 +1,9 @@
 #include "fs/fmt.h"
+
 #include "mm/region.h"
 #include "mm/vmm.h"
 
+#include "util/string.h"
 #include "util/list.h"
 #include "util/mem.h"
 

@@ -1,8 +1,9 @@
 #include "fs/fs.h"
 #include "fs/vfs.h"
 
-#include "util/mem.h"
 #include "util/printk.h"
+#include "util/string.h"
+#include "util/mem.h"
 
 #include "mm/heap.h"
 #include "errno.h"
@@ -26,6 +27,7 @@ vfs_node_t *vfs_node_new(char *name, fs_t *fs) {
   memcpy(new_node->name, name, name_size);
   new_node->name[name_size] = 0;
   new_node->fs              = fs;
+  new_node->ref_count++;
 
   vfs_debg("allocated a new node");
   pdebg("     |- Address: 0x%p", new_node);
@@ -61,7 +63,7 @@ int32_t vfs_node_add(vfs_node_t *node, vfs_node_t *child) {
 }
 
 bool vfs_node_deleteable(vfs_node_t *node) {
-  if (vfs_node_is_locked(node))
+  if (!node->ref_count)
     return false;
 
   vfs_node_foreach(node) {
@@ -76,7 +78,11 @@ int32_t vfs_node_free(vfs_node_t *node) {
   if (NULL == node)
     return -EINVAL;
 
-  // is the node deleteable (is the node or childs locked)
+  // on free we should decrease the reference count
+  if (!node->ref_count)
+    node->ref_count--;
+
+  // is the node deleteable (does the node or childs have any refs)
   if (!vfs_node_deleteable(node))
     return -EINVAL;
 

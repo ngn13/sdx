@@ -26,11 +26,11 @@ extern task_t *task_current;
       : "rax")
 #define sched_prio(p)  (task_current->prio = p)
 #define sched_state(s) (task_current->state = s)
+#define sched_hold()   sched_state(TASK_STATE_HOLD)
+#define sched_done()   sched_state(TASK_STATE_SAVE)
 int32_t sched_init();                             // initialize the scheduler
 task_t *sched_find(pid_t pid);                    // find a task by it's PID
 int32_t sched_exit(int32_t exit_code);            // exit the current task
-void    sched_lock();                             // lock (disable) scheduling
-void    sched_unlock();                           // unlock (enable) scheduling
 task_t *sched_next(task_t *task);                 // get the next task in the task list
 task_t *sched_child(task_t *task, task_t *child); // get the next child of the task
 

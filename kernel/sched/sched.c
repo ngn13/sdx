@@ -160,6 +160,16 @@ void __sched_timer_handler(im_stack_t *stack) {
 
   // handle the state of the current task
   switch (task_current->state) {
+  case TASK_STATE_HOLD:
+    /*
+
+     * critikal task information is being modified,
+     * such as the task registers and memory regions,
+     * hold on scheduling and keep the task running
+
+    */
+    return;
+
   case TASK_STATE_READY:
     // update the registers of the current task
     task_update_regs(task_current, stack);
@@ -418,16 +428,6 @@ int32_t sched_exit(int32_t exit_code) {
 
   // this will never run
   return 0;
-}
-
-void sched_lock() {
-  im_disable_handler(pic_to_int(PIC_IRQ_TIMER), __sched_exception_handler);
-  im_disable_handler(pic_to_int(PIC_IRQ_TIMER), __sched_timer_handler);
-}
-
-void sched_unlock() {
-  im_enable_handler(pic_to_int(PIC_IRQ_TIMER), __sched_exception_handler);
-  im_enable_handler(pic_to_int(PIC_IRQ_TIMER), __sched_timer_handler);
 }
 
 /*

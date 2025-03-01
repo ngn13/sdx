@@ -1,10 +1,6 @@
 #pragma once
 #include "core/disk.h"
-
 #include "util/timestamp.h"
-#include "util/string.h"
-
-#include "limits.h"
 
 #define FS_INIT_NAME "init" // "init" file name
 
@@ -30,7 +26,6 @@ typedef struct {
   timestamp_t     ctime;  // creation time
   timestamp_t     atime;  // (last) access time
   timestamp_t     mtime;  // (last) modification time
-
   // TODO: add mising fields such as UID, GID etc
 } fs_inode_t;
 
@@ -48,9 +43,12 @@ typedef struct {
 typedef enum {
   FS_TYPE_DETECT = 0,
   FS_TYPE_FAT32  = 1,
-  //  FS_TYPE_PROCFS = 2,
-  //  FS_TYE_DEVFS = 3,
+  FS_TYPE_DEVFS  = 2,
+  // FS_TYPE_PROCFS = 3,
 } fs_type_t;
+
+#define FS_TYPE_DETECT_FIRST (FS_TYPE_FAT32) // first non-virtual filesystem
+#define FS_TYPE_DETECT_LAST  (FS_TYPE_FAT32) // last non-virtual filesystem
 
 typedef struct fs {
   fs_type_t          type;

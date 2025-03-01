@@ -1,11 +1,14 @@
-#include "fs/fs.h"
-#include "mm/heap.h"
-
-#include "types.h"
 #include "util/printk.h"
 #include "util/string.h"
+#include "util/mem.h"
+#include "mm/heap.h"
+
+#include "fs/fs.h"
+#include "fs/fat32.h"
+#include "fs/devfs.h"
 
 #include "config.h"
+#include "types.h"
 #include "errno.h"
 
 #define fs_debg(f, ...) pdebg("FS: " f, ##__VA_ARGS__)
@@ -22,52 +25,69 @@ const char *fs_type_name(fs_type_t type) {
   }
 }
 
-fs_t *fs_new(fs_type_t type, disk_part_t *part) {
-  fs_t   *new_fs        = heap_alloc(sizeof(fs_t));
-  bool    should_detect = false;
-  int32_t err           = 0;
+int32_t __fs_new(fs_t *fs, fs_type_t type) {
+  int32_t err = 0;
 
-  new_fs->part = part;
-
-  if ((should_detect = (type == FS_TYPE_DETECT)))
-    type++;
-
-try_type:
   switch (type) {
   // FAT32 filesystem
   case FS_TYPE_FAT32:
 #ifdef CONFIG_FS_FAT32
-#include "fs/fat32.h"
-    err = fat32_new(new_fs);
+    err = fat32_new(fs);
 #else
     err = -ENOSYS;
 #endif
     break;
 
+  // dev filesystem
+  case FS_TYPE_DEVFS:
+    err = devfs_new(fs);
+
   // unknown
   default:
-    fs_fail("no available filesystem for partition 0x%p", part);
-    heap_free(new_fs);
-    return NULL;
+    fs_fail("unknown filesystem type: %u", type);
+    return -EFAULT;
   }
 
-  if (err == 0) {
-    new_fs->type = type;
-    fs_debg("created a new filesystem");
-    pdebg("    |- Filesystem: 0x%p", new_fs);
-    pdebg("    |- Partition: 0x%p", new_fs->part);
-    pdebg("    `- Type: %s", fs_name(new_fs));
-    return new_fs;
-  }
+  if (!err)
+    fs->type = type;
+  return err;
+}
 
-  if (!should_detect) {
+fs_t *fs_new(fs_type_t type, disk_part_t *part) {
+  fs_t   *new_fs = heap_alloc(sizeof(fs_t));
+  int32_t err    = 0;
+
+  // setup the new filesystem
+  bzero(new_fs, sizeof(fs_t));
+  new_fs->part = part;
+
+  // check if we should manually detect the filesystem
+  if (type != FS_TYPE_DETECT) {
+    // if not, create the requested filesystem
+    if ((err = __fs_new(new_fs, type)) == 0)
+      goto success;
+
+    // if we fail, free the filesystem structure
     fs_fail("failed to create a %s filesystem: %s", fs_type_name(type), strerror(err));
-    heap_free(new_fs);
-    return NULL;
+    goto fail;
   }
 
-  type++;
-  goto try_type;
+  // try to detect the filesystem
+  for (uint8_t i = FS_TYPE_DETECT_FIRST; i <= FS_TYPE_DETECT_LAST; i++)
+    if ((err = __fs_new(new_fs, i)) == 0)
+      goto success;
+
+  fs_fail("no available filesystem for partition 0x%p", part);
+fail:
+  heap_free(new_fs);
+  return NULL;
+
+success:
+  fs_debg("created a new filesystem");
+  pdebg("    |- Filesystem: 0x%p", new_fs);
+  pdebg("    |- Partition: 0x%p", new_fs->part);
+  pdebg("    `- Type: %s", fs_name(new_fs));
+  return new_fs;
 }
 
 int32_t fs_is_rootfs(fs_t *fs) {

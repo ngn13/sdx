@@ -7,12 +7,13 @@
 #include "fs/fmt.h"
 #include "fs/vfs.h"
 
-#include "util/asm.h"
-#include "util/mem.h"
-#include "util/panic.h"
-
 #include "mm/region.h"
 #include "mm/vmm.h"
+
+#include "util/string.h"
+#include "util/panic.h"
+#include "util/asm.h"
+#include "util/mem.h"
 
 #include "limits.h"
 #include "types.h"
@@ -124,11 +125,12 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   /*
 
    * we are gonna modify the current task, if an IRQ calls
-   * the scheduler our modifications will get fucked so we
-   * will temporarily lock (disable) the scheduler
+   * or somehow the sched() gets called, its gonna do the
+   * scheduling stuff which will mess up our changes, so
+   * we put the scheduler on hold until we are done
 
   */
-  sched_lock();
+  sched_hold();
 
   // update the current task
   task_rename(current, path);
@@ -202,9 +204,6 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   task_stack_add(current, &stack_envp, sizeof(void *));
   task_stack_add(current, &stack_argv, sizeof(void *));
 
-  sched_state(TASK_STATE_SAVE); // save the registers
-  sched_prio(TASK_PRIO_LOW);    // reset the priority
-
   // call the scheduler to run as the new task
   user_info("executing the new binary");
 
@@ -213,8 +212,15 @@ end:
   charlist_free(argv_copy);
   charlist_free(envp_copy);
 
-  // our modifications are complete, we can unlock (enable) the scheduler
-  sched_unlock();
+  /*
+
+   * our modifications are complete, reset the priority of the task
+   * and unhold the scheduler which will put us on SAVE state to apply
+   * our modifications with the next sched()
+
+  */
+  sched_prio(TASK_PRIO_LOW);
+  sched_done();
 
   // if everything went fine, will never return
   sched();

@@ -1,6 +1,7 @@
 #include "fs/fmt.h"
 #include "fs/vfs.h"
 
+#include "util/string.h"
 #include "util/printk.h"
 #include "util/math.h"
 #include "util/mem.h"

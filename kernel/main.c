@@ -31,17 +31,18 @@
 #include "core/serial.h"
 #include "core/user.h"
 
-#include "mm/pmm.h"
-
 #include "sched/sched.h"
 #include "sched/task.h"
 
+#include "util/string.h"
+#include "util/printk.h"
+#include "util/panic.h"
+
+#include "mm/pmm.h"
+#include "mm/vmm.h"
+
 #include "fs/vfs.h"
 #include "video.h"
-
-#include "util/panic.h"
-#include "util/printk.h"
-#include "util/asm.h"
 
 void entry() {
   int32_t err = 0;
@@ -131,9 +132,11 @@ void entry() {
     if ((rootfs = fs_new(FS_TYPE_DETECT, part)) == NULL)
       continue;
 
+    // check if the filesystem can be used a root filesystem
     if (fs_is_rootfs(rootfs) == 0)
       break;
 
+    // if the filesystem cannot be used a root filesystem, free it
     fs_free(rootfs);
     rootfs = NULL;
   }
@@ -142,8 +145,9 @@ void entry() {
     panic("No available root filesystem");
 
   pdebg("Loaded a %s root filesystem from 0x%x", fs_name(rootfs), part);
-  pdebg("Mounting the root filesystem");
+  pinfo("Mounting the root %s filesystem", fs_name(rootfs));
 
+  // mount the root filesystem
   if ((err = vfs_mount("/", rootfs)) != 0)
     panic("Failed to mount the root filesystem: %s", strerror(err));
 

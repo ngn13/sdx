@@ -1,8 +1,9 @@
 #include "fs/fat32.h"
 #include "fs/vfs.h"
 
-#include "util/mem.h"
+#include "util/string.h"
 #include "util/printk.h"
+#include "util/mem.h"
 
 #include "mm/heap.h"
 

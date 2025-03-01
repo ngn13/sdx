@@ -1,5 +1,18 @@
 #include "fs/vfs.h"
+#include "util/string.h"
+
+#include "types.h"
 #include "errno.h"
+
+#define vfs_path_next(path, name)                                                                                      \
+  do {                                                                                                                 \
+    for (i = 0; *path != '/' && *path != 0; i++, path++) {                                                             \
+      if (i > NAME_MAX)                                                                                                \
+        return NULL;                                                                                                   \
+      name[i] = *path;                                                                                                 \
+    }                                                                                                                  \
+    name[i] = 0;                                                                                                       \
+  } while (0);
 
 vfs_node_t *vfs_get(char *path) {
   if (NULL == path || *path == 0)
@@ -34,9 +47,6 @@ vfs_node_t *vfs_get(char *path) {
     cur = vfs_node_get(cur, name);
   }
 
-  if (NULL != cur)
-    vfs_node_lock(cur);
-
   return cur;
 }
 
@@ -59,9 +69,7 @@ int32_t vfs_mount(char *path, fs_t *fs) {
       return err;
     }
 
-    vfs_node_lock(node);
     vfs_info("mounted node 0x%p to root", node);
-
     return 0;
   }
 
@@ -103,8 +111,5 @@ int64_t vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer)
 }
 
 void vfs_free(vfs_node_t *node) {
-  vfs_node_unlock(node);
-
-  if (!vfs_node_is_locked(node))
-    vfs_node_free(node);
+  vfs_node_free(node);
 }

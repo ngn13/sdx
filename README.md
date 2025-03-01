@@ -1,4 +1,4 @@
-# sdx | shitty and dirty UNIX for x86_64
+# sdx | shitty and dirty UNIX for x86-64
 
 ![test workflow status](https://img.shields.io/github/actions/workflow/status/ngn13/sdx/test.yml?label=tests)
 

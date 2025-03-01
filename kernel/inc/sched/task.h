@@ -17,6 +17,7 @@
 
 // different task states
 enum {
+  TASK_STATE_HOLD,  // task is on holding the scheduler, keep it running
   TASK_STATE_READY, // task is ready to run
   TASK_STATE_SAVE,  // task should be saved, don't modify the registers
   TASK_STATE_WAIT,  // task is waiting on something, should be moved to end of to the queue

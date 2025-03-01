@@ -1,7 +1,6 @@
 #pragma once
-#include "util/lock.h"
-#include "mm/vmm.h"
 #include "fs/fs.h"
+#include "util/lock.h"
 
 #include "limits.h"
 #include "types.h"
@@ -10,28 +9,38 @@
 #define vfs_info(f, ...) pinfo("VFS: " f, ##__VA_ARGS__)
 #define vfs_fail(f, ...) pfail("VFS: " f, ##__VA_ARGS__)
 
-// defines a entry in the VFS (file, directory etc.)
+/*
+
+ * VFS consists of directories and files (nodes) on different
+ * filesystems connected to each other with mount points, creating
+ * the root filesystem tree
+
+ * to traverse through the tree and to modify it easily, each VFS
+ * node has 3 pointers:
+ * - parent: points to the parent node, so the parent directory
+ * - child: points to the first child node
+ * - sibling: points to the next child of the parent
+
+ * here is an example root filesystem tree structure, showcasing
+ * how the node pointers are used:
+
+ *   .---------------------[/]
+ *   |                      |
+ * child                  parent
+ *   |______________________|______________________.
+ *   |                      |                      |
+ *   v                      |                      |
+ * [init] --- sibling --> [boot] --- sibling --> [etc]
+
+*/
+
 typedef struct vfs_node {
-  fs_t            *fs;                 // filesystem the inode belongs to
-  char             name[NAME_MAX + 1]; // name of the node
-  fs_inode_t       inode;              // inode for the node
-  spinlock_t       use_lock;           // is node in use?
-  struct vfs_node *parent, *child, *sibling;
+  fs_t            *fs;                       // filesystem the inode belongs to
+  char             name[NAME_MAX + 1];       // name of the node
+  fs_inode_t       inode;                    // inode for the node
+  uint64_t         ref_count;                // reference (pointer) counter
+  struct vfs_node *parent, *child, *sibling; // parent, child and sibling pointers
 } vfs_node_t;
-
-#define vfs_node_is_locked(node) spinlock_is_locked(node->use_lock)
-#define vfs_node_unlock(node)    spinlock_unlock(node->use_lock)
-#define vfs_node_lock(node)      spinlock_lock(node->use_lock)
-
-#define vfs_path_next(path, name)                                                                                      \
-  do {                                                                                                                 \
-    for (i = 0; *path != '/' && *path != 0; i++, path++) {                                                             \
-      if (i > NAME_MAX)                                                                                                \
-        return NULL;                                                                                                   \
-      name[i] = *path;                                                                                                 \
-    }                                                                                                                  \
-    name[i] = 0;                                                                                                       \
-  } while (0);
 
 // fs/vfs/node.c
 extern vfs_node_t *vfs_root;
