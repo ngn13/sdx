@@ -5,12 +5,12 @@
 #include "mm/region.h"
 #include "mm/heap.h"
 
+#include "config.h"
 #include "limits.h"
 #include "types.h"
 
-#define TASK_STACK_PAGE_COUNT (4) // 4 pages, 16KB
-#define TASK_REG_COUNT        (20)
-#define TASK_TICKS_DEFAULT    (20)
+#define TASK_REG_COUNT     (20)
+#define TASK_TICKS_DEFAULT (20)
 
 #define TASK_PRIO_MAX (63)
 #define TASK_PRIO_MIN (1)
@@ -47,9 +47,7 @@ typedef struct task_waitq {
   struct task_waitq *next;
 } task_waitq_t;
 
-// task files (file descriptors)
-#define TASK_FILES_MAX (32)
-
+// task files (open files)
 typedef struct {
   vfs_node_t *node;   // VFS node for this file
   int32_t     flags;  // flags used to open the file
@@ -99,8 +97,8 @@ typedef struct task {
   task_waitq_t *waitq_head; // wait queue head
   task_waitq_t *waitq_tail; // wait queue tail
 
-  int32_t      fd_last;               // last used file descriptor
-  task_file_t *files[TASK_FILES_MAX]; // open files
+  int32_t      fd_last;                      // last used file descriptor
+  task_file_t *files[CONFIG_TASK_FILES_MAX]; // open files
 
   int32_t term_code; // termination code (signal)
   int32_t exit_code; // exit code for the task
@@ -145,6 +143,12 @@ int32_t  task_stack_alloc(task_t *task);                           // allocate a
 uint64_t task_stack_add(task_t *task, void *value, uint64_t size); // add a value to the task's stack
 int32_t task_stack_add_list(task_t *task, char *list[], uint64_t limit, void **stack); // add a list to the task's stack
 void   *task_stack_get(task_t *task, uint8_t vma);
+
+// sched/file.c
+int32_t      task_file_fd_next(task_t *task);                    // get the next available fd
+task_file_t *task_file_from(task_t *task, int32_t fd);           // get the file structure at the indexed at fd
+int32_t      task_file_free(task_file_t *file, bool ignore_err); // close & free a file
+void         task_file_clear(task_t *task);                      // close & free all the files
 
 // copies im_stack_t to task_regs_t
 #define __stack_to_regs(regs, stack)                                                                                   \

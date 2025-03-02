@@ -109,10 +109,14 @@ int32_t fs_is_rootfs(fs_t *fs) {
 
   */
   int32_t    err = 0;
-  fs_inode_t inode;
+  fs_inode_t root, inode;
+
+  // get the root directory inode
+  if ((err = fs_namei(fs, NULL, NULL, &root)) != 0)
+    return err;
 
   // attempt to get the inode of "init"
-  if ((err = fs_namei(fs, NULL, FS_INIT_NAME, &inode)) != 0)
+  if ((err = fs_namei(fs, &root, FS_INIT_NAME, &inode)) != 0)
     return err;
 
   // is "init" a file?

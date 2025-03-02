@@ -31,7 +31,7 @@ vfs_node_t *__vfs_find(char *path) {
   switch (*path) {
   // absolute path? start from the root
   case '/':
-    cur = vfs_root;
+    cur = vfs_node_get(NULL, NULL);
     path++;
     break;
 
@@ -97,19 +97,22 @@ int32_t vfs_close(vfs_node_t *node) {
   }
 
   // free the VFS node
-  return vfs_node_put(node);
+  if ((err = vfs_node_put(node)) != 0 && err != -EBUSY)
+    return err;
+
+  return 0;
 }
 
 int64_t vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer) {
   if (NULL == node || NULL == buffer)
     return NULL;
-  return fs_read(node->fs, vfs_node_is_fs_root(node) ? NULL : &node->inode, offset, size, buffer);
+  return fs_read(node->fs, &node->inode, offset, size, buffer);
 }
 
 int64_t vfs_write(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer) {
   if (NULL == node || NULL == buffer)
     return NULL;
-  return fs_write(node->fs, vfs_node_is_fs_root(node) ? NULL : &node->inode, offset, size, buffer);
+  return fs_write(node->fs, &node->inode, offset, size, buffer);
 }
 
 int32_t vfs_mount(char *path, fs_t *fs) {
@@ -125,6 +128,18 @@ int32_t vfs_mount(char *path, fs_t *fs) {
       vfs_debg("failed to allocate the new root node");
       return -ENOMEM;
     }
+
+    /*
+
+     * increase the reference counter of the node
+
+     * otherwise next time vfs_close() is called on the node
+     * node may be removed, which would remove our mount point
+     * by increasing the reference counter we make sure the
+     * node won't be removed until vfs_unmount() is called
+
+    */
+    node->ref_count++;
 
     vfs_info("mounted node 0x%p to root", node);
     return 0;
@@ -162,7 +177,6 @@ int32_t vfs_umount(char *path) {
     return -EINVAL;
   }
 
-  vfs_node_put(node); // __vfs_find()
-  vfs_node_put(node); // vfs_mount()
-  return 0;
+  vfs_node_put(node);        // __vfs_find()
+  return vfs_node_put(node); // vfs_mount()
 }

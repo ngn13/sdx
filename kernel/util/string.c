@@ -289,13 +289,13 @@ char *strstr(char *s1, char *s2) {
 }
 
 char *strncpy(char *dst, const char *src, uint64_t dsize) {
-  uint64_t ssize = strlen(src) + 1;
+  uint64_t ssize = strlen(src);
 
-  if (dsize > ssize)
-    dsize = ssize;
+  if (ssize > dsize)
+    ssize = dsize;
 
-  dst  = memcpy(dst, (void *)src, dsize - 1);
-  *dst = 0;
+  dst = memcpy(dst, (void *)src, ssize);
+  bzero(dst, dsize - ssize);
 
   return dst;
 }

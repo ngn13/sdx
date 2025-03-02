@@ -81,7 +81,7 @@ void task_free(task_t *task) {
   task_waitq_clear(task);
 
   // close all the files
-  for (uint8_t fd = 0; fd < TASK_FILES_MAX; fd++) {
+  for (uint8_t fd = 0; fd < CONFIG_TASK_FILES_MAX; fd++) {
     vfs_close(task->files[fd]->node);
     heap_free(task->files[fd]);
   }
@@ -97,7 +97,7 @@ int32_t task_rename(task_t *task, const char *name) {
   if (NULL == task || NULL == name)
     return -EINVAL;
 
-  strncpy(task->name, name, NAME_MAX + 1);
+  strncpy(task->name, name, NAME_MAX);
   return 0;
 }
 

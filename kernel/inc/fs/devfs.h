@@ -1,5 +1,6 @@
 #pragma once
 #include "fs/fs.h"
+#include "limits.h"
 #include "types.h"
 
 /*
@@ -17,8 +18,9 @@ typedef struct {
 
 // describes a devfs device
 struct devfs_device {
-  const char          *name;
+  const char           name[NAME_MAX + 1];
   devfs_ops_t         *ops;
+  mode_t               mode;
   struct devfs_device *next;
 };
 
@@ -33,6 +35,7 @@ int32_t devfs_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode);
 
 // devfs/devices.c
 struct devfs_device *devfs_device_next(struct devfs_device *dev);
-struct devfs_device *devfs_device_find(const char *name);
-int32_t              devfs_device_register(const char *name, devfs_ops_t *ops);
+struct devfs_device *devfs_device_find(const char *name, uint64_t *index);
+struct devfs_device *devfs_device_at(uint64_t index);
+int32_t              devfs_device_register(const char *name, devfs_ops_t *ops, mode_t mode);
 int32_t              devfs_device_unregister(const char *name);

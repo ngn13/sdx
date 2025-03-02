@@ -1,11 +1,11 @@
 #include "core/disk.h"
 #include "core/mbr.h"
 
-#include "fs/fs.h"
-#include "mm/heap.h"
-
 #include "util/list.h"
 #include "util/mem.h"
+
+#include "fs/fs.h"
+#include "mm/heap.h"
 
 #include "config.h"
 #include "limits.h"
@@ -31,14 +31,18 @@ disk_part_t *disk_part_add(disk_t *disk, uint64_t start, uint64_t size) {
   if (NULL == (new = heap_alloc(sizeof(disk_part_t))))
     return NULL;
 
+  // setup the partition
   bzero(new, sizeof(disk_part_t));
   new->start = start;
   new->size  = size;
   new->disk  = disk;
 
-  slist_add(&disk->parts, new, disk_part_t);
+  // add partition to the list
+  slist_add_start(&disk->parts, new, disk_part_t);
 
+  // increase the partition count
   disk->part_count++;
+
   return new;
 }
 

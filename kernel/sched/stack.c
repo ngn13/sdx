@@ -8,6 +8,7 @@
 #include "util/string.h"
 #include "util/mem.h"
 
+#include "config.h"
 #include "errno.h"
 #include "types.h"
 
@@ -21,8 +22,8 @@ int32_t task_stack_alloc(task_t *task) {
    * region list of the task
 
   */
-  region_t *kernel_stack = region_new(REGION_TYPE_STACK, VMM_VMA_KERNEL, NULL, TASK_STACK_PAGE_COUNT);
-  region_t *user_stack   = region_new(REGION_TYPE_STACK, VMM_VMA_USER, NULL, TASK_STACK_PAGE_COUNT);
+  region_t *kernel_stack = region_new(REGION_TYPE_STACK, VMM_VMA_KERNEL, NULL, CONFIG_TASK_STACK_PAGES);
+  region_t *user_stack   = region_new(REGION_TYPE_STACK, VMM_VMA_USER, NULL, CONFIG_TASK_STACK_PAGES);
   int32_t   err          = 0;
 
   if ((err = region_map(kernel_stack)) != 0) {

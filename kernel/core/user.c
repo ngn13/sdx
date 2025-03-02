@@ -30,6 +30,8 @@ struct user_call user_calls[] = {
     {.code = 3, .func = user_wait},
     {.code = 4, .func = user_open},
     {.code = 5, .func = user_close},
+    {.code = 6, .func = user_read},
+    {.code = 7, .func = user_write},
     {.func = NULL},
 };
 
@@ -100,7 +102,7 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
 
   // we cannot execute a directory
   if (vfs_node_is_directory(node)) {
-    err = -EPERM;
+    err = -EACCES;
     goto end;
   }
 
@@ -315,20 +317,9 @@ int32_t user_open(char *path, int32_t flags, mode_t mode) {
 
   // TODO: check permissions (mode)
 
-  // if we reached the last file descriptor, reset it
-  if (task_current->fd_last >= TASK_FILES_MAX)
-    task_current->fd_last = 0;
-
-  // get the next file descriptor
-  for (fd = task_current->fd_last; TASK_FILES_MAX > fd; fd++)
-    if (NULL == task_current->files[fd])
-      break;
-
-  // if there's no available file descriptor, return an error
-  if (fd >= TASK_FILES_MAX) {
-    fd = -EMFILE;
+  // get the next available file descriptor
+  if ((fd = task_file_fd_next(task_current)) < 0)
     goto end;
-  }
 
   // update the last file descriptor
   if (fd > task_current->fd_last)
@@ -358,23 +349,72 @@ end:
 }
 
 int32_t user_close(int32_t fd) {
-  // check the file descriptor
-  if (fd >= TASK_FILES_MAX || fd < 0)
+  // obtain the file object at the given fd
+  task_file_t *file = task_file_from(task_current, fd);
+  int32_t      err  = 0;
+
+  // check if the fd indexes to an acutal file object
+  if (NULL == file)
     return -EBADF;
 
-  // check the file the file descriptor indexes
-  if (NULL == task_current->files[fd])
-    return -EBADFD;
+  // close & free the file
+  if ((err = task_file_free(file, false)) != 0)
+    return err;
 
-  // obtain the file pointer & remove the pointer
-  task_file_t *file       = task_current->files[fd];
+  // update the last file descriptor
+  if (fd == task_current->fd_last)
+    task_current->fd_last--;
+
+  // remove the file reference from the file list
   task_current->files[fd] = NULL;
 
-  // close the VFS node
-  if ((fd = vfs_close(file->node)) != 0)
-    return fd;
-
-  // free the file object
-  heap_free(file);
+  user_debg("closed the file %d", fd);
   return 0;
+}
+
+int64_t user_read(int32_t fd, void *buf, uint64_t size) {
+  task_file_t *file = task_file_from(task_current, fd);
+  int64_t      ret  = 0;
+
+  // check the file obtained with the fd
+  if (NULL == file)
+    return -EBADF;
+
+  // TODO: check file->flags to make sure we can read
+
+  // perform the read operation
+  ret = vfs_read(file->node, file->offset, size, buf);
+
+  if (ret > 0) {
+    if (vfs_node_is_directory(file->node))
+      // move onto the next directory entry
+      file->offset++;
+    else
+      // increase the offset by read bytes
+      file->offset += ret;
+  }
+
+  // return the result
+  return ret;
+}
+
+int64_t user_write(int32_t fd, void *buf, uint64_t size) {
+  task_file_t *file = task_file_from(task_current, fd);
+  int64_t      ret  = 0;
+
+  // check the file obtained with the fd
+  if (NULL == file)
+    return -EBADF;
+
+  // TODO: check file->flags to make sure we can write
+
+  // perform the read operation
+  ret = vfs_write(file->node, file->offset, size, buf);
+
+  // increase the offset by wroten bytes
+  if (ret > 0)
+    file->offset += ret;
+
+  // return the result
+  return ret;
 }

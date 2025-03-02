@@ -20,5 +20,7 @@ int32_t user_exec(char *path, char *argv[], char *envp[]);
 pid_t   user_wait(int32_t *status);
 int32_t user_open(char *path, int32_t flags, mode_t mode);
 int32_t user_close(int32_t fd);
+int64_t user_read(int32_t fd, void *buf, uint64_t size);
+int64_t user_write(int32_t fd, void *buf, uint64_t size);
 
 #endif

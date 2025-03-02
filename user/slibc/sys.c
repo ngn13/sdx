@@ -27,3 +27,11 @@ int32_t open(char *path, int32_t flags, mode_t mode) {
 int32_t close(int32_t fd) {
   return syscall(5, fd);
 }
+
+int64_t read(int32_t fd, void *buf, uint64_t size) {
+  return syscall(6, fd, buf, size);
+}
+
+int64_t write(int32_t fd, void *buf, uint64_t size) {
+  return syscall(7, fd, buf, size);
+}

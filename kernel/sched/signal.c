@@ -52,11 +52,14 @@ int32_t task_signal_add(task_t *task, int32_t sig) {
   if (NULL == task || sig > SIG_MAX || sig < SIG_MIN)
     return -EINVAL;
 
+  // allocate & setup the signal
   task_sigset_t *signal = heap_alloc(sizeof(task_sigset_t));
   bzero(signal, sizeof(task_sigset_t));
   signal->value = sig;
 
-  slist_add(&task->signal, signal, task_sigset_t);
+  // add signal to the end of the queue
+  slist_add_end(&task->signal, signal, task_sigset_t);
+
   return 0;
 }
 

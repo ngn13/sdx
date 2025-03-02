@@ -41,8 +41,11 @@ if [ -z "${DESTDIR}" ] || [ -z "${LOOP_DIR}" ]; then
   exit 1
 fi
 
-info "Installing GRUB for BIOS"
+info "Setting up the root directory structure"
 mkdir -p "${LOOP_DIR}/boot"
+mkdir -p "${LOOP_DIR}/dev"
+
+info "Installing GRUB for BIOS"
 grub-install --target=i386-pc --recheck          \
              --no-floppy --bootloader-id=GRUB    \
              --boot-directory="${LOOP_DIR}/boot" \

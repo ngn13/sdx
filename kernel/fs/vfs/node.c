@@ -32,16 +32,11 @@ vfs_node_t *vfs_node_new(vfs_node_t *parent, char *name, fs_t *fs) {
   if (NULL == fs)
     return NULL;
 
-  uint64_t    name_size = NULL == name ? 0 : strlen(name);
-  vfs_node_t *node      = NULL;
+  vfs_node_t *node = NULL;
   fs_inode_t  inode;
 
-  // check the VFS node name size
-  if (name_size > NAME_MAX)
-    return NULL;
-
   // try to obtain the inode for the name
-  if (NULL != parent && fs_namei(parent->fs, vfs_node_is_fs_root(parent) ? NULL : &parent->inode, name, &inode) != 0) {
+  if (fs_namei(fs, NULL == parent ? NULL : &parent->inode, name, &inode) != 0) {
     vfs_debg("namei for \"%s\" failed on node 0x%p", name, parent);
     return NULL;
   }
@@ -55,18 +50,14 @@ vfs_node_t *vfs_node_new(vfs_node_t *parent, char *name, fs_t *fs) {
   // setup VFS node's contents
   bzero(node, sizeof(vfs_node_t));
   memcpy(&node->inode, &inode, sizeof(fs_inode_t));
-  memcpy(node->name, name, name_size);
-  node->name[name_size] = 0;
-  node->fs              = fs;
+  strncpy(node->name, name, NAME_MAX);
+  node->fs = fs;
 
   vfs_debg("adding a node to the VFS tree");
   pdebg("     |- Address: 0x%p (%s)", node, node->name);
   if (NULL != parent)
     pdebg("     |- Parent: 0x%p (%s)", parent, parent->name);
   pdebg("     `- Filesystem: 0x%p (%s)", node->fs, fs_name(node->fs));
-
-  // increase the reference counter for the node
-  node->ref_count++;
 
   // check if the node is the root
   if (NULL == (node->parent = parent))
@@ -78,20 +69,27 @@ vfs_node_t *vfs_node_new(vfs_node_t *parent, char *name, fs_t *fs) {
 }
 
 vfs_node_t *vfs_node_get(vfs_node_t *parent, char *name) {
+  vfs_node_t *cur = parent;
+
+  // if parent is NULL, return the root node
+  if (NULL == cur) {
+    cur = vfs_root;
+    goto end;
+  }
+
+  /*
+
+   * otherwise the check the name, and look for a node
+   * with the given name in the parent's child nodes
+
+  */
   if (NULL == name)
     return NULL;
 
-  if (NULL == parent && NULL == (parent = vfs_root))
-    return NULL;
-
-  vfs_node_t *cur = parent;
-
-  // see if we already have it as a child
+  // see if we have the node in our parent's child list
   __vfs_node_foreach_child(cur) {
-    if (streq(cur->name, name)) {
-      cur->ref_count++;
-      return cur;
-    }
+    if (streq(cur->name, name))
+      goto end;
   }
 
   /*
@@ -100,7 +98,12 @@ vfs_node_t *vfs_node_get(vfs_node_t *parent, char *name) {
    * create a new node for the child
 
   */
-  return vfs_node_new(parent, name, parent->fs);
+  cur = vfs_node_new(parent, name, parent->fs);
+
+end:
+  if (NULL != cur)
+    cur->ref_count++;
+  return cur;
 }
 
 int32_t vfs_node_put(vfs_node_t *node) {

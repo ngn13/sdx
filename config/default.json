@@ -6,6 +6,23 @@
     "value": true
   },
 
+  "task": [
+    {
+      "files_max": {
+        "desc": "Max allowed open files per task",
+        "type": "integer",
+        "value": 32
+      }
+    },
+    {
+      "stack_pages": {
+        "desc": "Default stack size for the task in pages",
+        "type": "integer",
+        "value": 4
+      }
+    }
+  ],
+
   "core": [
     {
       "gpt": {

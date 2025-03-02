@@ -5,7 +5,7 @@
 #define slist_foreach(head, type) for (type *cur = *head; NULL != cur; cur = cur->next)
 #define slist_is_end()            (cur->next == NULL)
 
-#define slist_add(head, entry, type)                                                                                   \
+#define slist_add_end(head, entry, type)                                                                               \
   do {                                                                                                                 \
     type *cur = NULL;                                                                                                  \
     if (NULL == (cur = *head))                                                                                         \
@@ -15,6 +15,12 @@
         ;                                                                                                              \
       cur->next = entry;                                                                                               \
     }                                                                                                                  \
+  } while (0)
+
+#define slist_add_start(head, entry, type)                                                                             \
+  do {                                                                                                                 \
+    entry->next = *head;                                                                                               \
+    *head       = entry;                                                                                               \
   } while (0)
 
 #define slist_del(head, entry, type)                                                                                   \

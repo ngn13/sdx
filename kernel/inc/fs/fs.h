@@ -39,9 +39,9 @@ typedef enum {
 
 typedef struct {
   fs_entry_type_t type;   // entry type
-  uint64_t        serial; // file serial (unique)
   uint64_t        size;   // size of the entry
   uint64_t        addr;   // address of the entry
+  uint64_t        serial; // file serial (unique)
   timestamp_t     ctime;  // creation time
   timestamp_t     atime;  // (last) access time
   timestamp_t     mtime;  // (last) modification time

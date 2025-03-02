@@ -150,8 +150,7 @@ int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, v
 
   switch (NULL == inode ? FS_ENTRY_TYPE_DIR : inode->type) {
   case FS_ENTRY_TYPE_DIR:
-    if ((err = fat32_entry_get(fs, NULL == inode ? fat32_data()->root_cluster : inode->addr, offset, size, buffer)) ==
-        -ERANGE)
+    if ((err = fat32_entry_get(fs, inode->addr, offset, size, buffer)) == -ERANGE)
       return 0; // we reached the end so we didn't read anything
     return err;
 
@@ -206,27 +205,45 @@ int64_t fat32_write(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, 
 }
 
 int32_t fat32_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode) {
-  if (NULL == fs || NULL == name || NULL == inode)
+  if (NULL == fs || NULL == inode)
     return -EINVAL;
 
   struct fat32_dir_entry entry;
-  uint64_t               dir_cluster = NULL == dir ? fat32_data()->root_cluster : dir->addr;
-  int32_t                err         = 0;
+  int32_t                err = 0;
 
-  if ((err = fat32_entry_from(fs, dir_cluster, name, &entry)) != 0) {
+  // clear the data in the inode
+  bzero(inode, sizeof(fs_inode_t));
+
+  // there is no entry for the root directory
+  if (NULL == dir) {
+    inode->type   = FS_ENTRY_TYPE_DIR;
+    inode->addr   = fat32_data()->root_cluster;
+    inode->serial = fs_inode_serial(fs, inode);
+
+    // FAT32 doesn't support permissions, give full perms
+    inode->mode =
+        MODE_USRR | MODE_USRW | MODE_USRE | MODE_GRPR | MODE_GRPW | MODE_GRPE | MODE_OTHR | MODE_OTHW | MODE_OTHE;
+
+    fat32_debg("obtained the root inode with serial %u", inode->serial);
+    return 0;
+  }
+
+  // obtain the file entry, which contains all the data we need
+  if ((err = fat32_entry_from(fs, dir->addr, name, &entry)) != 0) {
     fat32_debg("failed to obtain entry from name (\"%s\"): %s", name, strerror(err));
     return err;
   }
 
-  inode->type = entry.attr & FAT32_ATTR_DIRECTORY ? FS_ENTRY_TYPE_DIR : FS_ENTRY_TYPE_FILE;
-  inode->addr = fat32_entry_cluster(&entry);
-  inode->size = entry.size;
+  // setup the inode information
+  inode->type   = entry.attr & FAT32_ATTR_DIRECTORY ? FS_ENTRY_TYPE_DIR : FS_ENTRY_TYPE_FILE;
+  inode->addr   = fat32_entry_cluster(&entry);
+  inode->size   = entry.size;
+  inode->serial = fs_inode_serial(fs, inode);
 
   inode->ctime = fat32_entry_time_to_timestamp(&entry.creation_date, &entry.creation_time);
   inode->mtime = fat32_entry_time_to_timestamp(&entry.mod_date, &entry.mod_time);
   inode->atime = fat32_entry_time_to_timestamp(&entry.access_date, NULL);
-
-  inode->serial = fs_inode_serial(fs, inode);
+  inode->mode  = dir->mode;
 
   fat32_debg("obtained inode with serial %u for \"%s\"", inode->serial, name);
   return 0;

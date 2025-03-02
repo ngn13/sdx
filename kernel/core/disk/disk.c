@@ -7,9 +7,7 @@
 #include "util/math.h"
 #include "util/mem.h"
 
-#include "fs/vfs.h"
 #include "mm/heap.h"
-
 #include "config.h"
 
 #define DISK_DEFAULT_SECTOR_SIZE 512
@@ -34,7 +32,7 @@ disk_t *disk_add(disk_controller_t controller, void *data) {
   disk->data        = data;
   disk->controller  = controller;
   disk->sector_size = DISK_DEFAULT_SECTOR_SIZE;
-  slist_add(&disk_first, disk, disk_t);
+  slist_add_start(&disk_first, disk, disk_t);
 
   disk_info("Added a new disk device");
   pinfo("      |- Address: 0x%p", disk);
