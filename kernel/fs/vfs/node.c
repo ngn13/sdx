@@ -9,143 +9,165 @@
 #include "errno.h"
 
 vfs_node_t *vfs_root = NULL;
-#define vfs_node_foreach(node) for (node = node->child; node != NULL; node = node->sibling)
 
-vfs_node_t *vfs_node_new(char *name, fs_t *fs) {
-  vfs_node_t *new_node  = heap_alloc(sizeof(vfs_node_t));
-  uint64_t    name_size = NULL == name ? 0 : strlen(name);
+#define __vfs_node_foreach_child(node) for (node = node->child; node != NULL; node = node->sibling)
+#define __vfs_node_free(node)          heap_free(node)
 
-  if (name_size > NAME_MAX)
-    return NULL;
-
-  if (NULL == new_node) {
-    vfs_fail("failed to allocate memory for a new node");
-    return NULL;
-  }
-
-  bzero(new_node, sizeof(vfs_node_t));
-  memcpy(new_node->name, name, name_size);
-  new_node->name[name_size] = 0;
-  new_node->fs              = fs;
-  new_node->ref_count++;
-
-  vfs_debg("allocated a new node");
-  pdebg("     |- Address: 0x%p", new_node);
-  pdebg("     |- Filesystem: 0x%p (%s)", fs, fs_name(fs));
-  pdebg("     `- Name: %s", new_node->name);
-
-  return new_node;
-}
-
-int32_t vfs_node_add(vfs_node_t *node, vfs_node_t *child) {
-  if (NULL == child)
-    return -EINVAL;
-
-  child->parent = node;
-
-  if (NULL == node) {
-    vfs_root = child;
-    return 0;
-  }
-
-  vfs_node_t *trav = NULL;
-
-  if (NULL == (trav = node->child)) {
-    node->child = child;
-    return 0;
-  }
-
-  while (trav->sibling != NULL)
-    trav = trav->sibling;
-
-  trav->sibling = child;
-  return 0;
-}
-
-bool vfs_node_deleteable(vfs_node_t *node) {
-  if (!node->ref_count)
+bool __vfs_node_deleteable(vfs_node_t *node) {
+  // check the reference counter for the node
+  if (node->ref_count != 0)
     return false;
 
-  vfs_node_foreach(node) {
-    if (!vfs_node_deleteable(node))
+  // check if the child nodes are deletable
+  __vfs_node_foreach_child(node) {
+    if (!__vfs_node_deleteable(node))
       return false;
   }
 
   return true;
 }
 
-int32_t vfs_node_free(vfs_node_t *node) {
-  if (NULL == node)
-    return -EINVAL;
+vfs_node_t *vfs_node_new(vfs_node_t *parent, char *name, fs_t *fs) {
+  // check the arguments
+  if (NULL == fs)
+    return NULL;
 
-  // on free we should decrease the reference count
-  if (!node->ref_count)
-    node->ref_count--;
+  uint64_t    name_size = NULL == name ? 0 : strlen(name);
+  vfs_node_t *node      = NULL;
+  fs_inode_t  inode;
 
-  // is the node deleteable (does the node or childs have any refs)
-  if (!vfs_node_deleteable(node))
-    return -EINVAL;
+  // check the VFS node name size
+  if (name_size > NAME_MAX)
+    return NULL;
 
-  vfs_node_t *child = node->child, *pre = NULL;
-  int32_t     err = 0;
-
-  // free all the childs
-  while (NULL != child) {
-    pre   = child;
-    child = child->sibling;
-
-    if ((err = vfs_node_free(pre)) != 0)
-      return err;
+  // try to obtain the inode for the name
+  if (NULL != parent && fs_namei(parent->fs, vfs_node_is_fs_root(parent) ? NULL : &parent->inode, name, &inode) != 0) {
+    vfs_debg("namei for \"%s\" failed on node 0x%p", name, parent);
+    return NULL;
   }
 
-  // remove the parent reference
-  if (NULL == node->parent) {
-    vfs_root = NULL;
-    goto free;
+  // create a new VFS node for the name
+  if (NULL == (node = heap_alloc(sizeof(vfs_node_t)))) {
+    vfs_fail("failed to allocate memory for a new node");
+    return NULL;
   }
 
-  for (pre = NULL, child = node->parent->child; child != NULL; pre = child, child = child->sibling) {
-    if (child != node)
-      continue;
+  // setup VFS node's contents
+  bzero(node, sizeof(vfs_node_t));
+  memcpy(&node->inode, &inode, sizeof(fs_inode_t));
+  memcpy(node->name, name, name_size);
+  node->name[name_size] = 0;
+  node->fs              = fs;
 
-    if (NULL == pre)
-      node->parent->child = node->sibling;
-    else
-      pre->sibling = node->sibling;
-  }
+  vfs_debg("adding a node to the VFS tree");
+  pdebg("     |- Address: 0x%p (%s)", node, node->name);
+  if (NULL != parent)
+    pdebg("     |- Parent: 0x%p (%s)", parent, parent->name);
+  pdebg("     `- Filesystem: 0x%p (%s)", node->fs, fs_name(node->fs));
 
-free:
-  heap_free(node);
-  return 0;
+  // increase the reference counter for the node
+  node->ref_count++;
+
+  // check if the node is the root
+  if (NULL == (node->parent = parent))
+    return vfs_root = node;
+
+  // otherwise attach node to parent
+  node->sibling        = parent->child;
+  return parent->child = node;
 }
 
-vfs_node_t *vfs_node_get(vfs_node_t *node, char *name) {
+vfs_node_t *vfs_node_get(vfs_node_t *parent, char *name) {
   if (NULL == name)
     return NULL;
 
-  if (NULL == node && NULL == (node = vfs_root))
+  if (NULL == parent && NULL == (parent = vfs_root))
     return NULL;
+
+  vfs_node_t *cur = parent;
 
   // see if we already have it as a child
-  vfs_node_t *trav = node;
-  vfs_node_foreach(trav) if (strcmp(trav->name, name) == 0) return trav;
-
-  // no? lets see if we have it in the fs
-  vfs_node_t *new = NULL;
-
-  if ((new = vfs_node_new(name, node->fs)) == NULL)
-    return NULL;
-
-  if (fs_namei(node->fs, vfs_node_is_fs_root(node) ? NULL : &node->inode, name, &new->inode) != 0) {
-    if (vfs_node_is_fs_root(node))
-      vfs_debg("namei for \"%s\" failed on root node", name);
-    else
-      vfs_debg("namei for \"%s\" failed on non-root node", name);
-    vfs_node_free(new);
-    return NULL;
+  __vfs_node_foreach_child(cur) {
+    if (streq(cur->name, name)) {
+      cur->ref_count++;
+      return cur;
+    }
   }
 
-  // if so lets add it as a child
-  vfs_node_add(node, new);
-  return new;
+  /*
+
+   * if there is no child node with the given name,
+   * create a new node for the child
+
+  */
+  return vfs_node_new(parent, name, parent->fs);
+}
+
+int32_t vfs_node_put(vfs_node_t *node) {
+  if (NULL == node)
+    return -EINVAL;
+
+  vfs_node_t *trav = NULL, *prev = NULL;
+  int32_t     err = 0;
+
+  // decrease the reference counter for the node
+  if (node->ref_count != 0)
+    node->ref_count--;
+
+  // check if we can delete the node
+  if (!__vfs_node_deleteable(node))
+    return -EBUSY;
+
+  vfs_debg("deleting a node from the VFS tree");
+  pdebg("     |- Address: 0x%p (%s)", node, node->name);
+  if (NULL != node->parent)
+    pdebg("     |- Parent: 0x%p (%s)", node->parent, node->parent->name);
+  pdebg("     `- Filesystem: 0x%p (%s)", node->fs, fs_name(node->fs));
+
+  // if so, first delete all the childs
+  for (trav = node->child; NULL != trav;) {
+    prev = trav;
+    trav = trav->sibling;
+
+    if ((err = vfs_node_put(trav)) != 0)
+      return err;
+  }
+
+  /*
+
+   * remove the parent's reference to the node, there are two
+   * cases here, the node maybe the root node, in this case we
+   * just remove the root node's reference
+
+   * or the parent maybe a non-root node, in this case we go through
+   * parent's child node list and remove ourselves from the list
+
+  */
+  if (NULL == node->parent) {
+    vfs_root = NULL;
+    goto free_node;
+  }
+
+  /*
+
+   * or the parent maybe a non-root node, in this case we go through
+   * parent's child node list and remove ourselves from the list
+
+  */
+  for (trav = node->parent->child; NULL != trav; prev = trav, trav = trav->sibling) {
+    // continue through the loop till we find ourselves
+    if (trav != node)
+      continue;
+
+    if (NULL == prev)
+      // if we are the first child, remove the parent's reference
+      node->parent->child = trav->sibling;
+    else
+      // otherwise remove the previous siblings reference
+      prev->sibling = trav->sibling;
+  }
+
+free_node:
+  __vfs_node_free(node);
+  return 0;
 }

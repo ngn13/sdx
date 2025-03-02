@@ -1,5 +1,7 @@
 #pragma once
 
+#include "fs/vfs.h"
+
 #include "mm/region.h"
 #include "mm/heap.h"
 
@@ -45,6 +47,15 @@ typedef struct task_waitq {
   struct task_waitq *next;
 } task_waitq_t;
 
+// task files (file descriptors)
+#define TASK_FILES_MAX (32)
+
+typedef struct {
+  vfs_node_t *node;   // VFS node for this file
+  int32_t     flags;  // flags used to open the file
+  uint64_t    offset; // file offset (position)
+} task_file_t;
+
 // task signal handler
 typedef void (*task_sighand_t)(int32_t);
 
@@ -87,6 +98,9 @@ typedef struct task {
 
   task_waitq_t *waitq_head; // wait queue head
   task_waitq_t *waitq_tail; // wait queue tail
+
+  int32_t      fd_last;               // last used file descriptor
+  task_file_t *files[TASK_FILES_MAX]; // open files
 
   int32_t term_code; // termination code (signal)
   int32_t exit_code; // exit code for the task

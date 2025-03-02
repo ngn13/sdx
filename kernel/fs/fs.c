@@ -1,11 +1,12 @@
 #include "util/printk.h"
 #include "util/string.h"
 #include "util/mem.h"
-#include "mm/heap.h"
 
 #include "fs/fs.h"
 #include "fs/fat32.h"
 #include "fs/devfs.h"
+
+#include "mm/heap.h"
 
 #include "config.h"
 #include "types.h"
@@ -90,6 +91,10 @@ success:
   return new_fs;
 }
 
+const char *fs_name(fs_t *fs) {
+  return fs_type_name(fs->type);
+}
+
 int32_t fs_is_rootfs(fs_t *fs) {
   if (NULL == fs)
     return -EINVAL;
@@ -121,8 +126,42 @@ int32_t fs_is_rootfs(fs_t *fs) {
   return 0; // no? then we are good
 }
 
+int32_t fs_default() {
+  return 0;
+}
+
+int32_t fs_open(struct fs *fs, fs_inode_t *inode) {
+  if (NULL != fs->ops.open)
+    return fs->ops.open(fs, inode);
+  return -ENOSYS;
+}
+
+int32_t fs_close(struct fs *fs, fs_inode_t *inode) {
+  if (NULL != fs->ops.close)
+    return fs->ops.close(fs, inode);
+  return -ENOSYS;
+}
+
+int64_t fs_read(struct fs *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer) {
+  if (NULL != fs->ops.read)
+    return fs->ops.read(fs, inode, offset, size, buffer);
+  return -ENOSYS;
+}
+
+int64_t fs_write(struct fs *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer) {
+  if (NULL != fs->ops.write)
+    return fs->ops.write(fs, inode, offset, size, buffer);
+  return -ENOSYS;
+}
+
+int32_t fs_namei(struct fs *fs, fs_inode_t *dir, char *name, fs_inode_t *inode) {
+  if (NULL != fs->ops.namei)
+    return fs->ops.namei(fs, dir, name, inode);
+  return -ENOSYS;
+}
+
 void fs_free(fs_t *fs) {
   fs_debg("freeing filesystem 0x%p", fs);
-  fs->free(fs);
+  fs->ops.free(fs);
   heap_free(fs);
 }

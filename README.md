@@ -2,7 +2,7 @@
 
 ![test workflow status](https://img.shields.io/github/actions/workflow/status/ngn13/sdx/test.yml?label=tests)
 
-a simple, work-in-progress UNIX-like hobby operating system for `x86_64` architecture, written in C and
+a simple, work-in-progress UNIX-like hobby operating system for `x86-64` architecture, written in C and
 assembly and uses GRUB multiboot2
 
 to be clear i have absolutely no idea what i am doing, so i'm learning stuff along the way, which is the

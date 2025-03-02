@@ -28,6 +28,8 @@ struct user_call user_calls[] = {
     {.code = 1, .func = user_fork},
     {.code = 2, .func = user_exec},
     {.code = 3, .func = user_wait},
+    {.code = 4, .func = user_open},
+    {.code = 5, .func = user_close},
     {.func = NULL},
 };
 
@@ -84,7 +86,7 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   user_debg("argv: 0x%p", argv);
   user_debg("envp: 0x%p", envp);
 
-  vfs_node_t *node = vfs_get(path);
+  vfs_node_t *node = NULL;
   region_t   *cur  = NULL;
   fmt_t       fmt;
 
@@ -92,11 +94,9 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   void   *stack_argv = NULL, *stack_envp = NULL;
   int32_t err = 0;
 
-  // see if we found the node
-  if (NULL == node) {
-    err = -ENOENT;
+  // try to open the VFS node
+  if ((err = vfs_open(&node, path)) != 0)
     goto end;
-  }
 
   // we cannot execute a directory
   if (vfs_node_is_directory(node)) {
@@ -121,6 +121,12 @@ int32_t user_exec(char *path, char *argv[], char *envp[]) {
   }
 
   user_debg("entry for the new executable: 0x%x", fmt.entry);
+
+  // close the VFS node
+  if ((err = vfs_close(node)) != 0) {
+    user_debg("failed to close the %s VFS node", path);
+    goto end;
+  }
 
   /*
 
@@ -296,4 +302,79 @@ end:
 
   // return the PID
   return pid;
+}
+
+int32_t user_open(char *path, int32_t flags, mode_t mode) {
+  vfs_node_t  *node = NULL;
+  task_file_t *file = NULL;
+  int32_t      fd   = -1;
+
+  // try to obtain the node at the path
+  if ((fd = vfs_open(&node, path)) != 0)
+    goto end;
+
+  // TODO: check permissions (mode)
+
+  // if we reached the last file descriptor, reset it
+  if (task_current->fd_last >= TASK_FILES_MAX)
+    task_current->fd_last = 0;
+
+  // get the next file descriptor
+  for (fd = task_current->fd_last; TASK_FILES_MAX > fd; fd++)
+    if (NULL == task_current->files[fd])
+      break;
+
+  // if there's no available file descriptor, return an error
+  if (fd >= TASK_FILES_MAX) {
+    fd = -EMFILE;
+    goto end;
+  }
+
+  // update the last file descriptor
+  if (fd > task_current->fd_last)
+    task_current->fd_last = fd;
+
+  // create a new file object
+  if (NULL == (file = heap_alloc(sizeof(task_file_t)))) {
+    fd = -ENOMEM;
+    goto end;
+  }
+
+  // setup the file object
+  bzero(file, sizeof(task_file_t));
+  file->node  = node;
+  file->flags = flags;
+
+  // update the file pointer at the file descriptor index
+  task_current->files[fd] = file;
+
+end:
+  if (fd < 0) {
+    vfs_close(node);
+    heap_free(file);
+  }
+
+  return fd;
+}
+
+int32_t user_close(int32_t fd) {
+  // check the file descriptor
+  if (fd >= TASK_FILES_MAX || fd < 0)
+    return -EBADF;
+
+  // check the file the file descriptor indexes
+  if (NULL == task_current->files[fd])
+    return -EBADFD;
+
+  // obtain the file pointer & remove the pointer
+  task_file_t *file       = task_current->files[fd];
+  task_current->files[fd] = NULL;
+
+  // close the VFS node
+  if ((fd = vfs_close(file->node)) != 0)
+    return fd;
+
+  // free the file object
+  heap_free(file);
+  return 0;
 }

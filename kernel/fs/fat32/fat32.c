@@ -1,4 +1,5 @@
 #include "fs/fat32.h"
+#include "fs/fs.h"
 #include "fs/vfs.h"
 
 #include "util/string.h"
@@ -129,9 +130,14 @@ int32_t fat32_new(fs_t *fs) {
   pdebg("       |- Table start sector: %u", fat32_data()->fat_sector);
   pdebg("       `- Root directory start cluster: %u", fat32_data()->root_cluster);
 
-  fs->namei = fat32_namei;
-  fs->read  = fat32_read;
-  fs->free  = fat32_free;
+  // setup all the operations
+  bzero(&fs->ops, sizeof(fs->ops));
+  fs->ops.open  = fs_default;
+  fs->ops.close = fs_default;
+  fs->ops.read  = fat32_read;
+  fs->ops.write = fat32_write;
+  fs->ops.namei = fat32_namei;
+  fs->ops.free  = fat32_free;
 
   return 0;
 }
@@ -193,6 +199,10 @@ int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, v
   }
 
   return -EINVAL;
+}
+
+int64_t fat32_write(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer) {
+  return -ENOSYS;
 }
 
 int32_t fat32_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode) {

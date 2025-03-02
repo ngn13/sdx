@@ -8,3 +8,5 @@ _Noreturn void exit(int32_t code);
 pid_t          fork();
 int32_t        exec(char *path, char *argv[], char *envp[]);
 pid_t          wait(int32_t *status);
+int32_t        open(char *path, int32_t flags, mode_t mode);
+int32_t        close(int32_t fd);

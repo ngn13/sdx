@@ -1,4 +1,3 @@
-#include "mm/region.h"
 #include "sched/sched.h"
 #include "sched/task.h"
 
@@ -80,6 +79,12 @@ void task_free(task_t *task) {
   // clear the signal & wait queue
   task_signal_clear(task);
   task_waitq_clear(task);
+
+  // close all the files
+  for (uint8_t fd = 0; fd < TASK_FILES_MAX; fd++) {
+    vfs_close(task->files[fd]->node);
+    heap_free(task->files[fd]);
+  }
 
   // free the VMM
   vmm_free(task->vmm);

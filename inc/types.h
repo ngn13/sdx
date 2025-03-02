@@ -18,7 +18,8 @@ typedef __builtin_va_list va_list;
 #define va_arg(ap, type)    __builtin_va_arg(ap, type)
 #define va_copy(dest, src)  __builtin_va_copy(dest, src)
 
-typedef signed int pid_t;
+typedef signed short mode_t;
+typedef signed int   pid_t;
 typedef unsigned char bool;
 
 #endif
