@@ -5,15 +5,15 @@
 .section .text
 .code64
 
-.type _user_handler, @function
+.type sys_calls,      @object
+.type sys_handler,    @function
 .type task_stack_get, @function
-.type user_calls, @object
 
-.global _user_handler
+.global sys_handler
+.extern sys_calls // see core/user.c
 .extern task_stack_get // see sched/stack.c
-.extern user_calls // see core/user.c
 
-_user_handler:
+sys_handler:
   /*
 
    * currently we are operating on the user stack
@@ -25,12 +25,13 @@ _user_handler:
   push_all_save_ret
 
   // save the syscall number
-  mov %rax, %r9
+  mov %rax, %r8
 
-  // also first 3 arguments needs to preserved for the handler call
+  // also first 4 arguments needs to preserved for the handler call
   mov %rdi, %r12
   mov %rsi, %r11
   mov %rdx, %r10
+  mov %rcx, %r9
 
   // now lets get the kernel stack
   mov task_current, %rdi
@@ -45,7 +46,7 @@ _user_handler:
   mov %rax, %rsp
 
   // loop through user_calls
-  mov $user_calls, %r15
+  mov $syscalls, %r15
 
   .Luser_handler_check_call:
     mov $-ENOSYS, %r14
@@ -58,13 +59,14 @@ _user_handler:
     mov (%r15), %r14
     add $16, %r15
 
-    cmp %r14, %r9
+    cmp %r14, %r8
     jne .Luser_handler_check_call
 
     // restore argument registers
     mov %r12, %rdi
     mov %r11, %rsi
     mov %r10, %rdx
+    mov %r9,  %rcx
 
     call *%r13
 

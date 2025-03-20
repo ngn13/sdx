@@ -62,15 +62,21 @@ typedef struct {
  * interact with the filesystems
 
 */
+
 typedef enum {
-  FS_TYPE_DETECT = 0,
-  FS_TYPE_FAT32  = 1,
-  FS_TYPE_DEVFS  = 2,
-  // FS_TYPE_PROCFS = 3,
+  FS_TYPE_FAT32 = 1,
+  FS_TYPE_DEVFS,
+  // FS_TYPE_PROCFS,
 } fs_type_t;
 
-#define FS_TYPE_DETECT_FIRST (FS_TYPE_FAT32) // first non-virtual filesystem
-#define FS_TYPE_DETECT_LAST  (FS_TYPE_FAT32) // last non-virtual filesystem
+#define FS_TYPE_DETECT  (0) // should be used to auto-detect the filesystem
+#define FS_TYPE_INVALID (0) // invalid filesystem number
+
+#define FS_TYPE_MIN (FS_TYPE_FAT32) // first filesystem type
+#define FS_TYPE_MAX (FS_TYPE_DEVFS) // last filesystem type
+
+#define FS_TYPE_DETECT_FIRST (FS_TYPE_FAT32) // first detectable (non-virtual) filesystem
+#define FS_TYPE_DETECT_LAST  (FS_TYPE_FAT32) // last detectable (non-virtual) filesystem
 
 typedef struct fs {
   fs_type_t          type;
@@ -80,8 +86,8 @@ typedef struct fs {
   struct {
     int32_t (*open)(struct fs *fs, fs_inode_t *inode);
     int32_t (*close)(struct fs *fs, fs_inode_t *inode);
-    int64_t (*read)(struct fs *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer);
-    int64_t (*write)(struct fs *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer);
+    int64_t (*read)(struct fs *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, void *buffer);
+    int64_t (*write)(struct fs *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, void *buffer);
     int32_t (*namei)(struct fs *fs, fs_inode_t *dir, char *name, fs_inode_t *inode);
     void (*free)(struct fs *fs);
   } ops;
@@ -99,10 +105,12 @@ typedef struct fs {
  * we are working with
 
 */
-fs_t *fs_new(fs_type_t type, disk_part_t *part); // creates a new filesystem using the specified type and the partition
-const char *fs_name(fs_t *fs);                   // get filesystem type name
-int32_t     fs_is_rootfs(fs_t *fs);              // checks provided fs is a valid root file system
-int32_t     fs_default();                        // default filesystem function
+int32_t     fs_new(fs_t **fs, fs_type_t type,
+        disk_part_t *part);            // creates a new filesystem using the specified type and the partition
+const char *fs_name(fs_t *fs);         // get filesystem name from type
+fs_type_t   fs_type(const char *name); // get filesystem type from name
+int32_t     fs_is_rootfs(fs_t *fs);    // checks provided fs is a valid root file system
+int32_t     fs_default();              // default filesystem function
 #define fs_sector_size(fs) (NULL == fs->part ? 0 : fs->part->disk->sector_size)
 
 // macros for calling fs functions defined in fs_t

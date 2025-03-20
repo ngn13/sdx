@@ -31,9 +31,9 @@ jobs:
 
       - name: Run with QEMU
         run: |
-          (./scripts/qemu.sh --no-display --serial-log --log &)
+          (./scripts/qemu.sh --no-display --serial-log &> /dev/null &)
           sleep 20 && killall -9 qemu-system-x86_64
-          cat qemu.log
+          cat serial.log
 
       - name: 'Run test #1'
         run: ./scripts/test.sh 1

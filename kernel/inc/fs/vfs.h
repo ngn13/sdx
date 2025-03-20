@@ -39,6 +39,8 @@ typedef struct vfs_node {
   fs_inode_t       inode;                    // inode for the node
   char             name[NAME_MAX + 1];       // name of the node
   uint64_t         ref_count;                // reference (pointer) counter
+  fs_t            *mount_fs;                 // fileystem the node is mounted to
+  fs_inode_t       mount;                    // inode the node is mounted to
   struct vfs_node *parent, *child, *sibling; // parent, child and sibling pointers
 } vfs_node_t;
 
@@ -46,8 +48,9 @@ extern vfs_node_t *vfs_root;              // root VFS node (/)
 #define vfs_has_root() (NULL != vfs_root) // checks if we have a root node
 
 // fs/vfs/node.c
-#define vfs_node_is_directory(node) (node->inode.type == FS_ENTRY_TYPE_DIR)
-#define vfs_node_is_fs_root(node)   (NULL == node->parent || node->fs != node->parent->fs)
+#define vfs_node_is_directory(node)  (node->inode.type == FS_ENTRY_TYPE_DIR)
+#define vfs_node_is_mountpoint(node) (NULL != node->mount_fs)
+#define vfs_node_is_fs_root(node)    (NULL == node->parent || node->fs != node->parent->fs)
 
 #define vfs_node_open(node)  fs_open((node)->fs, &(node)->inode)
 #define vfs_node_close(node) fs_close((node)->fs, &(node)->inode)
@@ -63,5 +66,6 @@ int64_t vfs_read(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer)
 int64_t vfs_write(vfs_node_t *node, uint64_t offset, uint64_t size, void *buffer); // write to a node
 int32_t vfs_mount(char *path, fs_t *fs);                                           // mount a filesystem to a path
 int32_t vfs_umount(char *path);                                                    // unmount a filesystem from a path
+fs_t   *vfs_fs(char *path); // get the filesystem of the node at the given path
 
 #endif

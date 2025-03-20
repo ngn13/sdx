@@ -86,7 +86,7 @@ int32_t  fat32_entry_from(fs_t *fs, uint64_t cluster, char *name, struct fat32_d
 
 // fs/fat32/fat32.c
 int32_t fat32_new(fs_t *fs);
-int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer);
-int64_t fat32_write(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer);
+int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, void *buffer);
+int64_t fat32_write(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, void *buffer);
 int32_t fat32_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode);
 void    fat32_free(fs_t *fs);

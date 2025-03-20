@@ -142,8 +142,8 @@ int32_t fat32_new(fs_t *fs) {
   return 0;
 }
 
-int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer) {
-  if (NULL == fs || NULL == buffer || size <= 0)
+int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, void *buffer) {
+  if (NULL == fs || NULL == buffer || size == 0)
     return -EINVAL;
 
   int64_t err = 0;
@@ -200,7 +200,7 @@ int64_t fat32_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, v
   return -EINVAL;
 }
 
-int64_t fat32_write(fs_t *fs, fs_inode_t *inode, uint64_t offset, int64_t size, void *buffer) {
+int64_t fat32_write(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, void *buffer) {
   return -ENOSYS;
 }
 

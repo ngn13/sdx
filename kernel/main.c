@@ -25,22 +25,23 @@
 #include "boot/multiboot.h"
 #include "boot/boot.h"
 
-#include "core/im.h"
-#include "core/pci.h"
-#include "core/pic.h"
-#include "core/serial.h"
-#include "core/user.h"
-
-#include "sched/sched.h"
-#include "sched/task.h"
-
 #include "util/string.h"
 #include "util/printk.h"
 #include "util/panic.h"
 
+#include "sched/sched.h"
+#include "sched/task.h"
+
+#include "core/serial.h"
+#include "core/pci.h"
+#include "core/pic.h"
+#include "core/tty.h"
+#include "core/im.h"
+
 #include "mm/pmm.h"
 #include "mm/vmm.h"
 
+#include "syscall.h"
 #include "fs/vfs.h"
 #include "video.h"
 
@@ -108,6 +109,9 @@ void entry() {
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
 
+  // register filesystem devices
+  serial_register();
+
   /*
 
    * look for an available root filesystem and mount it
@@ -129,7 +133,7 @@ void entry() {
 
   while ((part = disk_next(part)) != NULL) {
     // attempt to create a filesystem from the partition
-    if ((rootfs = fs_new(FS_TYPE_DETECT, part)) == NULL)
+    if (fs_new(&rootfs, FS_TYPE_DETECT, part) != 0)
       continue;
 
     // check if the filesystem can be used a root filesystem
@@ -157,10 +161,10 @@ void entry() {
    * we'll need them before starting userland processes
 
   */
-  if ((err = user_setup()) != 0)
+  if ((err = sys_setup()) != 0)
     panic("Failed to setup the user calls: %s", strerror(err));
 
   // execute the init program
-  if ((err = user_exec("/init", NULL, NULL)) < 0)
+  if ((err = sys_exec("/init", NULL, NULL)) < 0)
     panic("Failed to execute init: %s", strerror(err));
 }

@@ -2,9 +2,7 @@
 #include "util/lock.h"
 
 void spinlock_acquire(spinlock_t *lock) {
-  while (*lock & 1) {
-    sched_state(TASK_STATE_WAIT);
-    sched();
-  }
+  while (spinlock_locked(lock))
+    sched_wait();
   __asm__("lock bts $0, (%0)" ::"r"(lock));
 }

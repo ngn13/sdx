@@ -12,3 +12,5 @@ int32_t        open(char *path, int32_t flags, mode_t mode);
 int32_t        close(int32_t fd);
 int64_t        read(int32_t fd, void *buf, uint64_t size);
 int64_t        write(int32_t fd, void *buf, uint64_t size);
+int32_t        mount(char *source, char *target, char *filesystem, int32_t flags);
+int32_t        umount(char *target);

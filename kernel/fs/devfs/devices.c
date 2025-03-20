@@ -17,33 +17,24 @@ struct devfs_device *devfs_device_next(struct devfs_device *dev) {
   return dev->next;
 }
 
-struct devfs_device *devfs_device_find(const char *name, uint64_t *index) {
+struct devfs_device *devfs_device_from_name(const char *name) {
   if (NULL == name)
     return NULL;
 
-  // reset the index
-  if (NULL != index)
-    *index = 0;
-
   // search the device list
   slist_foreach(&head, struct devfs_device) {
-    // check the name
     if (streq((char *)cur->name, (char *)name))
       return cur;
-
-    // increase the index
-    if (NULL != index)
-      (*index)++;
   }
 
   return NULL;
 }
 
-struct devfs_device *devfs_device_at(uint64_t index) {
+struct devfs_device *devfs_device_from_addr(int32_t addr) {
+  // search the device list
   slist_foreach(&head, struct devfs_device) {
-    if (index <= 0)
+    if (cur->addr == addr)
       return cur;
-    index--;
   }
 
   return NULL;
@@ -53,22 +44,28 @@ int32_t devfs_device_register(const char *name, devfs_ops_t *ops, mode_t mode) {
   if (NULL == name || NULL == ops)
     return -EINVAL;
 
+  // make sure there is no other device with the same name
+  if (NULL != devfs_device_from_name(name))
+    return -EFAULT;
+
+  // allocate the device structure
   struct devfs_device *dev = heap_alloc(sizeof(struct devfs_device));
 
   // setup the device
   bzero(dev, sizeof(struct devfs_device));
   strncpy((char *)dev->name, name, NAME_MAX);
+  dev->addr = NULL == head ? 1 : head->addr + 1;
   dev->ops  = ops;
   dev->mode = mode;
 
   // add device to the list
   slist_add_start(&head, dev, struct devfs_device);
 
-  return 0;
+  return dev->addr;
 }
 
 int32_t devfs_device_unregister(const char *name) {
-  struct devfs_device *dev = devfs_device_find(name, NULL);
+  struct devfs_device *dev = devfs_device_from_name(name);
 
   if (NULL == dev)
     return -EFAULT;

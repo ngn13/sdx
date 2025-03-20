@@ -1,5 +1,6 @@
-#include "fs/vfs.h"
 #include "util/string.h"
+#include "util/mem.h"
+#include "fs/vfs.h"
 
 #include "types.h"
 #include "errno.h"
@@ -140,29 +141,44 @@ int32_t vfs_mount(char *path, fs_t *fs) {
 
     */
     node->ref_count++;
-
-    vfs_info("mounted node 0x%p to root", node);
-    return 0;
   }
 
-  // get the mount point
-  if ((node = __vfs_find(path)) == NULL) {
-    vfs_debg("failed to get the mount point");
-    return -ENOENT;
+  else {
+    // get the mount point
+    if ((node = __vfs_find(path)) == NULL) {
+      vfs_debg("failed to get the mount point");
+      return -ENOENT;
+    }
+
+    // you can only mount to a directory
+    if (!vfs_node_is_directory(node)) {
+      vfs_debg("mount point is not a directory");
+      return -EINVAL;
+    }
   }
 
-  // you can only mount to a directory
-  if (!vfs_node_is_directory(node)) {
-    vfs_debg("mount point is not a directory");
-    return -EINVAL;
+  // first save the inode we are mounting on
+  memcpy(&node->inode, &node->mount, sizeof(node->inode));
+
+  // then obtain the new inode for the filesystem
+  if ((err = fs_namei(fs, NULL, NULL, &node->inode)) != 0) {
+    vfs_debg("failed to obtain the root inode");
+    vfs_node_put(node);
+    return err;
   }
 
-  // if everything is good, do the mount
-  node->fs = fs;
+  // switch to the new filesystem for the mount
+  node->mount_fs = node->fs;
+  node->fs       = fs;
+
+  vfs_info("mounted node 0x%p to %s", node, path);
   return 0;
 }
 
 int32_t vfs_umount(char *path) {
+  if (NULL == path)
+    return -EINVAL;
+
   vfs_node_t *node = NULL;
 
   // get the VFS node at the given path
@@ -172,11 +188,35 @@ int32_t vfs_umount(char *path) {
   }
 
   // check if VFS node is a mount point
-  if (!vfs_node_is_fs_root(node)) {
+  if (!vfs_node_is_fs_root(node) || !vfs_node_is_mountpoint(node)) {
     vfs_debg("node 0x%p is not a vaild mount point", node);
     return -EINVAL;
   }
 
+  // copy back the old mount point's inode and fs
+  memcpy(&node->mount, &node->inode, sizeof(node->mount));
+  node->fs = node->mount_fs;
+
+  // clear the mount point data
+  bzero(&node->mount, sizeof(node->mount));
+  node->mount_fs = NULL;
+
   vfs_node_put(node);        // __vfs_find()
   return vfs_node_put(node); // vfs_mount()
+}
+
+fs_t *vfs_fs(char *path) {
+  if (NULL == path)
+    return NULL;
+
+  // get the node at the given path
+  vfs_node_t *node = __vfs_find(path);
+
+  // check if the node actually exists
+  if (NULL == node)
+    return NULL;
+
+  // return the filesystem of the node
+  vfs_node_put(node); // __vfs_find()
+  return node->fs;
 }

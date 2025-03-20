@@ -35,3 +35,10 @@ int64_t read(int32_t fd, void *buf, uint64_t size) {
 int64_t write(int32_t fd, void *buf, uint64_t size) {
   return syscall(7, fd, buf, size);
 }
+int32_t mount(char *source, char *target, char *filesystem, int32_t flags) {
+  return syscall(8, source, target, filesystem, flags);
+}
+
+int32_t umount(char *target) {
+  return syscall(9, target);
+}

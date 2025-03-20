@@ -22,12 +22,12 @@ fi
 
 opt_serial_log=0 # logging serial output to a file is disabled, enable with --serial-log
 opt_display=1    # video display is enabled, disable video display with --no-display
+opt_int=1        # display CPU interrupts, hide them with the option --no-int
 opt_gtk=1        # using GTK display, switch to nographic option with --no-gtk
 opt_log=0        # logging stdout and stderr is disabled, enable with --log
 
 qemu_args=(
   -s
-  -d int,cpu_reset
   -no-shutdown
   -no-reboot
   -machine q35 -m 256
@@ -48,6 +48,10 @@ for arg in "$@"; do
       opt_gtk=0
       ;;
 
+    "--no-int")
+      opt_int=0
+      ;;
+
     "--log")
       opt_log=1
       ;;
@@ -59,8 +63,15 @@ for arg in "$@"; do
   esac
 done
 
+if [ $opt_int -eq 1 ]; then
+  qemu_args+=(-d int,cpu_reset)
+fi
+
 if [ $opt_serial_log -eq 0 ]; then
-  qemu_args+=(-serial mon:stdio)
+  qemu_args+=(
+    #-serial mon:stdio
+    -serial stdio
+  )
 else
   qemu_args+=(
     -chardev stdio,id=char0,mux=on,logfile="${SERIALLOG}",signal=off
