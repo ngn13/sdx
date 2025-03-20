@@ -21,8 +21,8 @@ matches=(
   'PCI: enumerated \d+ devices'                                          # test 4: PCI
   'AHCI: HBA at 0[xX][0-9a-fA-F]+ supports version'                      # test 5: AHCI
   'Disk: loaded \d+ GPT partitions'                                      # test 6: GPT
-  'VFS: mounted node 0[xX][0-9a-fA-F]+ to root'                          # test 7: mount
-  'User: \(1:user_exit\) exiting with code: 0'                           # test 8: init
+  'VFS: mounted node 0[xX][0-9a-fA-F]+ to /'                             # test 7: mount
+  'Sys: \(1:sys_exec\) executing the new binary'                         # test 8: init
 )
 
 _test_match() {
