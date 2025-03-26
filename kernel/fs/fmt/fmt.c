@@ -34,7 +34,7 @@ int32_t fmt_load(vfs_node_t *node, fmt_t *fmt) {
   for (; cur->name != NULL; cur++) {
     // attempt to load the node using the current loader
     if ((err = cur->load(node, fmt)) == 0) {
-      fmt_info("%s loader successfuly loaded 0x%p", cur->name, node);
+      fmt_info("%s loader successfully loaded 0x%p", cur->name, node);
       return 0;
     }
 

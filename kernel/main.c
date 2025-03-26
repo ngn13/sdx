@@ -36,6 +36,7 @@
 #include "core/serial.h"
 #include "core/pci.h"
 #include "core/pic.h"
+#include "core/ps2.h"
 #include "core/tty.h"
 #include "core/im.h"
 
@@ -117,7 +118,12 @@ void entry() {
     pfail("Failed to load ACPI: %s", strerror(err));
 
   // initialize peripheral component interconnect (PCI) devices
-  pci_init();
+  if ((err = pci_init()) != 0)
+    pfail("Failed to initialize PCI: %s", strerror(err));
+
+  // initialize PS/2 controller & devices
+  if ((err = ps2_init()) != 0)
+    pfail("Failed to initialize PS/2: %s", strerror(err));
 
   // register filesystem devices
   if ((err = serial_register()) != 0)

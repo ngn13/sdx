@@ -92,6 +92,6 @@ int32_t pci_device_init(pci_device_t *d);                      // init a device,
 #define pci_device_read16(d, o) pci_read16(d->bus, d->slot, d->func, o)
 #define pci_device_read8(d, o)  pci_read8(d->bus, d->slot, d->func, o)
 
-void pci_init();                                          // initialize PCI devices
-void pci_enum();                                          // enumerate the PCI devices
-bool pci_exsits(uint8_t bus, uint8_t slot, uint8_t func); // check if a device exists at specific address
+int32_t pci_init();                                          // initialize PCI devices
+void    pci_enum();                                          // enumerate the PCI devices
+bool    pci_exsits(uint8_t bus, uint8_t slot, uint8_t func); // check if a device exists at specific address

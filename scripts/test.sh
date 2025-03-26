@@ -15,15 +15,16 @@ if [ ! -f "${SERIALLOG}" ]; then
 fi
 
 matches=(
-  'Serial: enumerated \d+ ports'                                         # test 1: serial
-  'PMM: bitmapping 0[xX][0-9a-fA-F]+ - 0[xX][0-9a-fA-F]+ with \d+ bytes' # test 2: PMM
-  'Sched: created the main task: 0[xX][0-9a-fA-F]+'                      # test 3: scheduler
-  'ACPI: loaded version \d+.\d+'                                         # test 4: ACPI
-  'PCI: enumerated \d+ devices'                                          # test 5: PCI
-  'AHCI: HBA at 0[xX][0-9a-fA-F]+ supports version'                      # test 6: AHCI
-  'Disk: loaded \d+ GPT partitions'                                      # test 7: GPT
-  'VFS: mounted node 0[xX][0-9a-fA-F]+ to /'                             # test 8: mount
-  'Sys: \(1:sys_exec\) executing the new binary'                         # test 9: init
+  'Serial: enumerated \d+ ports'                                         # test 1 : serial
+  'PMM: bitmapping 0[xX][0-9a-fA-F]+ - 0[xX][0-9a-fA-F]+ with \d+ bytes' # test 2 : PMM
+  'Sched: created the main task: 0[xX][0-9a-fA-F]+'                      # test 3 : scheduler
+  'ACPI: loaded version \d+.\d+'                                         # test 4 : ACPI
+  'PCI: enumerated \d+ devices'                                          # test 5 : PCI
+  'AHCI: HBA at 0[xX][0-9a-fA-F]+ supports version'                      # test 6 : AHCI
+  'Disk: loaded \d+ GPT partitions'                                      # test 7 : GPT
+  'PS/2: successfully tested \d+ ports'                                  # test 8 : PS/2
+  'VFS: mounted node 0[xX][0-9a-fA-F]+ to /'                             # test 9 : mount
+  'Sys: \(1:sys_exec\) executing the new binary'                         # test 10: init
 )
 
 _test_match() {
