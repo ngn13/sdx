@@ -3,8 +3,10 @@ DESTDIR  = $(abspath dist)
 CROSSDIR = /opt/cross/bin
 
 # (all) source files
-SRCS  = $(shell find . -type f -name '*.c')
-SRCS += $(shell find . -type f -name '*.h')
+PYSRCS = $(shell find . -type f -name '*.py')
+CSRCS  = $(shell find . -type f -name '*.c')
+HSRCS  = $(shell find . -type f -name '*.h')
+SSRCS  = $(shell find . -type f -name '*.S')
 
 # compiler, linker and archiver
 CC = $(CROSSDIR)/x86_64-elf-gcc
@@ -73,6 +75,9 @@ config:
 	cp config/default.json config/config.json
 
 format:
-	clang-format -i -style=file $(SRCS)
+	black $(PYSRCS)
+	clang-format -i -style=file $(CSRCS)
+	clang-format -i -style=file $(HSRCS)
+	# TODO: find a good ASM formatter and add it here
 
 .PHONY: clean image qemu debug tools config format

@@ -20,9 +20,7 @@
 #define tty_info(f, ...) pinfo("TTY: " f, ##__VA_ARGS__)
 #define tty_fail(f, ...) pfail("TTY: " f, ##__VA_ARGS__)
 
-tty_t      *__tty_head      = NULL; // first TTY device in the list
-const char *__tty_devices[] = {
-    "tty0", "tty1", "tty2", "tty3", "tty4", "tty5", "tty6", "tty7", "tty8", "tty9", NULL}; // default TTY device names
+tty_t *__tty_head = NULL; // first TTY device in the list
 
 struct tty *__tty_find_by_inode(fs_inode_t *inode) {
   slist_foreach(&__tty_head, struct tty) if (cur->dev == inode->addr) return cur;

@@ -25,6 +25,7 @@
 #include "boot/multiboot.h"
 #include "boot/boot.h"
 
+#include "core/acpi.h"
 #include "util/string.h"
 #include "util/printk.h"
 #include "util/panic.h"
@@ -106,11 +107,21 @@ void entry() {
   // make current task (us) critikal
   sched_prio(TASK_PRIO_CR1TIKAL);
 
+  /*
+
+   * load ACPI, some devices we are gonna load/register next may need to use
+   * some of the ACPI functions, so let's get this done first
+
+  */
+  if ((err = acpi_load()) != 0)
+    pfail("Failed to load ACPI: %s", strerror(err));
+
   // initialize peripheral component interconnect (PCI) devices
   pci_init();
 
   // register filesystem devices
-  serial_register();
+  if ((err = serial_register()) != 0)
+    pfail("Failed to register serial devices: %s", strerror(err));
 
   /*
 

@@ -2,7 +2,14 @@ name: Build and run image with QEMU
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+    paths-ignore:
+      - "README.md"
+      - "LICENSE.txt"
+      - ".clang-format"
+      - ".gitignore"
+      - "config"
 
 jobs:
   test:

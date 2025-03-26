@@ -18,11 +18,12 @@ matches=(
   'Serial: enumerated \d+ ports'                                         # test 1: serial
   'PMM: bitmapping 0[xX][0-9a-fA-F]+ - 0[xX][0-9a-fA-F]+ with \d+ bytes' # test 2: PMM
   'Sched: created the main task: 0[xX][0-9a-fA-F]+'                      # test 3: scheduler
-  'PCI: enumerated \d+ devices'                                          # test 4: PCI
-  'AHCI: HBA at 0[xX][0-9a-fA-F]+ supports version'                      # test 5: AHCI
-  'Disk: loaded \d+ GPT partitions'                                      # test 6: GPT
-  'VFS: mounted node 0[xX][0-9a-fA-F]+ to /'                             # test 7: mount
-  'Sys: \(1:sys_exec\) executing the new binary'                         # test 8: init
+  'ACPI: loaded version \d+.\d+'                                         # test 4: ACPI
+  'PCI: enumerated \d+ devices'                                          # test 5: PCI
+  'AHCI: HBA at 0[xX][0-9a-fA-F]+ supports version'                      # test 6: AHCI
+  'Disk: loaded \d+ GPT partitions'                                      # test 7: GPT
+  'VFS: mounted node 0[xX][0-9a-fA-F]+ to /'                             # test 8: mount
+  'Sys: \(1:sys_exec\) executing the new binary'                         # test 9: init
 )
 
 _test_match() {
