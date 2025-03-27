@@ -65,3 +65,9 @@ jobs:
 
       - name: 'Run test #8'
         run: ./scripts/test.sh 8
+
+      - name: 'Run test #9'
+        run: ./scripts/test.sh 9
+
+      - name: 'Run test #10'
+        run: ./scripts/test.sh 10
