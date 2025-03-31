@@ -21,6 +21,7 @@ __int_err_codes:
 */
 .macro __im_handle_n n
 .global __im_handle_\n
+.align 16
 __im_handle_\n:
   push_all // save all the registers (temporary)
 

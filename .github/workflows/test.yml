@@ -71,3 +71,6 @@ jobs:
 
       - name: 'Run test #10'
         run: ./scripts/test.sh 10
+
+      - name: 'Run test #11'
+        run: ./scripts/test.sh 10

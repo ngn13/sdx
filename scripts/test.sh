@@ -17,14 +17,15 @@ fi
 matches=(
   'Serial: enumerated \d+ ports'                                         # test 1 : serial
   'PMM: bitmapping 0[xX][0-9a-fA-F]+ - 0[xX][0-9a-fA-F]+ with \d+ bytes' # test 2 : PMM
-  'Sched: created the main task: 0[xX][0-9a-fA-F]+'                      # test 3 : scheduler
-  'ACPI: loaded version \d+.\d+'                                         # test 4 : ACPI
-  'PCI: enumerated \d+ devices'                                          # test 5 : PCI
-  'AHCI: HBA at 0[xX][0-9a-fA-F]+ supports version'                      # test 6 : AHCI
-  'Disk: loaded \d+ GPT partitions'                                      # test 7 : GPT
-  'PS/2: successfully initialized \d+ ports'                             # test 8 : PS/2
-  'VFS: mounted node 0[xX][0-9a-fA-F]+ to /'                             # test 9 : mount
-  'Sys: \(1:sys_exec\) executing the new binary'                         # test 10: init
+  'Timer: now running with \d+Hz'                                        # test 3 : timer
+  'Sched: created the main task: 0[xX][0-9a-fA-F]+'                      # test 4 : scheduler
+  'ACPI: loaded version \d+.\d+'                                         # test 5 : ACPI
+  'PCI: enumerated \d+ devices'                                          # test 6 : PCI
+  'AHCI: HBA at 0[xX][0-9a-fA-F]+ supports version'                      # test 7 : AHCI
+  'Disk: loaded \d+ GPT partitions'                                      # test 8 : GPT
+  'PS/2: successfully initialized \d+ ports'                             # test 9 : PS/2
+  'VFS: mounted node 0[xX][0-9a-fA-F]+ to /'                             # test 10: mount
+  'Sys: \(1:sys_exec\) executing the new binary'                         # test 11: init
 )
 
 _test_match() {
