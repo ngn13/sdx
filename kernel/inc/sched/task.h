@@ -22,7 +22,7 @@ enum {
   TASK_STATE_HOLD,  // task is on holding the scheduler, keep it running
   TASK_STATE_READY, // task is ready to run
   TASK_STATE_SAVE,  // task should be saved, don't modify the registers
-  TASK_STATE_WAIT,  // task is waiting on something, should be moved to end of to the queue
+  TASK_STATE_WAIT,  // task is waiting on something, should move on to the next task
   TASK_STATE_DEAD,  // task is dead, should be removed from the queue
   TASK_STATE_FORK,  // task should be forked
 };
@@ -88,6 +88,7 @@ typedef struct task {
 
   task_regs_t regs;      // saved task registers
   uint8_t     ticks;     // current tick counter for this task
+  uint64_t    sleep;     // remaining sleep tick counter for this task
   uint8_t     state : 4; // state of this task (see the enum above)
   uint8_t     prio  : 6; // task priority (also sse the enum above)
 

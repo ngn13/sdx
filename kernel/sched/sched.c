@@ -1,7 +1,6 @@
 #include "sched/sched.h"
 #include "sched/task.h"
 
-#include "util/printk.h"
 #include "util/string.h"
 #include "util/panic.h"
 #include "util/list.h"
@@ -9,9 +8,6 @@
 
 #include "core/im.h"
 #include "core/pic.h"
-
-#include "mm/vmm.h"
-#include "mm/heap.h"
 
 #include "errno.h"
 #include "types.h"
@@ -346,12 +342,14 @@ int32_t sched_init() {
   pic_mask(PIC_IRQ_TIMER);
 
   // add the scheduler handler
-  im_add_handler(pic_to_int(PIC_IRQ_TIMER), IM_HANDLER_PRIO_SECOND, __sched_timer_handler);
+  im_add_handler(pic_to_int(PIC_IRQ_TIMER), __sched_timer_handler);
+  im_add_handler(SCHED_INT, __sched_timer_handler);
 
   // add the exception handlers
   for (uint8_t i = 0; i < IM_INT_EXCEPTIONS; i++) {
-    im_add_handler(i, IM_HANDLER_PRIO_SECOND, __sched_timer_handler);
-    im_add_handler(i, IM_HANDLER_PRIO_SECOND, __sched_exception_handler);
+    // exception handler is called first (IM calls last first)
+    im_add_handler(i, __sched_timer_handler);
+    im_add_handler(i, __sched_exception_handler);
   }
 
   // setup the default signal handlers

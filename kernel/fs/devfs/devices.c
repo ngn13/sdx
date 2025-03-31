@@ -54,6 +54,7 @@ int32_t devfs_device_register(const char *name, devfs_ops_t *ops, mode_t mode) {
   // setup the device
   bzero(dev, sizeof(struct devfs_device));
   strncpy((char *)dev->name, name, NAME_MAX);
+  // TODO: instead of using the next address, look for an available one
   dev->addr = NULL == head ? 1 : head->addr + 1;
   dev->ops  = ops;
   dev->mode = mode;
