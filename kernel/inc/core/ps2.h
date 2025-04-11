@@ -1,7 +1,11 @@
 #pragma once
 
 #ifndef __ASSEMBLY__
+#include "core/driver.h"
+#include "core/im.h"
+
 #include "util/printk.h"
+#include "util/lock.h"
 #include "util/io.h"
 
 #include "types.h"
@@ -51,8 +55,15 @@
 #define PS2_CONFIG_FIRST_TRANS  (1 << 6)
 
 // timeouts
-#define PS2_TIMEOUT_STATUS (100)      // 100ms
-#define PS2_TIMEOUT_INPUT  (1000 * 2) // 2s
+#define PS2_TIMEOUT_CMD   (100)      // PS/2 command R/W timeout (100ms)
+#define PS2_TIMEOUT_FLUSH (100)      // port input buffer flush timeout (100ms)
+#define PS2_TIMEOUT_READ  (1000 * 2) // (default) port read timeout (2s)
+#define PS2_TIMEOUT_WRITE (1000)     // (default) port write timeout (1s)
+
+driver_extern(ps2);
+
+// define a device ID type
+typedef uint8_t ps2_dev_id_t[2];
 
 /*
 
@@ -65,22 +76,31 @@
  * about using the right function
 
 */
-typedef struct {
-  uint8_t     id[2];   // device ID
-  const char *name;    // name of the port
-  bool        enabled; // is the port enabled
+typedef struct ps2_port {
+  ps2_dev_id_t id;      // device ID
+  const char  *name;    // name of the port
+  bool         enabled; // is the port enabled
+
+  char    buf[UINT8_MAX - 1]; // data buffer
+  uint8_t buf_indx;           // data buffer index
+
+  uint8_t            int_vector;  // interrupt vector for the port
+  im_handler_func_t *int_handler; // handler for port's interrupt
+
+  spinlock_t cmd_lock; // command lock
+  spinlock_t buf_lock; // data buffer lock
 
   // port specific functions
-  int32_t (*enable)(uint8_t *id); // enable the port
-  int32_t (*disable)();           // disable the port
+  int32_t (*enable)(struct ps2_port *port);  // enable the port
+  int32_t (*disable)(struct ps2_port *port); // disable the port
 
-  int32_t (*start)(); // start data transmission
-  int32_t (*stop)();  // stop data transmission
+  int32_t (*start)(struct ps2_port *port); // start data transmission
+  int32_t (*stop)(struct ps2_port *port);  // stop data transmission
 
-  void (*flush)();                // clear data buffer
-  int32_t (*write)(uint8_t data); // write data
-  int32_t (*read)(uint8_t *data); // read data
-  int32_t (*cmd)(uint8_t cmd);    // send command
+  void (*flush)(struct ps2_port *port);                                // clear data buffer
+  int32_t (*write)(struct ps2_port *port, uint8_t data, bool timeout); // write data
+  int32_t (*read)(struct ps2_port *port, uint8_t *data, bool timeout); // read data
+  int32_t (*cmd)(struct ps2_port *port, uint8_t cmd);                  // send command
 } ps2_port_t;
 
 // indiviual port definitions (core/ps2/ports/...)
@@ -92,17 +112,20 @@ extern ps2_port_t *ps2_ports[];
 
 // used for looping through the ports
 #define ps2_port_foreach()                                                                                             \
-  for (ps2_port_t *port = ps2_ports[0], *i = 0; port != NULL;                                                          \
-      i = (void *)(uint64_t)i + 1, port = ps2_ports[(uint64_t)i])
+  for (ps2_port_t *cur = ps2_ports[0], *i = 0; cur != NULL; i = (void *)(uint64_t)i + 1, cur = ps2_ports[(uint64_t)i])
+
+// used for looping through the command queue
+#define ps2_cmd_foreach(port)                                                                                          \
+  for (ps2_cmd_t *cur = &port->queue[0]; cur != &port->queue[PS2_PORT_QUEUE_SIZE - 1]; cur++)
 
 // initialize the PS/2 controller
-int32_t ps2_init();
+int32_t ps2_load();
 
 // basic data IO operations
 #define ps2_writeable() (!(in8(PS2_PORT_STATUS) & PS2_STATUS_INPUT))
 #define ps2_readable()  (in8(PS2_PORT_STATUS) & PS2_STATUS_OUTPUT)
-int32_t ps2_write(uint8_t data);
-int32_t ps2_read(uint8_t *data);
+int32_t ps2_write(uint8_t data); // WARN: check ps2_writeable() before using
+int32_t ps2_read(uint8_t *data); // WARN: check ps2_readable() before using
 
 // command functions
 int32_t ps2_cmd(uint8_t cmd);
@@ -115,15 +138,22 @@ int32_t ps2_cmd_read(uint8_t cmd, uint8_t *data);
 int32_t ps2_conf(uint8_t set, uint8_t clear);
 
 // core/ps2/port.c
+ps2_port_t *ps2_port_find(uint8_t *id);
+
+#define ps2_port_buf_is_full(port)  (port->buf_indx >= sizeof(port->buf))
+#define ps2_port_buf_is_empty(port) (port->buf_indx <= 0)
+#define ps2_port_buf_write(port, c) (port->buf[port->buf_indx++] = c)
+#define ps2_port_buf_read(port)     (port->buf[--port->buf_indx])
+
 int32_t ps2_port_enable(ps2_port_t *port);
 int32_t ps2_port_disable(ps2_port_t *port);
 
 int32_t ps2_port_start(ps2_port_t *port);
 int32_t ps2_port_stop(ps2_port_t *port);
 
-int32_t ps2_port_flush(ps2_port_t *port);
-int32_t ps2_port_write(ps2_port_t *port, uint8_t data);
-int32_t ps2_port_read(ps2_port_t *port, uint8_t *data);
+#define ps2_port_flush(port) port->flush(port)
+int32_t ps2_port_write(ps2_port_t *port, uint8_t data, bool timeout);
+int32_t ps2_port_read(ps2_port_t *port, uint8_t *data, bool timeout);
 int32_t ps2_port_cmd(ps2_port_t *port, uint8_t cmd);
 
 #endif

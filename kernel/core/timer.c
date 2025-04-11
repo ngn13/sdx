@@ -37,6 +37,8 @@ void __timer_handler() {
   sched_foreach() {
     if (cur->sleep > 0)
       cur->sleep--;
+    else
+      sched_unblock(cur, TASK_BLOCK_SLEEP);
   }
 }
 
@@ -114,11 +116,8 @@ int32_t timer_sleep(uint64_t ms) {
     sched_sleep(ticks);
   }
 
-  // put the task on waiting state until we are done
-  while (current->sleep > 0) {
-    sched_state(TASK_STATE_WAIT);
-    sched();
-  }
+  // block task until sleep is complete
+  sched_block_until(TASK_BLOCK_SLEEP, current->sleep != 0);
 
   // sleep is complete
   return 0;

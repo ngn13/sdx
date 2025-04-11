@@ -1,3 +1,4 @@
+#include "sched/task.h"
 #include "syscall.h"
 #include "sched/sched.h"
 
@@ -69,7 +70,7 @@ int32_t sys_exec(char *path, char *argv[], char *envp[]) {
    * we put the scheduler on hold until we are done
 
   */
-  sched_hold();
+  sched_state(TASK_STATE_HOLD);
 
   // update the current task
   task_rename(current, path);
@@ -88,43 +89,18 @@ int32_t sys_exec(char *path, char *argv[], char *envp[]) {
   task_mem_add(current, fmt.mem);
 
   // update the registers
-  bzero(&current->regs, sizeof(task_regs_t));
-
-  /*
-
-   * bit 1 = reserved, 9 = interrupt enable
-   * https://en.wikipedia.org/wiki/FLAGS_register
-
-  */
-  current->regs.rflags = ((1 << 1) | (1 << 9));
-  current->regs.rip    = (uint64_t)fmt.entry;
-
-  /*
-
-   * old code for jumping to kernel code
-
-   * task_current->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
-   * task_current->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
-   * task_current->regs.rsp = task_stack_get(task_current, VMM_VMA_KERNEL);
-
-  */
-
-  current->regs.cs  = gdt_offset(gdt_desc_user_code_addr);
-  current->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
-  current->regs.rsp = (uint64_t)task_stack_get(task_current, VMM_VMA_USER);
-
-  /*
-
-   * ORed with 3 to set the RPL to 3
-   * see https://wiki.osdev.org/Segment_Selector
-
-  */
-  current->regs.cs |= 3;
-  current->regs.ss |= 3;
+  if ((err = task_jump(current, fmt.entry)) != 0) {
+    sys_fail("failed to update task registers: %s", strerror(err));
+    // TODO: don't panic, instead kill the task
+    panic("exec() failed to update registers");
+  }
 
   // copy the environment variables to the stack
-  if ((err = task_stack_add_list(current, envp_copy, ENV_MAX, &stack_envp)) != 0)
-    panic("Failed to copy arguments to new task stack for %s", path);
+  if ((err = task_stack_add_list(current, envp_copy, ENV_MAX, &stack_envp)) != 0) {
+    sys_fail("failed to copy environment variables to stack: %s", strerror(err));
+    // TODO: again, don't panic, instead kill the task
+    panic("exec() failed to copy to stack");
+  }
 
   // copy the arguments to the stack
   if (NULL != argv_copy)
@@ -132,12 +108,16 @@ int32_t sys_exec(char *path, char *argv[], char *envp[]) {
 
   // don't allow NULL argv
   else {
+    sys_warn("attempt to run program with empty argv, adding program name");
     char *temp_argv[] = {task_current->name, NULL};
     err               = task_stack_add_list(current, temp_argv, ARG_MAX, &stack_argv);
   }
 
-  if (err != 0)
-    panic("Failed to copy arguments to new task stack for %s", path);
+  if (err != 0) {
+    sys_fail("failed to copy arguments to stack: %s", strerror(err));
+    // TODO: also don't panic, instead kill the task
+    panic("exec() failed to copy to stack");
+  }
 
   // add pointers for the argv and envp to the stack
   task_stack_add(current, &stack_envp, sizeof(void *));
@@ -159,7 +139,7 @@ end:
 
   */
   sched_prio(TASK_PRIO_LOW);
-  sched_done();
+  sched_state(TASK_STATE_SAVE);
 
   // if everything went fine, will never return
   sched();

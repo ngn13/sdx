@@ -205,8 +205,8 @@ __entry64:
   // reload GDT
   lgdt gdt_pointer
 
-  // call kernel entry, should never return
-  call entry
+  // call kernel main, should never return
+  call main
 
   // if we somehow do return, just halt
   jmp __halt

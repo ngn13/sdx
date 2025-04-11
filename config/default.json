@@ -20,6 +20,13 @@
         "type": "integer",
         "value": 4
       }
+    },
+    {
+      "lock_depth_max": {
+        "desc": "Max allowed lock account per task",
+        "type": "integer",
+        "value": 8
+      }
     }
   ],
 

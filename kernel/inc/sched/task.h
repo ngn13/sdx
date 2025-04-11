@@ -5,6 +5,8 @@
 #include "mm/region.h"
 #include "mm/heap.h"
 
+#include "util/lock.h"
+
 #include "config.h"
 #include "limits.h"
 #include "types.h"
@@ -22,7 +24,7 @@ enum {
   TASK_STATE_HOLD,  // task is on holding the scheduler, keep it running
   TASK_STATE_READY, // task is ready to run
   TASK_STATE_SAVE,  // task should be saved, don't modify the registers
-  TASK_STATE_WAIT,  // task is waiting on something, should move on to the next task
+  TASK_STATE_BLOCK, // task is blocked, should move on to the next task
   TASK_STATE_DEAD,  // task is dead, should be removed from the queue
   TASK_STATE_FORK,  // task should be forked
 };
@@ -33,6 +35,13 @@ enum {
   TASK_PRIO_HIGH,
   TASK_PRIO_CR1TIKAL,
 };
+
+// different reasons to block a task
+#define TASK_BLOCK_SLEEP  (1 << 0) // task is sleeping
+#define TASK_BLOCK_WAIT   (1 << 1) // task is wait()'ing on child
+#define TASK_BLOCK_LOCK   (1 << 2) // task is waiting on a lock
+#define TASK_BLOCK_INPUT  (1 << 3) // task is waiting on input (read)
+#define TASK_BLOCK_OUTPUT (1 << 4) // task is waiting on output (write)
 
 // task signal set structure (signal list)
 typedef struct task_sigset {
@@ -88,9 +97,14 @@ typedef struct task {
 
   task_regs_t regs;      // saved task registers
   uint8_t     ticks;     // current tick counter for this task
-  uint64_t    sleep;     // remaining sleep tick counter for this task
   uint8_t     state : 4; // state of this task (see the enum above)
   uint8_t     prio  : 6; // task priority (also sse the enum above)
+  uint64_t    sleep;     // remaining sleep tick counter for this task
+  spinlock_t *lock;      // current lock we are waiting to acquire
+  uint8_t     block;     // the thing that's blocking the task (if any)
+
+  uint8_t     lock_depth;                        // stores the depth of the currently acquired locks
+  spinlock_t *locks[CONFIG_TASK_LOCK_DEPTH_MAX]; // stores the currently acquired locks
 
   task_sighand_t sighand[SIG_MAX]; // signal handlers
   task_sigset_t *signal;           // signal queue
@@ -117,6 +131,7 @@ task_t *task_copy();                                 // copy the task
 void    task_free(task_t *task);                     // free a given task
 int32_t task_switch(task_t *task);                   // switch to given task's VMM
 int32_t task_rename(task_t *task, const char *name); // rename the task
+int32_t task_jump(task_t *task, void *ip);           // jump to a different instruction pointer
 
 // sched/mem.c
 #define task_mem_add(task, reg) (region_add(&task->mem, reg)) // add a memory region to task's memory region list
@@ -138,6 +153,11 @@ task_waitq_t *task_waitq_pop(task_t *task);                // get next waitq in 
 #define task_waitq_free(waitq)    (heap_free(waitq))       // free a waitq object
 #define task_waitq_clear(task)    slist_clear(&(task)->waitq_head, task_waitq_free, task_waitq_t) // free the entire waitq
 #define task_waitq_is_empty(task) ((task)->waitq_head == NULL) // check if the waitq is empty
+
+// task/lock.c
+int32_t     task_lock_add(task_t *task, spinlock_t *lock); // set the current lock we are waiting on
+int32_t     task_lock_push(task_t *task);                  // push the current lock the to lock list
+spinlock_t *task_lock_pop(task_t *task);                   // pop the last lock from the list
 
 // sched/stack.c
 int32_t  task_stack_alloc(task_t *task);                           // allocate a stack for the given task
@@ -203,5 +223,6 @@ void         task_file_clear(task_t *task);                      // close & free
 #define task_update_regs(task, stack)  __stack_to_regs((&task->regs), stack) // update task registers from the im_stack_t
 #define task_update_stack(task, stack) __regs_to_stack((&task->regs), stack) // update im_stack_t from task registers
 #define task_sigset_empty(task)        (NULL == task->signal)
+#define task_can_run(task)             ((task)->state != TASK_STATE_DEAD && (task)->state != TASK_STATE_BLOCK)
 
 #endif

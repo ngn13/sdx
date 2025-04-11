@@ -1,7 +1,8 @@
 #pragma once
-#include "types.h"
 
 #ifndef __ASSEMBLY__
+#include "core/driver.h"
+#include "types.h"
 
 /*
 
@@ -24,8 +25,12 @@ typedef struct {
   uint64_t addr;
 } acpi_gas_t;
 
+driver_extern(acpi);
+
 // core/acpi/acpi.c
 int32_t acpi_load();
+int32_t acpi_unload();
+
 void   *acpi_find(char *sig, uint64_t size);
 int32_t acpi_version();
 

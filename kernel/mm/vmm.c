@@ -19,17 +19,16 @@
 #define vmm_debg(f, ...) pdebg("VMM: " f, ##__VA_ARGS__)
 
 // virtual memory areas
-#define VMM_VMA_USER_START (0x0000000000000000 + PAGE_SIZE) // 0x0 can be interpreted with NULL
+#define VMM_VMA_USER_START (0x0000000000000000 + PAGE_SIZE) // 0x0 can be interpreted as NULL
 #define VMM_VMA_USER_END   (0x00007fffffffffff)
 
 #define VMM_VMA_KERNEL_START (0xffff800000000000)
-#define VMM_VMA_KERNEL_END   (BOOT_KERNEL_START_VADDR)
+#define VMM_VMA_KERNEL_END   (0xffffffffffffffff)
 
 // some helper macros
-#define vmm_vma_does_contain(addr)                                                                                     \
-  ((VMM_VMA_KERNEL_END > addr && addr >= VMM_VMA_KERNEL_START) ||                                                      \
+#define vmm_addr_is_valid(addr)                                                                                        \
+  ((BOOT_KERNEL_START_VADDR > addr && addr >= VMM_VMA_KERNEL_START) ||                                                 \
       (VMM_VMA_USER_END > addr && addr >= VMM_VMA_USER_START))
-
 #define vmm_entry_to_addr(entry)                                                                                       \
   ((uint64_t)(bit_get((uint64_t)(entry) & PTE_FLAGS_CLEAR, 47)                                                         \
                   ? ((uint64_t)(entry) & PTE_FLAGS_CLEAR) | ((uint64_t)0xffff << 48)                                   \
@@ -226,7 +225,7 @@ int32_t vmm_clear(void *vaddr, uint64_t num, uint64_t flags) {
 }
 
 uint8_t vmm_vma(void *vaddr) {
-  if (VMM_VMA_KERNEL_START >= (uint64_t)vaddr && VMM_VMA_KERNEL_END > (uint64_t)vaddr)
+  if (VMM_VMA_KERNEL_END > (uint64_t)vaddr && (uint64_t)vaddr >= VMM_VMA_KERNEL_START)
     return VMM_VMA_KERNEL;
   return VMM_VMA_USER;
 }
@@ -435,7 +434,7 @@ void *vmm_map_vaddr(uint64_t vaddr, uint64_t num, uint64_t align, uint32_t attr)
 
   for (; num > cur; cur++, vaddr_pos += PAGE_SIZE) {
     // make sure the virutal address is in one of the VMAs
-    if (!vmm_vma_does_contain(vaddr_pos))
+    if (!vmm_addr_is_valid(vaddr_pos))
       break;
 
     /*
@@ -462,7 +461,7 @@ void *vmm_map_exact(uint64_t paddr, uint64_t vaddr, uint64_t num, uint32_t attr)
 
   for (; num > cur; cur++, vaddr_pos += PAGE_SIZE, paddr_pos += PAGE_SIZE) {
     // make sure the virtual address is valid
-    if (!vmm_vma_does_contain(vaddr_pos))
+    if (!vmm_addr_is_valid(vaddr_pos))
       break;
 
     // no entry? page is available, continue

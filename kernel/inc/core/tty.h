@@ -9,8 +9,7 @@
 
 // describes a TTY device
 typedef struct tty {
-  char    name[NAME_MAX + 1]; // name of the TTY device ("tty1", "tty2" etc.)
-  int32_t dev;                // devfs device address of the TTY device
+  uint8_t minor; // minor number for the TTY device
   struct tty_ops {
     int32_t (*open)(struct tty *tty);
     int32_t (*close)(struct tty *tty);
@@ -25,7 +24,10 @@ typedef struct tty {
 typedef struct tty_ops tty_ops_t;
 
 // core/tty/tty.c
-tty_t  *tty_register(tty_ops_t *ops, char *name); // register a TTY device
-int32_t tty_unregister(char *name);               // remove a registered TTY deivce
+int32_t tty_load();
+int32_t tty_unload();
+
+tty_t  *tty_register(tty_ops_t *ops); // register a TTY device
+int32_t tty_unregister(char *name);   // remove a registered TTY deivce
 
 #endif

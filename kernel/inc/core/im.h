@@ -78,6 +78,3 @@ void  im_set_entry(uint8_t vector, uint8_t dpl); // modfiy a IDT entry
 
 void im_add_handler(uint8_t vector, im_handler_func_t handler); // set a given IDT entry to a handler
 void im_del_handler(uint8_t vector, im_handler_func_t handler); // switch a given IDT entry with the default handler
-
-void im_disable_handler(uint8_t vector, im_handler_func_t handler); // disable an interrupt handler
-void im_enable_handler(uint8_t vector, im_handler_func_t handler);  // enable an interrupt handler

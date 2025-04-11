@@ -4,7 +4,8 @@
 #include "util/io.h"
 #include "util/mem.h"
 #include "util/printk.h"
-#include <stdint.h>
+
+driver_new(pci, pci_load, NULL);
 
 /*
 
@@ -170,7 +171,7 @@ void pci_enum() {
 }
 
 // initialize supported and available PCI devices
-int32_t pci_init() {
+int32_t pci_load() {
   bzero(&data, sizeof(struct pci_data));
 
   // enumerate all the PCI devices

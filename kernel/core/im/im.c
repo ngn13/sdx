@@ -46,10 +46,9 @@ struct im_idtr {
 } __attribute__((packed));
 
 struct im_handler_entry {
-  im_handler_func_t       *func;       // handler function
-  uint8_t                  vector;     // selected vector for the handler
-  bool                     is_enabled; // is the handler enabled
-  struct im_handler_entry *next;       // next handler
+  im_handler_func_t       *func;   // handler function
+  uint8_t                  vector; // selected vector for the handler
+  struct im_handler_entry *next;   // next handler
 };
 
 struct im_handler {
@@ -176,20 +175,6 @@ void im_del_handler(uint8_t vector, im_handler_func_t handler) {
   im_handler.count--;
 
   heap_free(entry);
-}
-
-void im_disable_handler(uint8_t vector, im_handler_func_t handler) {
-  slist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler)
-      cur->is_enabled = false;
-  }
-}
-
-void im_enable_handler(uint8_t vector, im_handler_func_t handler) {
-  slist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler)
-      cur->is_enabled = true;
-  }
 }
 
 // initialize the interrupt manager

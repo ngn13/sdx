@@ -4,35 +4,35 @@
 
 // TODO: implement port 2 functions as well
 
-void ps2_second_flush() {
+void ps2_second_flush(ps2_port_t *port) {
   return;
 }
 
-int32_t ps2_second_read(uint8_t *data) {
+int32_t ps2_second_read(ps2_port_t *port, uint8_t *data, bool timeout) {
   return -ENOSYS;
 }
 
-int32_t ps2_second_write(uint8_t data) {
+int32_t ps2_second_write(ps2_port_t *port, uint8_t data, bool timeout) {
   return -ENOSYS;
 }
 
-int32_t ps2_second_cmd(uint8_t cmd) {
+int32_t ps2_second_cmd(ps2_port_t *port, uint8_t cmd) {
   return -ENOSYS;
 }
 
-int32_t ps2_second_enable(uint8_t *id) {
+int32_t ps2_second_enable(ps2_port_t *port) {
   return -ENOSYS;
 }
 
-int32_t ps2_second_disable() {
+int32_t ps2_second_disable(ps2_port_t *port) {
   return -ENOSYS;
 }
 
-int32_t ps2_second_start() {
+int32_t ps2_second_start(ps2_port_t *port) {
   return -ENOSYS;
 }
 
-int32_t ps2_second_stop() {
+int32_t ps2_second_stop(ps2_port_t *port) {
   return -ENOSYS;
 }
 
