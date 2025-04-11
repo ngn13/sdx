@@ -23,6 +23,7 @@ enum {
 };
 
 #define IM_INT_EXCEPTIONS 32
+#define IM_INT_MAX        (UINT8_MAX)
 
 typedef struct {
   // all da registers
@@ -56,26 +57,24 @@ typedef struct {
 
 typedef void im_handler_func_t(im_stack_t *s);
 
-typedef enum {
-  IM_HANDLER_PRIO_FIRST  = 0,
-  IM_HANDLER_PRIO_SECOND = 1,
-  IM_HANDLER_PRIO_LAST   = 2,
-} im_handler_prio_t;
-
 // this is the global handler for all the interrupts
 extern void __im_handle();
 
-// these wrapper handlers are only used for calculating other wrappers addreses
+// these handlers are only used for calculating other handlers addreses
 extern void __im_handle_0();
 extern void __im_handle_1();
+extern void __im_handle_64();
+extern void __im_handle_65();
+extern void __im_handle_128();
+extern void __im_handle_129();
+extern void __im_handle_192();
+extern void __im_handle_193();
 
 void im_init();                                  // initialize IDT with the default handler
-void im_enable();                                // enable the interrupts (set interrupt)
+#define im_enable()  __asm__("sti")              // enable the interrupts (set interrupt)
 #define im_disable() __asm__("cli")              // disable the interrupts (clear interrupt)
 void *im_stack();                                // get the stack used for handling interrupts (TSS RSP0)
 void  im_set_entry(uint8_t vector, uint8_t dpl); // modfiy a IDT entry
-void  im_del_handler(uint8_t vector, im_handler_func_t handler); // switch a given IDT entry with the default handler
-void  im_disable_handler(uint8_t vector, im_handler_func_t handler); // disable an interrupt handler
-void  im_enable_handler(uint8_t vector, im_handler_func_t handler);  // enable an interrupt handler
-void  im_add_handler(
-     uint8_t vector, im_handler_prio_t prio, im_handler_func_t handler); // set a given IDT entry to a handler
+
+void im_add_handler(uint8_t vector, im_handler_func_t handler); // set a given IDT entry to a handler
+void im_del_handler(uint8_t vector, im_handler_func_t handler); // switch a given IDT entry with the default handler

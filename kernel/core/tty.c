@@ -1,16 +1,13 @@
-#include "core/serial.h"
 #include "core/tty.h"
+#include "mm/heap.h"
 
 #include "util/printk.h"
-#include "util/string.h"
+#include "util/mem.h"
 #include "util/list.h"
 #include "util/lock.h"
-#include "util/mem.h"
 
 #include "fs/fs.h"
 #include "fs/devfs.h"
-
-#include "mm/heap.h"
 
 #include "limits.h"
 #include "types.h"
@@ -20,15 +17,13 @@
 #define tty_info(f, ...) pinfo("TTY: " f, ##__VA_ARGS__)
 #define tty_fail(f, ...) pfail("TTY: " f, ##__VA_ARGS__)
 
+#define TTY_DEV_NAME  "tty"
+#define TTY_DEV_MAJOR (4)
+
 tty_t *__tty_head = NULL; // first TTY device in the list
 
 struct tty *__tty_find_by_inode(fs_inode_t *inode) {
-  slist_foreach(&__tty_head, struct tty) if (cur->dev == inode->addr) return cur;
-  return NULL;
-}
-
-struct tty *__tty_find_by_name(char *name) {
-  slist_foreach(&__tty_head, struct tty) if (streq(cur->name, name)) return cur;
+  slist_foreach(&__tty_head, struct tty) if (cur->minor == devfs_minor(inode->addr)) return cur;
   return NULL;
 }
 
@@ -53,7 +48,7 @@ int64_t __tty_read(fs_inode_t *inode, uint64_t offset, uint64_t size, void *buf)
 
   spinlock_acquire(&tty->lock);
   ret = tty->ops->read(tty, offset, size, buf);
-  spinlock_release(&tty->lock);
+  spinlock_release();
 
   return ret;
 }
@@ -64,7 +59,7 @@ int64_t __tty_write(fs_inode_t *inode, uint64_t offset, uint64_t size, void *buf
 
   spinlock_acquire(&tty->lock);
   ret = tty->ops->write(tty, offset, size, buf);
-  spinlock_release(&tty->lock);
+  spinlock_release();
 
   return ret;
 }
@@ -77,41 +72,7 @@ devfs_ops_t __tty_ops = {
     .write = __tty_write,
 };
 
-int32_t __tty_lookup_name(char *name) {
-  // check the arguments
-  if (NULL == name)
-    return -EINVAL;
-
-  char    suffix[3]; // stores the TTY suffix for the current number
-  uint8_t num = 0;   // stores the TTY number
-
-  /*
-
-   * this code assumes provided name buffer is >= NAME_MAX
-   * since this is called from tty_register() with tty->name
-   * this should not an issue, at least for now
-
-  */
-
-  // setup the name buffer
-  bzero(name, NAME_MAX);
-  name = memcpy(name, "tty", 3);
-
-  for (; num < UINT8_MAX - 1; num++) {
-    // create & copy suffix to the end of the name
-    itou(num, suffix);
-    memcpy(name, suffix, sizeof(suffix));
-
-    // check if a TTY with the name exists
-    if (NULL == __tty_find_by_name(name))
-      return 0;
-  }
-
-  // no available name found
-  return -ERANGE;
-}
-
-tty_t *tty_register(tty_ops_t *ops, char *name) {
+tty_t *tty_register(tty_ops_t *ops) {
   // check the arguments
   if (NULL == ops)
     return NULL;
@@ -121,7 +82,7 @@ tty_t *tty_register(tty_ops_t *ops, char *name) {
 
   // check if the allocation was successful
   if (NULL == tty) {
-    tty_fail("failed to allocate memory for a new TTY deivce");
+    tty_fail("failed to allocate memory for a new TTY device");
     return NULL;
   }
 
@@ -130,23 +91,14 @@ tty_t *tty_register(tty_ops_t *ops, char *name) {
   spinlock_init(&tty->lock);
   tty->ops = ops;
 
-  if (NULL == name)
-    // look for an available name
-    err = __tty_lookup_name(name);
+  if (NULL == __tty_head)
+    tty->minor = 0;
   else
-    // copy the provided name
-    strncpy(tty->name, name, NAME_MAX);
-
-  // check if __tty_find_name() failed
-  if (err != 0) {
-    tty_fail("failed to get find an available name: %s", strerror(err));
-    heap_free(tty);
-    return NULL;
-  }
+    tty->minor = ++__tty_head->minor;
 
   // create a devfs device for the TTY device
-  if ((tty->dev = devfs_device_register(tty->name, &__tty_ops, MODE_USRR | MODE_USRW)) < 0) {
-    tty_fail("failed to register a devfs device for %s", tty->name);
+  if ((err = devfs_create(devfs_addr(TTY_DEV_MAJOR, tty->minor), NULL, MODE_USRR | MODE_USRW)) < 0) {
+    tty_fail("failed to register a devfs device");
     heap_free(tty);
     return NULL;
   }
@@ -156,13 +108,22 @@ tty_t *tty_register(tty_ops_t *ops, char *name) {
 
   // success
   tty_debg("created a new TTY device");
-  pdebg("     |- Name: %s", tty->name);
-  pdebg("     |- Device: %d", tty->dev);
+  pdebg("     |- Minor: %d", tty->minor);
   pdebg("     `- Address: 0x%p", tty);
   return 0;
 }
 
 int32_t tty_unregister(char *name) {
+  // TODO: implement
+  return -ENOSYS;
+}
+
+int32_t tty_load() {
+  // TODO: implement
+  return -ENOSYS;
+}
+
+int32_t tty_unload() {
   // TODO: implement
   return -ENOSYS;
 }

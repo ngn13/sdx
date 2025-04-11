@@ -1,7 +1,24 @@
 #pragma once
+#include "util/printk.h"
 #include "fs/fs.h"
+
 #include "limits.h"
 #include "types.h"
+
+#define devfs_info(f, ...) pinfo("dev: " f, ##__VA_ARGS__)
+#define devfs_fail(f, ...) pfail("dev: " f, ##__VA_ARGS__)
+#define devfs_debg(f, ...) pdebg("dev: " f, ##__VA_ARGS__)
+
+/*
+
+ * describes the address for a single devfs device, and
+ * contains the minor and the major number for the device
+
+*/
+typedef uint16_t devfs_addr_t;
+#define devfs_addr(major, minor) ((devfs_addr_t)(((uint16_t)major << 8) | ((uint16_t)minor)))
+#define devfs_major(addr)        (((devfs_addr_t)addr) >> 8)
+#define devfs_minor(addr)        (((devfs_addr_t)addr) & UINT8_MAX)
 
 /*
 
@@ -16,13 +33,19 @@ typedef struct {
   int64_t (*write)(fs_inode_t *inode, uint64_t offset, uint64_t size, void *buf);
 } devfs_ops_t;
 
-// describes a devfs device
+// internal structures used to describe devices and device groups
 struct devfs_device {
   const char           name[NAME_MAX + 1];
-  devfs_ops_t         *ops;
+  devfs_addr_t         addr;
   mode_t               mode;
-  int32_t              addr;
   struct devfs_device *next;
+};
+
+struct devfs_group {
+  const char           name[NAME_MAX + 1];
+  devfs_ops_t         *ops;
+  struct devfs_device *head;
+  struct devfs_group  *next;
 };
 
 // devfs/devfs.c
@@ -34,9 +57,13 @@ int64_t devfs_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, 
 int64_t devfs_write(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, void *buffer);
 int32_t devfs_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode);
 
-// devfs/devices.c
-struct devfs_device *devfs_device_next(struct devfs_device *dev);
-struct devfs_device *devfs_device_from_name(const char *name);
-struct devfs_device *devfs_device_from_addr(int32_t addr);
-int32_t              devfs_device_register(const char *name, devfs_ops_t *ops, mode_t mode);
-int32_t              devfs_device_unregister(const char *name);
+// devfs/device.c
+int32_t devfs_register(uint8_t major, const char *name, devfs_ops_t *ops);
+int32_t devfs_unregister(uint8_t major);
+
+int32_t devfs_create(devfs_addr_t addr, const char *name, mode_t mode);
+int32_t devfs_destroy(devfs_addr_t addr);
+
+struct devfs_group  *devfs_get_group(devfs_addr_t addr);
+struct devfs_device *devfs_get_device(devfs_addr_t addr, char *name);
+struct devfs_device *devfs_next_device(struct devfs_device *dev);

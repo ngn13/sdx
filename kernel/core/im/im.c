@@ -46,11 +46,9 @@ struct im_idtr {
 } __attribute__((packed));
 
 struct im_handler_entry {
-  im_handler_func_t       *func;        // handler function
-  im_handler_prio_t        prio;        // handler function priority
-  uint8_t                  vector;      // selected vector for the handler
-  bool                     is_enabled;  // is the handler enabled
-  struct im_handler_entry *next, *prev; // next and previous handler
+  im_handler_func_t       *func;   // handler function
+  uint8_t                  vector; // selected vector for the handler
+  struct im_handler_entry *next;   // next handler
 };
 
 struct im_handler {
@@ -94,9 +92,16 @@ struct im_handler im_handler;
 
 */
 void im_handle(im_stack_t *stack) {
-  for (uint8_t i = IM_HANDLER_PRIO_FIRST; i <= IM_HANDLER_PRIO_LAST; i++)
-    dlist_reveach(&im_handler.tail, struct im_handler_entry) if (cur->prio == i && cur->vector == stack->vector)
-        cur->func(stack);
+  /*
+
+   * when we add a handler, it goes to the top of the list, meaning this
+   * loop will run the first added handler last
+
+  */
+  slist_foreach(&im_handler.head, struct im_handler_entry) {
+    if (stack->vector == cur->vector)
+      cur->func(stack);
+  }
 }
 
 void im_set_entry(uint8_t vector, uint8_t dpl) {
@@ -120,12 +125,12 @@ void im_set_entry(uint8_t vector, uint8_t dpl) {
 }
 
 // add/set interrupt in the IDT
-void im_add_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t handler) {
+void im_add_handler(uint8_t vector, im_handler_func_t handler) {
   if (NULL == handler)
     return;
 
   // check if the handler is already in the list
-  dlist_foreach(&im_handler.head, struct im_handler_entry) {
+  slist_foreach(&im_handler.head, struct im_handler_entry) {
     if (cur->vector == vector && cur->func == handler)
       return;
   }
@@ -135,10 +140,9 @@ void im_add_handler(uint8_t vector, im_handler_prio_t prio, im_handler_func_t ha
   entry->next                    = NULL;
   entry->vector                  = vector;
   entry->func                    = handler;
-  entry->prio                    = prio;
 
   // add the new entry to the list
-  dlist_add(&im_handler.head, &im_handler.tail, entry);
+  slist_add_start(&im_handler.head, entry, struct im_handler_entry);
 
   // increment the handler count
   im_handler.count++;
@@ -155,7 +159,7 @@ void im_del_handler(uint8_t vector, im_handler_func_t handler) {
   // check if the list contains the handler
   struct im_handler_entry *entry = NULL;
 
-  dlist_foreach(&im_handler.head, struct im_handler_entry) {
+  slist_foreach(&im_handler.head, struct im_handler_entry) {
     if (cur->vector == vector && cur->func == handler) {
       entry = cur;
       break;
@@ -167,24 +171,10 @@ void im_del_handler(uint8_t vector, im_handler_func_t handler) {
     return;
 
   // remove the handler from the list
-  dlist_del(&im_handler.head, &im_handler.tail, entry, struct im_handler_entry);
+  slist_del(&im_handler.head, entry, struct im_handler_entry);
   im_handler.count--;
 
   heap_free(entry);
-}
-
-void im_disable_handler(uint8_t vector, im_handler_func_t handler) {
-  dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler)
-      cur->is_enabled = false;
-  }
-}
-
-void im_enable_handler(uint8_t vector, im_handler_func_t handler) {
-  dlist_foreach(&im_handler.head, struct im_handler_entry) {
-    if (cur->vector == vector && cur->func == handler)
-      cur->is_enabled = true;
-  }
 }
 
 // initialize the interrupt manager
@@ -192,16 +182,36 @@ void im_init() {
   struct im_desc    *d = NULL;
   struct im_handler *h = NULL;
 
-  uint64_t wrapper_addr = (uint64_t)__im_handle_0;
-  uint64_t wrapper_size = __im_handle_1 - __im_handle_0;
+  // base handler address and current offset between the handlers
+  uint64_t handler_addr = (uint64_t)__im_handle_0;
+  uint64_t handler_off  = __im_handle_1 - __im_handle_0;
 
   for (uint16_t i = 0; i < IM_IDT_ENTRY_COUNT; i++) {
     d = &im_idt[i];
 
+    // update the offset
+    switch (i) {
+    case 65:
+      handler_off = __im_handle_65 - __im_handle_64;
+      break;
+
+    case 129:
+      handler_off = __im_handle_129 - __im_handle_128;
+      break;
+
+    case 193:
+      handler_off = __im_handle_193 - __im_handle_192;
+      break;
+    }
+
+    // get the next handler address
+    if (i)
+      handler_addr += handler_off;
+
     // setup all the address bits
-    d->address_low  = (wrapper_addr + (wrapper_size * i)) & UINT16_MAX;
-    d->address_mid  = ((wrapper_addr + (wrapper_size * i)) >> 16) & UINT16_MAX;
-    d->address_high = ((wrapper_addr + (wrapper_size * i)) >> 32) & UINT32_MAX;
+    d->address_low  = (handler_addr)&UINT16_MAX;
+    d->address_mid  = ((handler_addr) >> 16) & UINT16_MAX;
+    d->address_high = ((handler_addr) >> 32) & UINT32_MAX;
 
     // set the default entry flags
     im_set_entry(i, 0);
@@ -222,13 +232,10 @@ void im_init() {
   pdebg("IM: TSS stack @ 0x%p", im_tss.rsp0);
 
   gdt_tss_set(&im_tss, (sizeof(struct tss) - 1));
-}
 
-void im_enable() {
-  // load the IDTR & TSS, then sti (set interrupt)
+  // load IDTR & TSS
   __asm__("lidt (%0)\n"
-          "ltr %1\n"
-          "sti\n" ::"rm"(&im_idtr),
+          "ltr %1\n" ::"rm"(&im_idtr),
       "r"(gdt_offset(gdt_desc_tss_addr)));
 }
 

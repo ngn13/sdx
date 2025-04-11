@@ -1,3 +1,4 @@
+#include "sched/sched.h"
 #include "sched/task.h"
 #include "mm/heap.h"
 
@@ -31,6 +32,9 @@ int32_t task_waitq_add(task_t *task, task_t *child) {
     task->waitq_head = task->waitq_tail = waitq;
   else
     task->waitq_tail->next = waitq;
+
+  // unblock the task (if it's blocked)
+  sched_unblock(task, TASK_BLOCK_WAIT);
 
   return 0;
 }

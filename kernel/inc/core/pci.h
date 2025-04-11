@@ -1,4 +1,7 @@
 #pragma once
+
+#ifndef __ASSEMBLY__
+#include "core/driver.h"
 #include "types.h"
 
 /*
@@ -77,6 +80,8 @@ typedef struct pci_driver {
   int32_t (*init)(pci_device_t *d);
 } pci_driver_t;
 
+driver_extern(pci);
+
 uint32_t pci_read32(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
 uint16_t pci_read16(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset);
 uint8_t  pci_read8(uint8_t bus, uint8_t device, uint8_t func, uint8_t offset);
@@ -92,6 +97,8 @@ int32_t pci_device_init(pci_device_t *d);                      // init a device,
 #define pci_device_read16(d, o) pci_read16(d->bus, d->slot, d->func, o)
 #define pci_device_read8(d, o)  pci_read8(d->bus, d->slot, d->func, o)
 
-int32_t pci_init();                                          // initialize PCI devices
+int32_t pci_load();                                          // initialize PCI devices
 void    pci_enum();                                          // enumerate the PCI devices
 bool    pci_exsits(uint8_t bus, uint8_t slot, uint8_t func); // check if a device exists at specific address
+
+#endif

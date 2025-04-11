@@ -25,7 +25,6 @@
 #include "boot/multiboot.h"
 #include "boot/boot.h"
 
-#include "core/acpi.h"
 #include "util/string.h"
 #include "util/printk.h"
 #include "util/panic.h"
@@ -33,11 +32,10 @@
 #include "sched/sched.h"
 #include "sched/task.h"
 
+#include "core/driver.h"
 #include "core/serial.h"
-#include "core/pci.h"
+#include "core/timer.h"
 #include "core/pic.h"
-#include "core/ps2.h"
-#include "core/tty.h"
 #include "core/im.h"
 
 #include "mm/pmm.h"
@@ -47,7 +45,7 @@
 #include "fs/vfs.h"
 #include "video.h"
 
-void entry() {
+void main() {
   int32_t err = 0;
 
   // initialize serial communication ports (UART)
@@ -88,8 +86,8 @@ void entry() {
    * initialize the programmable interrupt controller (PIC)
 
    * we need to enable this before enabling interrupts otherwise
-   * since the vector offset is not set we would get a random exception
-   * interrupt from the PIC
+   * since the vector offset is not set we would get a random
+   * exception interrupt from the PIC
 
   */
   if (!pic_init())
@@ -101,6 +99,10 @@ void entry() {
   // enable the interrupts
   im_enable();
 
+  // initialize the timer (PIT)
+  if ((err = timer_init()) != 0)
+    panic("Failed to initialize the timer: %s", strerror(err));
+
   // initialize the scheduler
   if ((err = sched_init()) != 0)
     panic("Failed to start the scheduler: %s", strerror(err));
@@ -108,26 +110,8 @@ void entry() {
   // make current task (us) critikal
   sched_prio(TASK_PRIO_CR1TIKAL);
 
-  /*
-
-   * load ACPI, some devices we are gonna load/register next may need to use
-   * some of the ACPI functions, so let's get this done first
-
-  */
-  if ((err = acpi_load()) != 0)
-    pfail("Failed to load ACPI: %s", strerror(err));
-
-  // initialize peripheral component interconnect (PCI) devices
-  if ((err = pci_init()) != 0)
-    pfail("Failed to initialize PCI: %s", strerror(err));
-
-  // initialize PS/2 controller & devices
-  if ((err = ps2_init()) != 0)
-    pfail("Failed to initialize PS/2: %s", strerror(err));
-
-  // register filesystem devices
-  if ((err = serial_register()) != 0)
-    pfail("Failed to register serial devices: %s", strerror(err));
+  // we initialized all the important stuff, now load drivers for different devices
+  drivers_load();
 
   /*
 

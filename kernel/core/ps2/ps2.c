@@ -1,133 +1,149 @@
 #include "core/ps2.h"
 #include "core/acpi.h"
+#include "core/driver.h"
+#include "core/im.h"
+#include "core/timer.h"
 
-#include "util/printk.h"
-#include "util/bit.h"
+#include "util/string.h"
+#include "util/lock.h"
+#include "util/mem.h"
 #include "util/io.h"
 
 #include "errno.h"
 #include "types.h"
 
-#define ps2_info(f, ...) pinfo("PS/2: " f, ##__VA_ARGS__)
-#define ps2_fail(f, ...) pfail("PS/2: " f, ##__VA_ARGS__)
-#define ps2_debg(f, ...) pdebg("PS/2: " f, ##__VA_ARGS__)
+driver_new(ps2, ps2_load, NULL, &acpi_driver, );
+spinlock_t __ps2_conf_lock;
 
-#define PS2_PORT_DATA    (0x60)
-#define PS2_PORT_COMMAND (0x64)
-#define PS2_PORT_STATUS  (0x64)
-
-#define PS2_CMD_READ_0         (0x20)
-#define PS2_CMD_WRITE_0        (0x60)
-#define PS2_CMD_DISABLE_SECOND (0xA7)
-#define PS2_CMD_ENABLE_SECOND  (0xA8)
-#define PS2_CMD_TEST_SECOND    (0xA9)
-#define PS2_CMD_DISABLE_FIRST  (0xAD)
-#define PS2_CMD_ENABLE_FIRST   (0xAE)
-#define PS2_CMD_TEST_FIRST     (0xAB)
-
-#define PS2_STATUS_OUTPUT (0)
-#define PS2_STATUS_INPUT  (1)
-
-#define PS2_CONFIG_FIRST_INT    (0)
-#define PS2_CONFIG_SECOND_INT   (1)
-#define PS2_CONFIG_SYSTEM_FLAG  (2)
-#define PS2_CONFIG_FIRST_CLOCK  (4)
-#define PS2_CONFIG_SECOND_CLOCK (5)
-#define PS2_CONFIG_FIRST_TRANS  (6)
-
-int32_t ps2_init() {
-  // make sure we have PS/2 controller
-  if (!acpi_supports_8042_ps2())
+int32_t ps2_load() {
+  // make sure we have a PS/2 controller
+  if (!acpi_supports_8042_ps2()) {
+    ps2_fail("no available controller");
     return -EFAULT;
-
-  uint8_t port_count = 2, port_err = 0;
-  uint8_t config = 0;
-
-  // disable both devices
-  ps2_cmd(PS2_CMD_DISABLE_FIRST);
-  ps2_cmd(PS2_CMD_DISABLE_SECOND);
-
-  // flush the data buffer
-  in8(PS2_PORT_DATA);
-
-  // configure port 1
-  config = ps2_cmd(PS2_CMD_READ_0);
-  bit_set(config, PS2_CONFIG_FIRST_INT, 0);   // disable port 1 interrupt
-  bit_set(config, PS2_CONFIG_FIRST_CLOCK, 0); // enable port 1 clock
-  bit_set(config, PS2_CONFIG_FIRST_TRANS, 0); // disable port 1 translation
-  ps2_cmd_with(PS2_CMD_WRITE_0, config);
-
-  // test port 1
-  if ((port_err = ps2_cmd(PS2_CMD_TEST_FIRST)) != 0){
-    ps2_debg("test for port 1 failed (0x%x)", port_err);
-    port_count--;
   }
 
-  // check if port 2 is available
-  ps2_cmd(PS2_CMD_ENABLE_SECOND);
-  config = ps2_cmd(PS2_CMD_READ_0);
+  uint8_t res = 0, count = 0;
+  int32_t err = 0;
 
-  if (!bit_get(config, PS2_CONFIG_SECOND_CLOCK)) {
-    // if so, configure port 2
-    ps2_cmd(PS2_CMD_DISABLE_SECOND);
-    bit_set(config, PS2_CONFIG_SECOND_INT, 0);   // disable port 2 interrupt
-    bit_set(config, PS2_CONFIG_SECOND_CLOCK, 0); // enable port 2 clock
-    ps2_cmd_with(PS2_CMD_WRITE_0, config);
+  /*
 
-    // also test it
-    if ((port_err = ps2_cmd(PS2_CMD_TEST_SECOND)) != 0){
-      ps2_debg("test for port 2 failed (0x%x)", port_err);
-      port_count--;
-    }
+   * clear data structure of all ports, disable them
+   * and register the interrupt handler they are using
+
+  */
+  ps2_port_foreach() {
+    // clear the data structure
+    cur->enabled = false;
+    bzero(cur->id, sizeof(cur->id));
+
+    // disable the port
+    ps2_port_disable(cur);
+
+    // register interrupt handler
+    im_add_handler(cur->int_vector, cur->int_handler);
   }
 
-  // check if tests for both of the ports failed
-  if (!port_count) {
-    ps2_fail("no available ports");
-    return 0;
+  // save the config (in res)
+  if ((err = ps2_conf_read(&res)) != 0) {
+    ps2_fail("failed to read the config byte: %s", strerror(err));
+    return err;
   }
 
-  ps2_info("successfully tested %u ports", port_count);
+  // test the controller
+  if ((err = ps2_cmd_read(PS2_CMD_TEST, &res)) != 0) {
+    ps2_fail("controller test command failed: %s", strerror(err));
+    return err;
+  }
 
-  // TODO: enable, reset and detect devices
+  // check the test result
+  if (res != PS2_RES_TEST_PASS) {
+    ps2_fail("controller test failed");
+    return -EFAULT;
+  }
 
-  return -ENOSYS;
+  // restore the config (saved in res)
+  if ((err = ps2_conf_write(res)) != 0) {
+    ps2_fail("failed to write the config byte: %s", strerror(err));
+    return err;
+  }
+
+  // enable all ports
+  ps2_port_foreach() {
+    if (ps2_port_enable(cur) == 0)
+      count++;
+  }
+
+  // check if we have successfuly enabled any ports
+  if (count == 0) {
+    ps2_fail("no available PS/2 ports");
+    return -EFAULT;
+  }
+
+  ps2_info("successfully initialized %u ports", count);
+
+  // initialize the PS/2 config R/W lock
+  spinlock_init(&__ps2_conf_lock);
+
+  return 0;
 }
 
-uint8_t ps2_read() {
-  // wait until data can be read (output buffer is full)
-  while (!bit_get(in8(PS2_PORT_STATUS), PS2_STATUS_OUTPUT))
-    continue;
-
-  // read the data
-  return in8(PS2_PORT_DATA);
+int32_t ps2_read(uint8_t *data) {
+  if (NULL == data)
+    in8(PS2_PORT_DATA);
+  else
+    *data = in8(PS2_PORT_DATA);
+  return 0;
 }
 
-void ps2_write(uint8_t data) {
-  // wait until data can be written (input buffer is clear)
-  while (bit_get(in8(PS2_PORT_STATUS), PS2_STATUS_INPUT))
-    continue;
-
-  // read the data
+int32_t ps2_write(uint8_t data) {
   out8(PS2_PORT_DATA, data);
+  return 0;
 }
 
-uint8_t ps2_cmd(uint8_t cmd) {
-  out8(PS2_PORT_COMMAND, cmd);
+int32_t ps2_conf(uint8_t set, uint8_t clear) {
+  uint8_t conf = 0;
+  int32_t err  = 0;
 
-  switch (cmd) {
-  case PS2_CMD_DISABLE_SECOND:
-  case PS2_CMD_ENABLE_SECOND:
-  case PS2_CMD_DISABLE_FIRST:
-  case PS2_CMD_ENABLE_FIRST:
-  case PS2_CMD_WRITE_0:
-    return 0;
-  }
+  // lock before modifying the config byte
+  spinlock_acquire(&__ps2_conf_lock);
 
-  return ps2_read();
+  if ((err = ps2_conf_read(&conf)) != 0)
+    goto end;
+
+  conf |= set;
+  conf &= ~(clear);
+
+  err = ps2_conf_write(conf);
+end:
+  spinlock_release();
+  return err;
 }
 
-void ps2_cmd_with(uint8_t cmd, uint8_t data) {
+int32_t ps2_cmd(uint8_t cmd) {
   out8(PS2_PORT_COMMAND, cmd);
-  ps2_write(data);
+  return 0;
+}
+
+int32_t ps2_cmd_write(uint8_t cmd, uint8_t data) {
+  out8(PS2_PORT_COMMAND, cmd);
+
+  if (!ps2_writeable())
+    timer_sleep(PS2_TIMEOUT_CMD);
+
+  if (!ps2_writeable())
+    return -ETIME;
+
+  return ps2_write(data);
+}
+
+int32_t ps2_cmd_read(uint8_t cmd, uint8_t *data) {
+  out8(PS2_PORT_COMMAND, cmd);
+
+  if (!ps2_readable())
+    timer_sleep(PS2_TIMEOUT_CMD);
+
+  if (!ps2_readable())
+    return -ETIME;
+
+  return ps2_read(data);
 }

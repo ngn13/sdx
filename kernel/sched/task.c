@@ -126,3 +126,46 @@ int32_t task_switch(task_t *task) {
 
   return 0;
 }
+
+int32_t task_jump(task_t *task, void *ip) {
+  // check the provided arguments
+  if (NULL == task || NULL == ip)
+    return -EINVAL;
+
+  // clear all the registers
+  bzero(&task->regs, sizeof(task_regs_t));
+
+  /*
+
+   * bit 1 = reserved, 9 = interrupt enable
+   * https://en.wikipedia.org/wiki/FLAGS_register
+
+  */
+  task->regs.rflags = ((1 << 1) | (1 << 9));
+  task->regs.rip    = (uint64_t)ip;
+
+  switch (vmm_vma(ip)) {
+  case VMM_VMA_KERNEL:
+    task->regs.cs  = gdt_offset(gdt_desc_kernel_code_addr);
+    task->regs.ss  = gdt_offset(gdt_desc_kernel_data_addr);
+    task->regs.rsp = (uint64_t)task_stack_get(task, VMM_VMA_KERNEL);
+    break;
+
+  case VMM_VMA_USER:
+    task->regs.cs  = gdt_offset(gdt_desc_user_code_addr);
+    task->regs.ss  = gdt_offset(gdt_desc_user_data_addr);
+    task->regs.rsp = (uint64_t)task_stack_get(task, VMM_VMA_USER);
+
+    /*
+
+     * ORed with 3 to set the RPL to 3
+     * see https://wiki.osdev.org/Segment_Selector
+
+    */
+    task->regs.cs |= 3;
+    task->regs.ss |= 3;
+    break;
+  }
+
+  return 0;
+}

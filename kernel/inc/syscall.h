@@ -6,6 +6,7 @@
 
 #define sys_debg(f, ...) pdebg("Sys: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
 #define sys_info(f, ...) pinfo("Sys: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
+#define sys_warn(f, ...) pwarn("Sys: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
 #define sys_fail(f, ...) pfail("Sys: (%d:%s) " f, current->pid, __func__, ##__VA_ARGS__)
 
 struct syscall {

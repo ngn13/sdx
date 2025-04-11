@@ -2,8 +2,8 @@ name: Build and run image with QEMU
 
 on:
   push:
-    branches:
-      - main
+    #branches:
+    #  - main
     paths-ignore:
       - "README.md"
       - "LICENSE.txt"
@@ -65,3 +65,12 @@ jobs:
 
       - name: 'Run test #8'
         run: ./scripts/test.sh 8
+
+      - name: 'Run test #9'
+        run: ./scripts/test.sh 9
+
+      - name: 'Run test #10'
+        run: ./scripts/test.sh 10
+
+      - name: 'Run test #11'
+        run: ./scripts/test.sh 11

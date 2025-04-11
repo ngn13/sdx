@@ -9,28 +9,25 @@ pid_t sys_wait(int32_t *status) {
   pid_t         pid   = 0;
 
   // if the wait queue is not empty, just use the next waitq
-  if (!task_waitq_is_empty(task_current))
+  if (!task_waitq_is_empty(current))
     goto end;
 
   /*
 
-   * check if we have any children before waiting on
-   * a wait queue update, since if we don't have any
-   * children task's wait queue will never be updated
+   * check if we have any children before waiting on a wait
+   * queue update, since if we don't have any children, task's
+   * wait queue will never be updated
 
   */
-  if (NULL == sched_child(task_current, NULL))
+  if (NULL == sched_child(current, NULL))
     return -ECHILD;
 
   // wait for a waitq
-  while (task_waitq_is_empty(task_current)) {
-    sched_state(TASK_STATE_WAIT);
-    sched();
-  }
+  sched_block_until(TASK_BLOCK_WAIT, task_waitq_is_empty(current));
 
 end:
   // get the current waitq in the queue
-  waitq = task_waitq_pop(task_current);
+  waitq = task_waitq_pop(current);
 
   // get the waitq status and PID
   *status = waitq->status;

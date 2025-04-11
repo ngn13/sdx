@@ -1,25 +1,30 @@
 #include "sched/sched.h"
 #include "sched/task.h"
 
-#include "util/printk.h"
 #include "util/string.h"
 #include "util/panic.h"
 #include "util/list.h"
 #include "util/bit.h"
+#include "util/asm.h"
 
 #include "core/im.h"
 #include "core/pic.h"
 
-#include "mm/vmm.h"
-#include "mm/heap.h"
-
 #include "errno.h"
 #include "types.h"
 
-// used to keep track of the task queue
+/*
+
+ * task queue is basically a doubly linked list, and these
+ * pointers are used to keep track of the first (head) and
+ * the last (tail) task in this list
+
+*/
 task_t *task_head = NULL, *task_tail = NULL;
+
 task_t *task_current  = NULL; // current running task
 task_t *task_promoted = NULL; // promoted task will always run next
+task_t *task_idle     = NULL; // idle task (not in the queue)
 
 #define __sched_print_task(task)                                                                                       \
   do {                                                                                                                 \
@@ -96,33 +101,44 @@ void __sched_queue_clean() {
   // remove from the list
   __sched_queue_del(corpse);
 
-  // dismember
+  // dismember the task's corpse
   task_free(corpse);
 }
 
 // get next task in the queue
 task_t *__sched_queue_next() {
-  task_t *pos = task_current;
+  task_t *pos = NULL, *start = NULL;
+
+  // give priority to promoted task
+  if (NULL != task_promoted) {
+    start = pos   = task_promoted;
+    task_promoted = NULL;
+  }
+
+  // go back to the start of the queue if current task is NULL or idle
+  else if (NULL == task_current || task_idle == task_current)
+    start = pos = task_head;
+
+  // otherwise just use the current task's position
+  else
+    start = pos = task_current;
 
   do {
-    // promoted task will always be selected next
-    if (NULL != task_promoted) {
-      pos           = task_promoted;
-      task_promoted = NULL;
-      continue;
-    }
+    // if we found an available task, return
+    if (task_can_run(pos))
+      return pos;
 
     // if we reached the end of the queue, go back to the start
-    if (NULL == pos || NULL == pos->next) {
+    if (NULL == pos || NULL == pos->next)
       pos = task_head;
-      continue;
-    }
 
-    // get the next task using the next pointer
-    pos = pos->next;
-  } while (pos->state == TASK_STATE_DEAD);
+    // otherwise get the next task using the next pointer
+    else
+      pos = pos->next;
+  } while (pos != start);
 
-  return pos;
+  // if no task is found, next task will be the idle task
+  return task_idle;
 }
 
 // find the next available PID
@@ -134,26 +150,14 @@ void __sched_pid(task_t *task) {
       task->pid = cur->pid;
   }
 
-  if (task->pid == PID_MAX)
+  if (task->pid >= PID_MAX)
     panic("Reached the max PID");
 
   task->pid++;
 }
 
-// scheduler timer interrupt handler
-void __sched_timer_handler(im_stack_t *stack) {
-  task_t *task_new = NULL;
-
-  /*
-
-   * if we don't have a task selected (so first time running)
-   * get the next task in the queue, which would be the first
-   * and the current task
-
-  */
-  if (NULL == task_current)
-    task_current = __sched_queue_next();
-
+// handle a single tick for the current task
+void __sched_current_tick(im_stack_t *stack) {
   // if we received a signal, handle it
   if (!task_sigset_empty(task_current))
     task_signal_pop(task_current);
@@ -183,15 +187,21 @@ void __sched_timer_handler(im_stack_t *stack) {
 
     */
     task_update_stack(task_current, stack);
+
+    // put the task back into the ready state
+    task_current->state = TASK_STATE_READY;
     break;
 
-  case TASK_STATE_WAIT:
+  case TASK_STATE_BLOCK:
     /*
 
-     * wait state means task is waiting on something
-     * so we can skip to the next task, after saving
-     * the registers so we'll continue where we left
-     * of when we get to this task again
+     * block state means task is blocked by something
+     * this might be something like sleep() or an I/O
+     * operation
+
+     * so we should just move onto the next task after
+     * saving the registers, and not switch to this
+     * task again until it's unblocked
 
     */
     task_update_regs(task_current, stack);
@@ -204,11 +214,10 @@ void __sched_timer_handler(im_stack_t *stack) {
      * dead state means that task is no longer with us
      * send our prayers to the terry davis
 
-     * task will be free'd and remove from the task list
+     * task will be free'd and removed from the task list
      * after the next task switch with __sched_queue_clean
 
     */
-    task_current = NULL;
     break;
 
   case TASK_STATE_FORK:
@@ -225,68 +234,65 @@ void __sched_timer_handler(im_stack_t *stack) {
     task_update_regs(task_current, stack);
 
     sched_debg("forking the current task (PID %d)", task_current->pid);
-    task_new = task_copy();
+    task_t *child = task_copy();
 
-    if (NULL == task_new) {
+    if (NULL == child) {
       sched_fail("failed to copy the task 0x%p for forking", task_current);
       break;
     }
 
     // set required values
-    __sched_pid(task_new);               // give a PID to the new task
-    task_new->state = TASK_STATE_READY;  // default state
-    task_new->prio  = TASK_PRIO_LOW;     // default priority
-    task_new->ppid  = task_current->pid; // set the PPID
+    __sched_pid(child);               // give a PID to the new task
+    child->state = TASK_STATE_READY;  // default state
+    child->prio  = TASK_PRIO_LOW;     // default priority
+    child->ppid  = task_current->pid; // set the PPID
 
     // add new task to the task list
-    sched_debg("forked the current task (PID %d -> %d)", task_current->pid, task_new->pid);
-    __sched_queue_add(task_new);
+    sched_debg("forked the current task (PID %d -> %d)", task_current->pid, child->pid);
+    __sched_queue_add(child);
 
     // update the last child PID of the parent
-    task_current->cpid = task_new->pid;
+    task_current->cpid = child->pid;
+
+    // update task back to the ready state
+    task_current->state = TASK_STATE_READY;
     break;
 
   default:
-    // if we get here, something is wrong
+    // if we get here, something is wrong, put task back into ready state
     sched_warn("task is in an unknown state, putting it back to ready state");
     task_current->state = TASK_STATE_READY;
     break;
   }
 
-  /*
+  // decrement the tick counter of the task
+  if (task_current->ticks > 0)
+    task_current->ticks--;
+}
 
-   * if the current task has no more remaining ticks
-   * or if it doesn't exist anymore, switch to the next task
+// scheduler timer interrupt handler
+void __sched_timer_handler(im_stack_t *stack) {
+  // if we are idling, skip the tick function and just look for a new task
+  if (task_idle == task_current)
+    goto next_task;
 
-  */
-  if (NULL == task_current || task_current->ticks <= 0) {
+  // handle the tick for the current task
+  __sched_current_tick(stack);
+
+  // switch to the next task if current task ran out of ticks or died
+  if (task_current->ticks <= 0 || task_current->state == TASK_STATE_DEAD) {
+  next_task:
+    // cleanup previous dead task (if any)
+    __sched_queue_clean();
+
     // get the new task
-    if ((task_new = __sched_queue_next()) != task_current)
-      sched_debg("switching to the next task (PID: %d)", task_new->pid);
-
-    // update the current task
-    task_current = task_new;
+    task_current = __sched_queue_next();
 
     // switch to the new task
     task_ticks_reset(task_current);
     task_update_stack(task_current, stack);
     task_switch(task_current);
-
-    // cleanup previous dead task
-    __sched_queue_clean();
   }
-
-  // reset the state of the task
-  task_current->state = TASK_STATE_READY;
-
-  /*
-
-   * decrement the remaining ticks of the current task
-   * before jumping back to it again
-
-  */
-  task_current->ticks--;
-  return;
 }
 
 void __sched_exception_handler(im_stack_t *stack) {
@@ -346,12 +352,14 @@ int32_t sched_init() {
   pic_mask(PIC_IRQ_TIMER);
 
   // add the scheduler handler
-  im_add_handler(pic_to_int(PIC_IRQ_TIMER), IM_HANDLER_PRIO_SECOND, __sched_timer_handler);
+  im_add_handler(pic_to_int(PIC_IRQ_TIMER), __sched_timer_handler);
+  im_add_handler(SCHED_INT, __sched_timer_handler);
 
   // add the exception handlers
   for (uint8_t i = 0; i < IM_INT_EXCEPTIONS; i++) {
-    im_add_handler(i, IM_HANDLER_PRIO_SECOND, __sched_timer_handler);
-    im_add_handler(i, IM_HANDLER_PRIO_SECOND, __sched_exception_handler);
+    // exception handler is called first (IM calls last first)
+    im_add_handler(i, __sched_timer_handler);
+    im_add_handler(i, __sched_exception_handler);
   }
 
   // setup the default signal handlers
@@ -360,24 +368,41 @@ int32_t sched_init() {
     return err;
   }
 
-  // setup the current and the first task (pid 1)
-  if ((task_main = task_new()) == NULL) {
-    sched_debg("failed to setup the main task");
+  // create the idle and the first task (pid 0)
+  if ((task_idle = task_new()) == NULL) {
+    sched_debg("failed to create the idle task");
     return -EFAULT;
   }
 
-  // rename the main task
-  sched_info("created the main task: 0x%p", task_main);
+  sched_debg("created the idle task: 0x%p", task_idle);
 
-  // set the required values
+  // setup the task
+  task_rename(task_idle, "idle");
+  task_idle->state = TASK_STATE_READY;
+  task_idle->prio  = TASK_PRIO_LOW;
+  task_idle->pid   = 0;
+  task_idle->ppid  = 0;
+
+  // jump to the _hang() function (see util/asm.S)
+  task_jump(task_idle, _hang);
+
+  // create the current and the second task (pid 1)
+  if ((task_main = task_new()) == NULL) {
+    sched_debg("failed to create the main task");
+    return -EFAULT;
+  }
+
+  sched_debg("created the main task: 0x%p", task_main);
+
+  // setup the task
   __sched_pid(task_main);
   task_rename(task_main, "main");
   task_main->state = TASK_STATE_READY;
   task_main->prio  = TASK_PRIO_LOW;
   task_main->ppid  = 0;
 
-  // add new task to the task list
-  __sched_queue_add(task_main);
+  // add new task to the task list, and make it the current task
+  __sched_queue_add(task_current = task_main);
 
   // unmask the timer interrupt for the scheduler
   if (!pic_unmask(PIC_IRQ_TIMER)) {
@@ -386,7 +411,10 @@ int32_t sched_init() {
   }
 
   // call the scheduler for the first time
+  sched_info("scheduling for the first time");
   sched();
+
+  // will return after scheduler is done
   return 0;
 }
 
@@ -463,4 +491,34 @@ task_t *sched_child(task_t *task, task_t *child) {
 
   // return the found child
   return child;
+}
+
+int32_t __sched_unblock_single(task_t *task, uint8_t block) {
+  // check if task is blocked
+  if (TASK_STATE_BLOCK != task->state || !(task->block & block))
+    return -EFAULT;
+
+  // if so, unblock
+  task->block = 0;
+  task->state = TASK_STATE_READY;
+
+  // success
+  return 0;
+}
+
+int32_t sched_unblock(task_t *task, uint8_t block) {
+  /*
+
+   * if a task is specified, just unblock it, otherwise
+   * loop through all the task and attempt to unblock all
+
+  */
+  if (NULL != task)
+    return __sched_unblock_single(task, block);
+
+  // attempt to loop and unblock all the tasks
+  for (task = sched_next(NULL); task != NULL; task = sched_next(task))
+    __sched_unblock_single(task, block);
+
+  return 0;
 }

@@ -26,16 +26,16 @@ int32_t devfs_open(struct fs *fs, fs_inode_t *inode) {
   if (inode->addr == 0)
     return 0;
 
-  struct devfs_device *dev = devfs_device_from_addr(inode->addr);
-  return NULL == dev ? -EIO : dev->ops->open(inode);
+  struct devfs_group *group = devfs_get_group(inode->addr);
+  return NULL == group ? -EIO : group->ops->open(inode);
 }
 
 int32_t devfs_close(struct fs *fs, fs_inode_t *inode) {
   if (inode->addr == 0)
     return 0;
 
-  struct devfs_device *dev = devfs_device_from_addr(inode->addr);
-  return NULL == dev ? -EIO : dev->ops->close(inode);
+  struct devfs_group *group = devfs_get_group(inode->addr);
+  return NULL == group ? -EIO : group->ops->close(inode);
 }
 
 int64_t devfs_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, void *buffer) {
@@ -44,7 +44,7 @@ int64_t devfs_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, 
   // if we are working with the root directory, it's a directory read
   if (inode->addr == 0) {
     // get the device at the given offset
-    while (NULL != (dev = devfs_device_next(dev)) && offset > 0)
+    while (NULL != (dev = devfs_next_device(dev)) && offset > 0)
       offset--;
 
     /*
@@ -68,16 +68,16 @@ int64_t devfs_read(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, 
   }
 
   // otherwise call the read function for the given device
-  dev = devfs_device_from_addr(inode->addr);
-  return NULL == dev ? -EIO : dev->ops->read(inode, offset, size, buffer);
+  struct devfs_group *group = devfs_get_group(inode->addr);
+  return NULL == group ? -EIO : group->ops->read(inode, offset, size, buffer);
 }
 
 int64_t devfs_write(fs_t *fs, fs_inode_t *inode, uint64_t offset, uint64_t size, void *buffer) {
   if (inode->addr == 0)
     return -EISDIR;
 
-  struct devfs_device *dev = devfs_device_from_addr(inode->addr);
-  return NULL == dev ? -EIO : dev->ops->write(inode, offset, size, buffer);
+  struct devfs_group *group = devfs_get_group(inode->addr);
+  return NULL == group ? -EIO : group->ops->write(inode, offset, size, buffer);
 }
 
 int32_t devfs_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode) {
@@ -99,11 +99,10 @@ int32_t devfs_namei(fs_t *fs, fs_inode_t *dir, char *name, fs_inode_t *inode) {
   if (dir->addr != 0)
     return -EINVAL;
 
-  // call the namei for the given device
   struct devfs_device *dev = NULL;
 
   // try to find the given device
-  if (NULL == (dev = devfs_device_from_name(name)))
+  if (NULL == (dev = devfs_get_device(0, name)))
     return -ENOENT;
 
   // setup the inode

@@ -1,6 +1,7 @@
 #include "core/acpi.h"
 #include "boot/multiboot.h"
 
+#include "core/driver.h"
 #include "limits.h"
 #include "mm/paging.h"
 #include "util/printk.h"
@@ -17,6 +18,8 @@
 #define acpi_info(f, ...) pinfo("ACPI: " f, ##__VA_ARGS__)
 #define acpi_fail(f, ...) pfail("ACPI: " f, ##__VA_ARGS__)
 #define acpi_debg(f, ...) pdebg("ACPI: " f, ##__VA_ARGS__)
+
+driver_new(acpi, acpi_load, acpi_unload);
 
 /*
 
@@ -273,6 +276,10 @@ int32_t acpi_load() {
     acpi_info("loaded version %u.0", __acpi_version);
 
   return err;
+}
+
+int32_t acpi_unload() {
+  return -ENOSYS;
 }
 
 void *acpi_find(char *sig, uint64_t size) {
