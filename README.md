@@ -26,6 +26,9 @@ main motivation of this project, to learn OS development
 - [x] userland
 - [x] TSS
 - [x] SYSCALL/SYSRET
+- [x] devfs
+- [ ] PS/2 keyboard
+- [ ] TTY(s)
 - [ ] libc
 - [ ] init
 - [ ] possibly a shell and more programs?
